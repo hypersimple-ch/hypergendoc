@@ -16,7 +16,7 @@ flowchart LR
   Traefik --> Server[Node application server]
   Web --> Server
   Server --> Postgres[(PostgreSQL)]
-  Server --> Objects[(Private S3 storage)]
+  Server --> Objects[(Private Garage S3 storage)]
   Server -->|Unix socket| Renderer[Networkless renderer]
   Renderer --> TeX[Restricted TeX process]
 ```
@@ -96,7 +96,10 @@ An agent submits only the documented content subset. The server owns the documen
 - TypeScript with strict compiler settings and pnpm workspaces.
 - Next.js dashboard, Fastify application server, official MCP TypeScript SDK, Zod contracts.
 - Better Auth with Drizzle/PostgreSQL.
-- PostgreSQL metadata and private MinIO-compatible development storage.
+- PostgreSQL metadata and private Garage S3-compatible storage at `http://object-store:3900` in region `garage`.
+- Garage v2.3.0 is pinned to `docker.io/dxflrs/garage:v2.3.0@sha256:866bd13ed2038ba7e7190e840482bc27234c4afaf77be8cfa439ae088c1e4690`; its SQLite metadata and data directories use separate volumes with fsync enabled. The S3, RPC, and admin interfaces have no public ports; internal admin health is `GET http://object-store:3903/health`.
+- This single-VPS deployment uses Garage automatic single-node/default-bucket setup and `replication_factor=1`. It has no redundancy, so encrypted off-VPS backups and tested restores are mandatory. Garage describes RF=1 as test-only; the future HA path is three nodes in three zones with RF=3.
+- Garage provides the S3 operations used by HyperGenDoc; it does not provide S3 ACLs, bucket policies, or versioning, and HyperGenDoc does not depend on them.
 - Pinned TeX distribution in a dedicated renderer image.
 - Standalone Docker Compose deployed by Dokploy, with Dokploy Traefik terminating TLS and routing paths on one VPS.
 

@@ -2,7 +2,7 @@
 
 ## Storage
 
-PostgreSQL stores identity, tenant metadata, structured styles, immutable LaTeX bodies/resolved-source metadata, version pointers, render metadata, credentials hashes, and audit records. Private S3-compatible storage holds logos, resolved source artifacts when configured, and PDFs. Buckets have no anonymous access.
+PostgreSQL stores identity, tenant metadata, structured styles, immutable LaTeX bodies/resolved-source metadata, version pointers, render metadata, credentials hashes, and audit records. Private Garage S3-compatible storage holds logos, resolved source artifacts when configured, and PDFs. Buckets have no anonymous access. Garage's S3 endpoint is internal at `http://object-store:3900` in region `garage`; its S3, RPC, and admin interfaces are never public.
 
 ## Retention and deletion
 
@@ -15,7 +15,7 @@ PostgreSQL stores identity, tenant metadata, structured styles, immutable LaTeX 
 
 ## Backup and recovery
 
-Back up PostgreSQL consistently with private object storage manifests. Encrypt before transfer off the VPS. Daily automated backups and periodic restore drills are required. A release records the last successful restore, migration version, and recovery point. Scripts must fail closed when destination, encryption, or integrity checks are missing.
+Back up PostgreSQL consistently with private object content and metadata manifests. Encrypt before transfer off the VPS. Daily automated backups and periodic restore drills are required. Garage is a single-node `replication_factor=1` deployment with no redundancy (Garage documents RF=1 as test-only), so these backups are mandatory. Keep the Garage SQLite metadata and object-data volumes together during local incident response, but use the logical encrypted backup for portable off-VPS recovery; do not automatically delete orphaned legacy object-store volumes. A release records the last successful restore, migration version, and recovery point. Scripts must fail closed when destination, encryption, or integrity checks are missing. The future HA path is three Garage nodes across three zones with RF=3.
 
 ## Limits and abuse controls
 

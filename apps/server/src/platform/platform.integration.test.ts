@@ -1,4 +1,4 @@
-import { S3Client } from "@aws-sdk/client-s3";
+import { HeadObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 import {
@@ -28,23 +28,24 @@ describe.skipIf(!enabled)("platform service integrations", () => {
     }
   });
 
-  it("stores a private object and produces short-lived authorized access", async () => {
-    const endpoint = process.env.S3_ENDPOINT;
+  it("stores private Garage objects with metadata and rejects anonymous reads", async () => {
+    const endpoint = process.env.S3_ENDPOINT ?? "http://127.0.0.1:19000";
     const bucket = process.env.S3_BUCKET;
-    const accessKeyId = process.env.S3_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY;
+    const accessKeyId =
+      process.env.S3_ACCESS_KEY_ID ?? process.env.S3_ACCESS_KEY;
+    const secretAccessKey =
+      process.env.S3_SECRET_ACCESS_KEY ?? process.env.S3_SECRET_KEY;
     if (
-      endpoint === undefined ||
       bucket === undefined ||
       accessKeyId === undefined ||
       secretAccessKey === undefined
     )
       throw new Error(
-        "S3 integration requires S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, and S3_SECRET_ACCESS_KEY",
+        "S3 integration requires S3_BUCKET plus S3_ACCESS_KEY_ID/S3_ACCESS_KEY and S3_SECRET_ACCESS_KEY/S3_SECRET_KEY",
       );
     const client = new S3Client({
       endpoint,
-      region: process.env.S3_REGION ?? "us-east-1",
+      region: process.env.S3_REGION ?? "garage",
       credentials: { accessKeyId, secretAccessKey },
       forcePathStyle: true,
     });
@@ -52,20 +53,44 @@ describe.skipIf(!enabled)("platform service integrations", () => {
       createAwsS3ObjectClient(client),
       bucket,
     );
+    const bytes = new TextEncoder().encode("private integration artifact");
     const object = await store.putPrivate({
-      bytes: new TextEncoder().encode("private integration artifact"),
-      contentType: "application/octet-stream",
+      bytes,
+      contentType: "text/plain",
+      metadata: { "test-marker": "garage" },
     });
     try {
       const downloaded = await store.authorizedGet({
         key: object.key,
         authorize: () => Promise.resolve(true),
       });
-      expect(new TextDecoder().decode(downloaded.bytes)).toBe(
-        "private integration artifact",
+      expect(downloaded).toEqual({ bytes, contentType: "text/plain" });
+      await expect(
+        client.send(
+          new HeadObjectCommand({
+            Bucket: bucket,
+            Key: object.key,
+          }),
+        ),
+      ).resolves.toMatchObject({
+        ContentType: "text/plain",
+        Metadata: { "test-marker": "garage", sha256: object.sha256 },
+      });
+      const response = await fetch(
+        new URL(
+          `${encodeURIComponent(bucket)}/${object.key
+            .split("/")
+            .map(encodeURIComponent)
+            .join("/")}`,
+          endpoint.endsWith("/") ? endpoint : `${endpoint}/`,
+        ),
       );
+      expect([401, 403]).toContain(response.status);
     } finally {
       await store.delete(object.key);
     }
+    await expect(
+      client.send(new HeadObjectCommand({ Bucket: bucket, Key: object.key })),
+    ).rejects.toMatchObject({ $metadata: { httpStatusCode: 404 } });
   });
 });

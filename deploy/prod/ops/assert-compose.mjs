@@ -1,8 +1,33 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const config = JSON.parse(readFileSync(0, "utf8"));
+const productionCompose = readFileSync("compose.prod.yaml", "utf8");
 const services = config.services ?? {};
 const failures = [];
+const garageImage =
+  "docker.io/dxflrs/garage:v2.3.0@sha256:866bd13ed2038ba7e7190e840482bc27234c4afaf77be8cfa439ae088c1e4690";
+const awsCliImage =
+  "amazon/aws-cli:2.35.24@sha256:f7e6c7fb03510fd1f4e27469458ca372a37c823a8c32860e0dd2f04a41787794";
+
+function hasVolume(service, target, source, readOnly = false) {
+  return service?.volumes?.some(
+    (volume) =>
+      volume.target === target &&
+      (source === undefined || volume.source === source) &&
+      (!readOnly || volume.read_only === true),
+  );
+}
+
+function hasOnlyNetwork(service, network) {
+  return (
+    JSON.stringify(Object.keys(service?.networks ?? {}).sort()) ===
+    JSON.stringify([network])
+  );
+}
+
+function hasNoNewPrivileges(service) {
+  return (service?.security_opt ?? []).includes("no-new-privileges:true");
+}
 
 if (services.proxy)
   failures.push("production must use Dokploy Traefik, not an in-stack proxy");
@@ -53,21 +78,73 @@ if (
 if (services.renderer?.network_mode !== "none")
   failures.push("renderer must not have a network");
 if (
-  services.renderer?.volumes?.some((v) =>
-    String(v.source ?? "").includes("docker.sock"),
+  services.renderer?.volumes?.some((volume) =>
+    String(volume.source ?? "").includes("docker.sock"),
   )
 )
   failures.push("renderer mounts a container socket");
 
 const objectStore = services["object-store"];
+if (objectStore?.image !== garageImage || objectStore?.build !== undefined)
+  failures.push(
+    "object store must use the pinned Garage image without a build",
+  );
 if (
-  objectStore?.user !== "10001:10001" ||
-  !String(objectStore?.image ?? "").startsWith("hypergendoc-object-store:") ||
-  !("object-data-init" in (objectStore?.depends_on ?? {}))
+  JSON.stringify(objectStore?.command) !==
+  JSON.stringify(["/garage", "server", "--single-node", "--default-bucket"])
 )
   failures.push(
-    "object store must use the non-root, source-built image after data initialization",
+    "object store must use Garage single-node default-bucket bootstrap",
   );
+if (
+  objectStore?.user !== "10001:10001" ||
+  objectStore?.read_only !== true ||
+  !(objectStore?.cap_drop ?? []).includes("ALL") ||
+  !hasNoNewPrivileges(objectStore)
+)
+  failures.push(
+    "object store must run non-root with filesystem and capability hardening",
+  );
+if (
+  !hasVolume(objectStore, "/etc/garage.toml", undefined, true) ||
+  !hasVolume(objectStore, "/var/lib/garage/meta", "object-metadata") ||
+  !hasVolume(objectStore, "/var/lib/garage/data", "object-data")
+)
+  failures.push(
+    "object store must mount its read-only config and separate metadata/data volumes",
+  );
+if (!hasOnlyNetwork(objectStore, "data"))
+  failures.push(
+    "object store must be reachable only on the internal data network",
+  );
+if (
+  JSON.stringify(objectStore?.healthcheck?.test) !==
+  JSON.stringify(["CMD", "/garage", "status"])
+)
+  failures.push("object store must use Garage status health checks");
+const objectStoreEnvironment = Object.keys(
+  objectStore?.environment ?? {},
+).sort();
+if (
+  JSON.stringify(objectStoreEnvironment) !==
+  JSON.stringify(
+    [
+      "GARAGE_CONFIG_FILE",
+      "GARAGE_DEFAULT_ACCESS_KEY",
+      "GARAGE_DEFAULT_BUCKET",
+      "GARAGE_DEFAULT_SECRET_KEY",
+      "GARAGE_RPC_SECRET",
+    ].sort(),
+  )
+)
+  failures.push(
+    "object store must receive only its Garage bootstrap and RPC settings",
+  );
+
+if ("object-store-init" in services)
+  failures.push("legacy object-store initialization services must be absent");
+if (existsSync("deploy/prod/Dockerfile.object-store"))
+  failures.push("the removed object-store Dockerfile must not return");
 
 const objectDataInit = services["object-data-init"];
 if (
@@ -75,9 +152,43 @@ if (
   objectDataInit?.read_only !== true ||
   !(objectDataInit?.cap_drop ?? []).includes("ALL") ||
   JSON.stringify(objectDataInit?.cap_add ?? []) !== JSON.stringify(["CHOWN"]) ||
-  objectDataInit?.restart !== "no"
+  objectDataInit?.restart !== "no" ||
+  !hasVolume(objectDataInit, "/var/lib/garage/meta", "object-metadata") ||
+  !hasVolume(objectDataInit, "/var/lib/garage/data", "object-data")
 )
   failures.push("object data initialization is not narrowly constrained");
+if (!("object-data-init" in (objectStore?.depends_on ?? {})))
+  failures.push("object store must wait for object data initialization");
+
+const objectStoreTools = services["object-store-tools"];
+if (
+  !productionCompose.includes(
+    `object-store-tools:\n    image: ${awsCliImage}\n    profiles: [tools]`,
+  )
+)
+  failures.push("object-store tools must be a pinned AWS CLI tools profile");
+if (
+  objectStoreTools &&
+  (objectStoreTools.image !== awsCliImage ||
+    !objectStoreTools.profiles?.includes("tools") ||
+    objectStoreTools.read_only !== true ||
+    !(objectStoreTools.cap_drop ?? []).includes("ALL") ||
+    !hasNoNewPrivileges(objectStoreTools) ||
+    !hasOnlyNetwork(objectStoreTools, "data"))
+)
+  failures.push(
+    "object-store tools must use the pinned, isolated AWS CLI tools profile",
+  );
+for (const [name, service] of Object.entries(services)) {
+  if (name === "object-store") continue;
+  const garageSecrets = Object.keys(service.environment ?? {}).filter((key) =>
+    key.startsWith("GARAGE_"),
+  );
+  if (garageSecrets.length)
+    failures.push(
+      `${name} receives Garage secrets: ${garageSecrets.join(", ")}`,
+    );
+}
 
 const socketInit = services["renderer-socket-init"];
 if (
@@ -95,13 +206,11 @@ for (const name of ["server", "renderer"]) {
 if (config.networks?.data?.internal !== true)
   failures.push("data network must be internal");
 
-const dockerfiles = [
+for (const file of [
   "deploy/prod/Dockerfile.server",
   "deploy/prod/Dockerfile.web",
-  "deploy/prod/Dockerfile.object-store",
   "apps/renderer/Dockerfile",
-];
-for (const file of dockerfiles) {
+]) {
   const source = readFileSync(file, "utf8");
   if (/COPY\s+[^\n]*(?:\.env|secret)/i.test(source))
     failures.push(`${file} appears to bake an environment or secret file`);
@@ -123,5 +232,5 @@ if (failures.length) {
   process.exit(1);
 }
 console.log(
-  "Dokploy production Compose topology and secret-build policy satisfy assertions.",
+  "Dokploy production Compose topology and Garage storage policy satisfy assertions.",
 );

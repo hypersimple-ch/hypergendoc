@@ -29,9 +29,10 @@ Run the adversarial corpus in the exact production Compose topology. Prove no sh
 ## Reliability and operations
 
 - Concurrent revisions allocate unique monotonic versions and maintain a valid current pointer.
-- Database/object-store/render failures produce safe status and do not expose partial artifacts as current.
+- Database/Garage/render failures produce safe status and do not expose partial artifacts as current.
+- Verify the Garage default bucket with the pinned AWS CLI image, confirm S3 access at `http://object-store:3900` in region `garage`, and confirm its internal admin health endpoint responds at `GET http://object-store:3903/health` without publishing any Garage ports.
 - Restart each service during bounded traffic; committed versions remain readable and pending/failed work reconciles deterministically.
-- Deploy to a clean VPS-equivalent host, migrate forward, run the full flow over TLS, create an encrypted backup, destroy test data, restore, and repeat read/revision checks.
+- Deploy to a clean VPS-equivalent host, migrate forward, run the full flow over TLS, create an encrypted off-VPS backup, destroy test data, restore, and repeat read/revision checks. This is a release blocker because the single-node Garage `replication_factor=1` topology has no redundancy; retain both Garage metadata and data volumes during the drill.
 
 ## Quality gates
 

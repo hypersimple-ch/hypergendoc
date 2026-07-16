@@ -13,7 +13,7 @@ const override = process.env.PRODUCTION_COMPOSE_OVERRIDE;
  * uniquely named fixtures and verifies tenant-IDOR denial, member restrictions,
  * private signed-download authorization, bounded uploads/MCP bodies, scoped and
  * immediately revoked credentials, audit attribution, concurrent versions, and
- * MCP rate limiting against real PostgreSQL, MinIO, and the renderer.
+ * MCP rate limiting against real PostgreSQL, Garage, and the renderer.
  */
 describe.skipIf(!enabled)("real deployment security acceptance", () => {
   it("rejects cross-tenant and bounded-input attacks without exposing private artifacts", async () => {

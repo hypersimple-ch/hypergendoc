@@ -22,12 +22,13 @@ pnpm compose:check
 pnpm check
 ```
 
-Run renderer adversarial testing in the deployment-equivalent topology and block release on any required isolation failure. Confirm TLS, runtime-injected secrets, HTTPS for external object storage (or the isolated internal Compose endpoint), SMTP, private bucket access, off-VPS encrypted backups, and time synchronization. A production Compose overlay exists, but it is not proof of these conditions; the remaining evidence gates are tracked in the [operations runbook](../operations/runbook.md).
+Run renderer adversarial testing in the deployment-equivalent topology and block release on any required isolation failure. Confirm TLS, runtime-injected secrets, HTTPS for external object storage (or Garage's isolated internal `http://object-store:3900` endpoint), SMTP, private bucket access, off-VPS encrypted backups, and time synchronization. The single-node Garage `replication_factor=1` deployment has no redundancy, so block release without a verified encrypted off-VPS backup and restore drill. A production Compose overlay exists, but it is not proof of these conditions; the remaining evidence gates are tracked in the [operations runbook](../operations/runbook.md).
 
 ## Known MVP limits
 
 - The accepted document language is deliberately small; it is not a sandbox for arbitrary TeX. The renderer's isolation is defense in depth, not a reason to accept unsupported input.
 - No client portal, e-signature, billing/financial workflow, legal review/validation/advice, generalized compliance program, or production-readiness certification is provided.
+- Garage is deployed on one VPS with `replication_factor=1`, which Garage documents as test-only and non-redundant. Encrypted off-VPS backups and full restore drills are mandatory; future HA requires three nodes across three zones with RF=3.
 - Guarded backup/restore and limited application-secret rotation scripts are included, but scheduling, provider credential rotation, key custody, and full restore drills remain operator responsibilities.
 - Immutable history and backup retention mean deletion is not instant erasure from every backup.
 

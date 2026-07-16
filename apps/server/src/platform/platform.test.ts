@@ -145,9 +145,9 @@ describe("platform", () => {
     expect(
       loadServerEnvironment({
         ...values,
-        S3_ENDPOINT: "http://object-store:9000",
+        S3_ENDPOINT: "http://object-store:3900",
       }).s3.endpoint,
-    ).toBe("http://object-store:9000");
+    ).toBe("http://object-store:3900");
     expect(() =>
       loadServerEnvironment({
         ...values,

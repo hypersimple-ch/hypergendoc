@@ -10,7 +10,7 @@ services:
     networks: [data, e2e]
   object-store:
     ports:
-      - "127.0.0.1:19000:9000"
+      - "127.0.0.1:19000:3900"
     networks: [data, e2e]
   renderer:
     command: ["pnpm", "exec", "tsx", "scripts/test-fake-renderer.ts"]
