@@ -1,0 +1,15 @@
+:8080 {
+  encode zstd gzip
+
+  @mcp path /mcp
+  request_body @mcp {
+    max_size 256KB
+  }
+  reverse_proxy @mcp server:4000 {
+    request_buffers 256KB
+  }
+
+  @server path /api/* /mcp-artifacts/* /health/live /health/ready
+  reverse_proxy @server server:4000
+  reverse_proxy web:3000
+}

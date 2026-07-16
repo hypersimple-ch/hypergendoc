@@ -1,0 +1,16 @@
+packages:
+  - apps/*
+  - packages/*
+
+allowBuilds:
+  esbuild: true
+  sharp: true
+
+overrides:
+  esbuild@<0.28.1: 0.28.1
+  postcss@<8.5.10: 8.5.19
+
+catalog:
+  typescript: ^5.9.3
+  zod: ^4.4.3
+  vitest: ^4.1.10

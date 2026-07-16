@@ -1,0 +1,41 @@
+{
+  "name": "hypergendoc",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.11.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "dev": "pnpm --parallel --filter @hypergendoc/web --filter @hypergendoc/server --filter @hypergendoc/renderer dev",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "pnpm -r --if-present typecheck && pnpm typecheck:release-tests",
+    "typecheck:release-tests": "tsc -p tests/tsconfig.json --noEmit",
+    "test": "pnpm -r --if-present test",
+    "test:run": "pnpm -r --if-present test:run",
+    "test:release-assets": "vitest run --config vitest.config.ts tests",
+    "test:browser": "playwright test",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:run && pnpm test:release-assets && pnpm build",
+    "compose:check": "node scripts/validate-compose.mjs",
+    "db:migrations:check": "node scripts/check-migrations.mjs",
+    "e2e:flow": "tsx scripts/e2e-flow.ts",
+    "e2e:renderer": "tsx scripts/test-renderer-topology.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.61.0",
+    "@types/node": "^26.1.1",
+    "esbuild": "0.28.1",
+    "eslint": "^10.7.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.7.0",
+    "prettier": "^3.9.5",
+    "tsx": "^4.23.1",
+    "typescript": "catalog:",
+    "typescript-eslint": "^8.64.0",
+    "vitest": "catalog:"
+  }
+}

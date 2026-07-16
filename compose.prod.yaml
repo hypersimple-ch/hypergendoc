@@ -1,0 +1,273 @@
+# Standalone production Compose file for deployment as a Dokploy Compose service.
+# Dokploy's Traefik terminates TLS and routes the public hostname; this stack
+# publishes no host ports. Local development remains in compose.yaml.
+services:
+  web:
+    image: hypergendoc-web:${IMAGE_TAG:?set IMAGE_TAG in Dokploy environment}
+    build:
+      context: .
+      dockerfile: deploy/prod/Dockerfile.web
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      SERVER_INTERNAL_ORIGIN: http://server:4000
+    expose: ["3000"]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,uid=10001,gid=10001
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3000').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    networks: [edge]
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1.00
+
+  server:
+    image: hypergendoc-server:${IMAGE_TAG:?set IMAGE_TAG in Dokploy environment}
+    build:
+      context: .
+      dockerfile: deploy/prod/Dockerfile.server
+      target: runtime
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4000
+      APP_ORIGIN: ${APP_ORIGIN:?set APP_ORIGIN in Dokploy environment}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET}
+      CREDENTIAL_PEPPER: ${CREDENTIAL_PEPPER:?set CREDENTIAL_PEPPER}
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      S3_ENDPOINT: ${S3_ENDPOINT:?set S3_ENDPOINT}
+      S3_REGION: ${S3_REGION:?set S3_REGION}
+      S3_BUCKET: ${S3_BUCKET:?set S3_BUCKET}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+      SMTP_URL: ${SMTP_URL:?set SMTP_URL}
+      MAIL_FROM: ${MAIL_FROM:?set MAIL_FROM}
+      RENDER_TIMEOUT_MS: ${RENDER_TIMEOUT_MS:-30000}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      RENDERER_SOCKET: /run/hypergendoc/renderer.sock
+    expose: ["4000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
+      object-store-init:
+        condition: service_completed_successfully
+      renderer-socket-init:
+        condition: service_completed_successfully
+      renderer:
+        condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,uid=10001,gid=10001
+    volumes:
+      - renderer-socket:/run/hypergendoc
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:4000/health/live').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    networks: [edge, data]
+    restart: unless-stopped
+    mem_limit: 768m
+    cpus: 1.00
+
+  db-migrate:
+    image: hypergendoc-migrate:${IMAGE_TAG:?set IMAGE_TAG in Dokploy environment}
+    build:
+      context: .
+      dockerfile: deploy/prod/Dockerfile.server
+      target: migration
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m,uid=10001,gid=10001
+    networks: [data]
+    restart: "no"
+    mem_limit: 256m
+    cpus: 0.50
+
+  renderer-socket-init:
+    image: busybox:1.37.0-musl
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - chown 0:0 /run/hypergendoc && chmod 2770 /run/hypergendoc && chown 10001:10001 /run/hypergendoc
+    network_mode: none
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - renderer-socket:/run/hypergendoc
+    restart: "no"
+    mem_limit: 32m
+    cpus: 0.10
+
+  renderer:
+    image: hypergendoc-renderer:${IMAGE_TAG:?set IMAGE_TAG in Dokploy environment}
+    build:
+      context: .
+      dockerfile: apps/renderer/Dockerfile
+    environment:
+      NODE_ENV: production
+      RENDERER_SOCKET: /run/hypergendoc/renderer.sock
+    user: "10001:10001"
+    read_only: true
+    network_mode: none
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 512m
+    cpus: 1.00
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m,uid=10001,gid=10001
+    volumes:
+      - renderer-socket:/run/hypergendoc
+    depends_on:
+      renderer-socket-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD-SHELL, "test -S /run/hypergendoc/renderer.sock"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: postgres:17.10-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+      - /var/run/postgresql:rw,nosuid,size=16m
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    networks: [data]
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1.00
+
+  object-data-init:
+    image: busybox:1.37.0-musl
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - chown 0:0 /data && chmod 0700 /data && chown 10001:10001 /data
+    network_mode: none
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - object-data:/data
+    restart: "no"
+    mem_limit: 32m
+    cpus: 0.10
+
+  object-store:
+    image: hypergendoc-object-store:${IMAGE_TAG:?set IMAGE_TAG in Dokploy environment}
+    build:
+      context: .
+      dockerfile: deploy/prod/Dockerfile.object-store
+      target: server
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+    depends_on:
+      object-data-init:
+        condition: service_completed_successfully
+    user: "10001:10001"
+    volumes:
+      - object-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,uid=10001,gid=10001
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, curl, -f, http://127.0.0.1:9000/minio/health/live]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    networks: [data]
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1.00
+
+  object-store-init:
+    image: hypergendoc-object-store-client:${IMAGE_TAG:?set IMAGE_TAG in Dokploy environment}
+    build:
+      context: .
+      dockerfile: deploy/prod/Dockerfile.object-store
+      target: client
+    depends_on:
+      object-store:
+        condition: service_healthy
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+      S3_BUCKET: ${S3_BUCKET:?set S3_BUCKET}
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - |
+        mc alias set local http://object-store:9000 "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY"
+        mc mb --ignore-existing "local/$$S3_BUCKET"
+        mc anonymous set none "local/$$S3_BUCKET"
+    read_only: true
+    tmpfs:
+      - /root/.mc:rw,noexec,nosuid,size=16m
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [data]
+    restart: "no"
+
+networks:
+  edge:
+    internal: false
+  data:
+    internal: true
+
+volumes:
+  postgres-data:
+  object-data:
+  renderer-socket:

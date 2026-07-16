@@ -1,0 +1,15 @@
+node_modules/
+.next/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+*.tsbuildinfo
+.local/
+artifacts/
+test-results/
+deploy/prod/secrets.env
+deploy/prod/state/
+deploy/prod/backups/

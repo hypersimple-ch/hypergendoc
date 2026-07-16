@@ -1,0 +1,4 @@
+% Renderer-local TeX policy. The container must run networkless, read-only and non-root.
+shell_escape = f
+openin_any = p
+openout_any = p

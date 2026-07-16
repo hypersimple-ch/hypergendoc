@@ -1,0 +1,20 @@
+{
+  "name": "@hypergendoc/renderer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest --config ../../vitest.config.ts",
+    "test:run": "vitest run --config ../../vitest.config.ts"
+  },
+  "dependencies": {
+    "@hypergendoc/config": "workspace:*",
+    "@hypergendoc/contracts": "workspace:*",
+    "@hypergendoc/latex": "workspace:*",
+    "zod": "catalog:"
+  }
+}

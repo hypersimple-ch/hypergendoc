@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1
+FROM node:22.23.1-bookworm-slim AS build
+WORKDIR /workspace
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY apps ./apps
+COPY packages ./packages
+RUN corepack enable && pnpm install --frozen-lockfile
+RUN pnpm exec esbuild apps/server/src/index.ts --bundle --platform=node --format=esm --target=node22 \
+    --external:@node-rs/argon2 \
+    --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" \
+    --outfile=/out/server.js \
+ && pnpm exec esbuild packages/db/src/migrate.ts --bundle --platform=node --format=esm --target=node22 \
+    --banner:js="import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" \
+    --outfile=/out/migrate.js
+RUN pnpm --filter @hypergendoc/server deploy --prod --legacy /out/server-deploy
+
+FROM node:22.23.1-bookworm-slim AS runtime
+RUN groupadd --gid 10001 app \
+ && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin app \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
+WORKDIR /app
+COPY --from=build /out/server.js ./server.js
+COPY --from=build /out/server-deploy/node_modules ./node_modules
+USER app:app
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=4000
+ENTRYPOINT ["node", "server.js"]
+
+FROM runtime AS migration
+USER root
+COPY --from=build /out/migrate.js ./migrate.js
+COPY --from=build /workspace/packages/db/migrations ./migrations
+USER app:app
+ENTRYPOINT ["node", "/app/migrate.js"]
