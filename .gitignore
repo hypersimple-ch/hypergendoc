@@ -13,3 +13,6 @@ test-results/
 deploy/prod/secrets.env
 deploy/prod/state/
 deploy/prod/backups/
+
+# Graphify output — generated knowledge graph artifacts
+graphify-out/

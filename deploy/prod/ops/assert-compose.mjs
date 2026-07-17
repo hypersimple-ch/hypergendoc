@@ -61,7 +61,7 @@ if (!services.web?.expose?.some((port) => Number(port) === 3000))
 if (!services.server?.expose?.some((port) => Number(port) === 4000))
   failures.push("server must expose container port 4000 to Dokploy Traefik");
 
-const secretName = /(PASSWORD|SECRET|PEPPER|DATABASE_URL|S3_ACCESS|SMTP_URL)/;
+const secretName = /(PASSWORD|SECRET|PEPPER|DATABASE_URL|S3_ACCESS)/;
 for (const name of ["web", "renderer", "renderer-socket-init"]) {
   const exposed = Object.keys(services[name]?.environment ?? {}).filter((key) =>
     secretName.test(key),

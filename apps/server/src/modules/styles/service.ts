@@ -127,28 +127,42 @@ export function createStyleService(deps: {
       )
         throw new AuthorizationError("not_found");
       await validateDefinition(actor, input.companyId, input.definition);
-      const result = await deps.repository.transaction(async (repository) => {
-        const style = await repository.createStyle({
-          workspaceId: actor.workspaceId,
-          companyId: input.companyId,
-          name: input.name,
+      let result: { style: Style; version: StyleVersion };
+      try {
+        result = await deps.repository.transaction(async (repository) => {
+          const style = await repository.createStyle({
+            workspaceId: actor.workspaceId,
+            companyId: input.companyId,
+            name: input.name,
+          });
+          const version = await repository.createNextVersion({
+            workspaceId: actor.workspaceId,
+            styleId: style.id,
+            definition: input.definition,
+            createdByUserId: actor.userId,
+          });
+          if (
+            !(await repository.setActiveVersion(
+              actor.workspaceId,
+              style.id,
+              version.id,
+            ))
+          )
+            throw new Error("new style was not activated");
+          return { style: { ...style, activeVersionId: version.id }, version };
         });
-        const version = await repository.createNextVersion({
-          workspaceId: actor.workspaceId,
-          styleId: style.id,
-          definition: input.definition,
-          createdByUserId: actor.userId,
-        });
+      } catch (error) {
         if (
-          !(await repository.setActiveVersion(
-            actor.workspaceId,
-            style.id,
-            version.id,
-          ))
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          error.code === "23505" &&
+          "constraint" in error &&
+          error.constraint === "style_company_name_unique"
         )
-          throw new Error("new style was not activated");
-        return { style: { ...style, activeVersionId: version.id }, version };
-      });
+          throw new AuthorizationError("conflict");
+        throw error;
+      }
       await emit(actor, "style.created", result.style.id);
       return result;
     },

@@ -48,7 +48,7 @@ test("public entry points and protected-route redirect are accessible", async ({
 test.describe("verified account dashboard journey", () => {
   test.skip(!databaseUrl, "E2E_DATABASE_URL is required");
 
-  test("registers, verifies, signs in, and creates a workspace", async ({
+  test("registers, verifies, signs in, and creates workspace content", async ({
     page,
   }) => {
     const run = randomBytes(8).toString("hex");
@@ -76,15 +76,41 @@ test.describe("verified account dashboard journey", () => {
       await page.getByLabel("Email").fill(email);
       await page.getByLabel("Password").fill(password);
       await page.getByRole("button", { name: "Sign in", exact: true }).click();
-      await expect(page).toHaveURL(/\/workspace$/);
+      await expect(page).toHaveURL(/\/setup$/);
 
-      await page.goto("/setup");
       await page.getByLabel("Workspace name").fill(`Browser Agency ${run}`);
       await page.getByRole("button", { name: "Create workspace" }).click();
       await expect(page).toHaveURL(/\/workspace$/);
       await expect(
         page.getByRole("heading", { name: "The document desk." }),
       ).toBeVisible();
+
+      await page.getByRole("link", { name: "Companies" }).click();
+      await expect(page).toHaveURL(/\/workspace\/companies$/);
+      await expect(
+        page.getByRole("heading", { name: "Brand homes." }),
+      ).toBeVisible();
+      await page.getByLabel("Company name").fill(`Browser Company ${run}`);
+      await page.getByRole("button", { name: "Add company" }).click();
+      await expect(page.getByText(`Browser Company ${run}`)).toBeVisible();
+      await expect(
+        page.getByText("Access denied", { exact: false }),
+      ).toHaveCount(0);
+
+      await page.getByRole("link", { name: "Styles" }).click();
+      await expect(page).toHaveURL(/\/workspace\/styles$/);
+      await expect(
+        page.getByRole("heading", { name: "Structured brand systems." }),
+      ).toBeVisible();
+      await page.getByLabel("New style name").fill(`Browser Style ${run}`);
+      await page
+        .getByLabel("Company", { exact: true })
+        .selectOption({ label: `Browser Company ${run}` });
+      await page.getByRole("button", { name: "Create style" }).click();
+      await expect(page.getByText(`Browser Style ${run}`)).toBeVisible();
+      await expect(
+        page.getByText("Access denied", { exact: false }),
+      ).toHaveCount(0);
 
       await page.getByRole("link", { name: "Documents" }).click();
       await expect(page).toHaveURL(/\/workspace\/documents$/);

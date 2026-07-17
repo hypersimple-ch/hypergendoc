@@ -22,6 +22,7 @@ export type Member = {
 export type WorkspaceContext = { name?: string; role: WorkspaceRole };
 export type CredentialCreation = { credential: McpCredential; token: string };
 export type StyleDetail = { style: Style; versions: StyleVersion[] };
+export type StyleCreation = { style: Style; version: StyleVersion };
 export type DocumentDetail = {
   document: Document;
   versions: DocumentVersion[];
@@ -88,15 +89,20 @@ export const dashboardApi = {
     items<Style>(
       await api<Collection<Style>>(`/api/companies/${companyId}/styles`),
     ),
-  createStyle: (input: {
+  createStyle: async (input: {
     companyId: string;
     name: string;
     definition: StyleDefinition;
-  }) =>
-    api<Style>(`/api/companies/${input.companyId}/styles`, {
-      method: "POST",
-      body: input,
-    }),
+  }) => {
+    const { style } = await api<StyleCreation>(
+      `/api/companies/${input.companyId}/styles`,
+      {
+        method: "POST",
+        body: input,
+      },
+    );
+    return style;
+  },
   style: async (id: string): Promise<StyleDetail> => {
     const style = await api<Style>(`/api/styles/${id}`);
     const versions = await api<StyleVersion[]>(`/api/styles/${id}/versions`);

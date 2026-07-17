@@ -37,6 +37,76 @@ describe("dashboard contract adapters", () => {
     const createInit = fetcher.mock.calls[0]?.[1] as RequestInit;
     expect(createInit.body as string).not.toContain("workspaceId");
   });
+  it("unwraps the server style creation envelope without sending a workspace id", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      response({
+        style: {
+          id: "style",
+          companyId: "company",
+          name: "Brand",
+          activeVersionId: "style-version",
+          archivedAt: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+        version: {
+          id: "style-version",
+          styleId: "style",
+          version: 1,
+          definition: {},
+          createdByUserId: "user",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+
+    const created = await dashboardApi.createStyle({
+      companyId: "company",
+      name: "Brand",
+      definition: {
+        logoObjectId: null,
+        bodyFont: "Inter",
+        headingFont: "Noto Serif",
+        bodySizePt: 10,
+        headingScale: 1.5,
+        italicStyle: "italic",
+        colors: {
+          text: "#111111",
+          heading: "#111111",
+          primary: "#111111",
+          accent: "#111111",
+          muted: "#111111",
+        },
+        page: {
+          size: "A4",
+          marginTopMm: 20,
+          marginRightMm: 20,
+          marginBottomMm: 20,
+          marginLeftMm: 20,
+        },
+        header: {
+          enabled: false,
+          leftText: "",
+          centerText: "",
+          rightText: "",
+          showPageNumber: false,
+        },
+        footer: {
+          enabled: false,
+          leftText: "",
+          centerText: "",
+          rightText: "",
+          showPageNumber: false,
+        },
+      },
+    });
+
+    expect(created.id).toBe("style");
+    expect(created.companyId).toBe("company");
+    expect(fetcher.mock.calls[0]?.[0]).toBe("/api/companies/company/styles");
+    const createInit = fetcher.mock.calls[0]?.[1] as RequestInit;
+    expect(createInit.body as string).not.toContain("workspaceId");
+  });
   it("recognizes the server-resolved owner role without accepting a workspace id", async () => {
     const fetcher = vi
       .fn()

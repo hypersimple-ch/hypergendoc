@@ -188,8 +188,13 @@ export async function createApplication(
     objects,
     audit,
   });
-  const smtp = environment.smtpUrl
-    ? nodemailer.createTransport(environment.smtpUrl)
+  const smtp = environment.smtp
+    ? nodemailer.createTransport({
+        host: environment.smtp.host,
+        port: environment.smtp.port,
+        secure: environment.smtp.port === 465,
+        auth: { user: environment.smtp.user, pass: environment.smtp.password },
+      })
     : undefined;
   const mail = {
     async sendVerificationEmail(input: {

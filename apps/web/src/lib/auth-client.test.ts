@@ -4,7 +4,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("auth client", () => {
   it("uses Better Auth email paths with cookie credentials and never logs a password", async () => {
     const fetcher = vi
-      .fn()
+      .fn<typeof fetch>()
       .mockResolvedValue(new Response("{}", { status: 200 }));
     const logger = vi.spyOn(console, "log");
     vi.stubGlobal("fetch", fetcher);
@@ -18,5 +18,30 @@ describe("auth client", () => {
     });
     expect(logger).not.toHaveBeenCalled();
     logger.mockRestore();
+  });
+
+  it("uses the login verification callback for signup and resend requests", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetcher);
+
+    await authClient.register("Person", "person@example.test", "password");
+    await authClient.sendVerification("person@example.test");
+
+    expect(fetcher.mock.calls[0]?.[0]).toBe("/api/auth/sign-up/email");
+    expect(JSON.parse(fetcher.mock.calls[0]?.[1]?.body as string)).toEqual({
+      name: "Person",
+      email: "person@example.test",
+      password: "password",
+      callbackURL: "/login?verified=true",
+    });
+    expect(fetcher.mock.calls[1]?.[0]).toBe(
+      "/api/auth/send-verification-email",
+    );
+    expect(JSON.parse(fetcher.mock.calls[1]?.[1]?.body as string)).toEqual({
+      email: "person@example.test",
+      callbackURL: "/login?verified=true",
+    });
   });
 });

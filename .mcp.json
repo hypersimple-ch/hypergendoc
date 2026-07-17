@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "hypergendoc": {
+      "url": "http://localhost:8080/mcp",
+      "headers": {
+        "Authorization": "Bearer ${HYPERGENDOC_MCP_TOKEN}"
+      }
+    }
+  }
+}

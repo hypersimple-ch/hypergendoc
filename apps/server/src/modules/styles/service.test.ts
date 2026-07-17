@@ -170,4 +170,46 @@ describe("style versions", () => {
       }),
     ).rejects.toMatchObject({ code: "not_found" });
   });
+  it("maps the style company-name uniqueness conflict", async () => {
+    const repo = repository();
+    repo.createStyle = async () => {
+      throw Object.assign(new Error("duplicate style name"), {
+        code: "23505",
+        constraint: "style_company_name_unique",
+      });
+    };
+    const service = createStyleService({
+      repository: repo,
+      audit,
+      renderer: { renderPreview: async () => ({ url: "preview" }) },
+    });
+
+    await expect(
+      service.create(actor, {
+        companyId: "company-a",
+        name: "brand",
+        definition,
+      }),
+    ).rejects.toMatchObject({ code: "conflict" });
+  });
+  it("preserves unrelated repository failures during style creation", async () => {
+    const failure = new Error("repository unavailable");
+    const repo = repository();
+    repo.createStyle = async () => {
+      throw failure;
+    };
+    const service = createStyleService({
+      repository: repo,
+      audit,
+      renderer: { renderPreview: async () => ({ url: "preview" }) },
+    });
+
+    await expect(
+      service.create(actor, {
+        companyId: "company-a",
+        name: "brand",
+        definition,
+      }),
+    ).rejects.toBe(failure);
+  });
 });

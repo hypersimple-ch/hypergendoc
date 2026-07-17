@@ -16,7 +16,12 @@ export interface ServerEnvironment {
     accessKeyId: string;
     secretAccessKey: string;
   };
-  readonly smtpUrl?: string;
+  readonly smtp?: {
+    host: string;
+    port: number;
+    user: string;
+    password: string;
+  };
   readonly mailFrom?: string;
   readonly limits: typeof limits;
 }
@@ -34,6 +39,13 @@ function port(value: string | undefined): number {
   const parsed = Number(value ?? "4000");
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65_535)
     throw new Error("PORT must be an integer between 1 and 65535");
+  return parsed;
+}
+
+function smtpPort(value: string | undefined): number {
+  const parsed = Number(value?.trim());
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65_535)
+    throw new Error("SMTP_PORT must be an integer between 1 and 65535");
   return parsed;
 }
 
@@ -59,15 +71,28 @@ export function loadServerEnvironment(
     if (!["http:", "https:"].includes(objectStoreUrl.protocol))
       throw new Error("S3_ENDPOINT must use HTTP or HTTPS");
   }
-  const smtpUrl = values.SMTP_URL?.trim();
+  const smtpConfigured = [
+    values.SMTP_HOST,
+    values.SMTP_PORT,
+    values.SMTP_USER,
+    values.SMTP_PASSWORD,
+  ].some((value) => value !== undefined && value !== "");
+  const smtp = smtpConfigured
+    ? {
+        host: required(values, "SMTP_HOST"),
+        port: smtpPort(values.SMTP_PORT),
+        user: required(values, "SMTP_USER"),
+        password: (() => {
+          const value = values.SMTP_PASSWORD;
+          if (value === undefined || value === "")
+            throw new Error(
+              "Missing required environment variable: SMTP_PASSWORD",
+            );
+          return value;
+        })(),
+      }
+    : undefined;
   const mailFrom = values.MAIL_FROM?.trim();
-  if (smtpUrl !== undefined && smtpUrl !== "") {
-    try {
-      new URL(smtpUrl);
-    } catch {
-      throw new Error("SMTP_URL must be a URL");
-    }
-  }
   if (
     nodeEnv === "production" &&
     objectStoreUrl?.protocol === "http:" &&
@@ -76,8 +101,10 @@ export function loadServerEnvironment(
     throw new Error(
       "Production S3_ENDPOINT must use HTTPS unless it is the private Compose object-store service",
     );
-  if (nodeEnv === "production" && (!smtpUrl || !mailFrom))
-    throw new Error("Production requires SMTP_URL and MAIL_FROM");
+  if (nodeEnv === "production" && (!smtp || !mailFrom))
+    throw new Error(
+      "Production requires SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, and MAIL_FROM",
+    );
   if (mailFrom?.includes("\n") || mailFrom?.includes("\r"))
     throw new Error("MAIL_FROM must not contain line breaks");
   return {
@@ -106,7 +133,7 @@ export function loadServerEnvironment(
         "S3_SECRET_ACCESS_KEY",
       ),
     },
-    ...(smtpUrl === undefined || smtpUrl === "" ? {} : { smtpUrl }),
+    ...(smtp === undefined ? {} : { smtp }),
     ...(mailFrom === undefined || mailFrom === "" ? {} : { mailFrom }),
     limits,
   };

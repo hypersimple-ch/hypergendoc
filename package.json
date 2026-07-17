@@ -9,6 +9,7 @@
   "scripts": {
     "build": "pnpm -r --if-present build",
     "dev": "pnpm --parallel --filter @hypergendoc/web --filter @hypergendoc/server --filter @hypergendoc/renderer dev",
+    "dev:stack": "docker compose up --build",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings=0",

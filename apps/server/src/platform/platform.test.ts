@@ -139,21 +139,32 @@ describe("platform", () => {
       S3_BUCKET: "private",
       S3_ACCESS_KEY: "access",
       S3_SECRET_KEY: "secret",
-      SMTP_URL: "smtps://mail.example.test:465",
+      SMTP_HOST: "mail.example.test",
+      SMTP_PORT: "465",
+      SMTP_USER: "noreply@example.test",
+      SMTP_PASSWORD: "test-only-password",
       MAIL_FROM: "noreply@example.test",
     };
-    expect(
-      loadServerEnvironment({
-        ...values,
-        S3_ENDPOINT: "http://object-store:3900",
-      }).s3.endpoint,
-    ).toBe("http://object-store:3900");
+    const environment = loadServerEnvironment({
+      ...values,
+      S3_ENDPOINT: "http://object-store:3900",
+    });
+    expect(environment.s3.endpoint).toBe("http://object-store:3900");
+    expect(environment.smtp).toEqual({
+      host: "mail.example.test",
+      port: 465,
+      user: "noreply@example.test",
+      password: "test-only-password",
+    });
     expect(() =>
       loadServerEnvironment({
         ...values,
         S3_ENDPOINT: "http://storage.example.test",
       }),
     ).toThrow("must use HTTPS");
+    expect(() =>
+      loadServerEnvironment({ ...values, SMTP_PASSWORD: "" }),
+    ).toThrow("Missing required environment variable: SMTP_PASSWORD");
   });
 
   it("reports failed dependencies and enforces windows", async () => {

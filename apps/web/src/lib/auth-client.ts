@@ -4,6 +4,8 @@ import { api, ApiError } from "./api-client";
 
 type AuthReply = { redirect?: boolean; error?: { message?: string } };
 
+const verificationCallbackURL = "/login?verified=true";
+
 async function auth(path: string, body: Record<string, string>) {
   try {
     const result = await fetch(`/api/auth/${path}`, {
@@ -34,7 +36,12 @@ async function auth(path: string, body: Record<string, string>) {
 /** Thin adapter for Better Auth's standard email endpoints; it never stores credentials. */
 export const authClient = {
   register: (name: string, email: string, password: string) =>
-    auth("sign-up/email", { name, email, password }),
+    auth("sign-up/email", {
+      name,
+      email,
+      password,
+      callbackURL: verificationCallbackURL,
+    }),
   login: (email: string, password: string) =>
     auth("sign-in/email", { email, password }),
   forgotPassword: (email: string) =>
@@ -42,7 +49,10 @@ export const authClient = {
   resetPassword: (newPassword: string, token: string) =>
     auth("reset-password", { newPassword, token }),
   sendVerification: (email: string) =>
-    auth("send-verification-email", { email, callbackURL: "/verify-email" }),
+    auth("send-verification-email", {
+      email,
+      callbackURL: verificationCallbackURL,
+    }),
   acceptInvitation: (invitationId: string) =>
     auth("organization/accept-invitation", { invitationId }),
   signOut: () => auth("sign-out", {}),

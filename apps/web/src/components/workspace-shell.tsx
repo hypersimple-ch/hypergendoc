@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
+import { ApiError, workspaceApi } from "../lib/api-client";
 import { authClient } from "../lib/auth-client";
 
 const links = [
@@ -16,27 +17,48 @@ const links = [
 ] as const;
 
 export function SessionBoundary({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const router = useRouter();
-  const [state, setState] = useState<"checking" | "ready">("checking");
+  const [state, setState] = useState<"checking" | "ready" | "error">(
+    "checking",
+  );
+  const [error, setError] = useState<string>();
   useEffect(() => {
     let alive = true;
-    fetch("/api/auth/get-session", { credentials: "include" })
-      .then((response) => {
-        if (!response.ok) throw new Error("expired");
-        return response.json();
-      })
+    workspaceApi
+      .current()
       .then(() => alive && setState("ready"))
-      .catch(() => {
-        if (alive) router.replace("/login?reason=session-expired");
+      .catch((caught: unknown) => {
+        if (!alive) return;
+        if (caught instanceof ApiError && caught.code === "unauthenticated") {
+          router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+          return;
+        }
+        if (caught instanceof ApiError && caught.code === "forbidden") {
+          router.replace("/setup");
+          return;
+        }
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : "We could not verify workspace access. Please try again.",
+        );
+        setState("error");
       });
     return () => {
       alive = false;
     };
-  }, [router]);
+  }, [pathname, router]);
   if (state === "checking")
     return (
       <main className="session-loading" aria-live="polite">
         Checking your secure session…
+      </main>
+    );
+  if (state === "error")
+    return (
+      <main className="session-loading" role="alert">
+        {error}
       </main>
     );
   return <>{children}</>;
