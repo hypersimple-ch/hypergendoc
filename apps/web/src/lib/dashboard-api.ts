@@ -14,12 +14,29 @@ import { ApiError, api } from "./api-client";
 
 export type Member = {
   id: string;
+  userId: string;
   email: string;
   name?: string;
   role: WorkspaceRole;
   createdAt: string;
 };
-export type WorkspaceContext = { name?: string; role: WorkspaceRole };
+export type WorkspaceContext = {
+  name?: string;
+  userId?: string;
+  role: WorkspaceRole;
+};
+export type WorkspaceAuditEvent = {
+  id: string;
+  actorType: string;
+  action: string;
+  targetType: string;
+  outcome: string;
+  createdAt: string;
+};
+export type WorkspaceAuditPage = {
+  items: WorkspaceAuditEvent[];
+  nextOffset?: number;
+};
 export type CredentialCreation = { credential: McpCredential; token: string };
 export type StyleDetail = { style: Style; versions: StyleVersion[] };
 export type StyleCreation = { style: Style; version: StyleVersion };
@@ -40,12 +57,13 @@ export const dashboardApi = {
       unknown
     >;
     const membership = (value.membership ?? value) as Record<string, unknown>;
-    return typeof value.name === "string"
-      ? {
-          name: value.name,
-          role: membership.role === "owner" ? "owner" : "member",
-        }
-      : { role: membership.role === "owner" ? "owner" : "member" };
+    return {
+      ...(typeof value.name === "string" ? { name: value.name } : {}),
+      ...(typeof membership.userId === "string"
+        ? { userId: membership.userId }
+        : {}),
+      role: membership.role === "owner" ? "owner" : "member",
+    };
   },
   members: async () =>
     items<Member>(
@@ -56,6 +74,19 @@ export const dashboardApi = {
       method: "POST",
       body: { email, role },
     }),
+  changeMemberRole: (userId: string, role: WorkspaceRole) =>
+    api<Member>(`/api/workspaces/current/members/${userId}`, {
+      method: "PATCH",
+      body: { role },
+    }),
+  removeMember: (userId: string) =>
+    api<void>(`/api/workspaces/current/members/${userId}`, {
+      method: "DELETE",
+    }),
+  audit: (offset = 0, limit = 50) =>
+    api<WorkspaceAuditPage>(
+      `/api/workspaces/current/audit?offset=${offset}&limit=${limit}`,
+    ),
   companies: async () =>
     items<Company>(await api<Collection<Company>>("/api/companies")),
   createCompany: (input: CreateCompanyInput) =>

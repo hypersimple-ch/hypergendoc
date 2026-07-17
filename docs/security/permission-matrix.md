@@ -9,7 +9,8 @@ Roles are workspace-scoped. The first registered user creates a workspace as its
 | Read workspace and membership list               |  Yes  |  Yes   |
 | Change workspace settings                        |  Yes  |   No   |
 | Invite, remove, or change member roles           |  Yes  |   No   |
-| Create/read/update/archive companies             |  Yes  |  Yes   |
+| Create, read, and update companies               |  Yes  |  Yes   |
+| Archive companies                                |  Yes  |   No   |
 | Create style versions and activate styles        |  Yes  |  Yes   |
 | Read documents, versions, source, and PDFs       |  Yes  |  Yes   |
 | Delete documents/company data                    |  Yes  |   No   |

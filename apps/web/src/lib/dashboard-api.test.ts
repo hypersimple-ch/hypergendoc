@@ -108,17 +108,39 @@ describe("dashboard contract adapters", () => {
     expect(createInit.body as string).not.toContain("workspaceId");
   });
   it("recognizes the server-resolved owner role without accepting a workspace id", async () => {
-    const fetcher = vi
-      .fn()
-      .mockResolvedValue(
-        response({ name: "Studio", membership: { role: "owner" } }),
-      );
+    const fetcher = vi.fn().mockResolvedValue(
+      response({
+        name: "Studio",
+        membership: { role: "owner", userId: "owner" },
+      }),
+    );
     vi.stubGlobal("fetch", fetcher);
     await expect(dashboardApi.context()).resolves.toEqual({
       name: "Studio",
+      userId: "owner",
       role: "owner",
     });
     expect(fetcher.mock.calls[0]?.[0]).toBe("/api/workspaces/current");
+  });
+  it("uses server-scoped member management and audit routes", async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({ items: [] }));
+    vi.stubGlobal("fetch", fetcher);
+
+    await dashboardApi.changeMemberRole("user", "owner");
+    await dashboardApi.removeMember("user");
+    await dashboardApi.audit(50, 25);
+
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      "/api/workspaces/current/members/user",
+    );
+    expect(fetcher.mock.calls[1]?.[0]).toBe(
+      "/api/workspaces/current/members/user",
+    );
+    expect(fetcher.mock.calls[2]?.[0]).toBe(
+      "/api/workspaces/current/audit?offset=50&limit=25",
+    );
+    expect((fetcher.mock.calls[0]?.[1] as RequestInit).method).toBe("PATCH");
+    expect((fetcher.mock.calls[1]?.[1] as RequestInit).method).toBe("DELETE");
   });
   it("maps inaccessible companies to a safe not-found message", () => {
     expect(

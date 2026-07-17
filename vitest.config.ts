@@ -6,7 +6,7 @@ export default defineConfig({
       "**/node_modules/**",
       "**/dist/**",
       "**/.next/**",
-      "**/tests/browser/**",
+      "**/archive/**",
     ],
     passWithNoTests: true,
   },

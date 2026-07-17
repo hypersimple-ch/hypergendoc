@@ -19,10 +19,11 @@ const links = [
 export function SessionBoundary({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [state, setState] = useState<"checking" | "ready" | "error">(
-    "checking",
-  );
+  const [state, setState] = useState<
+    "checking" | "ready" | "error" | "ambiguous"
+  >("checking");
   const [error, setError] = useState<string>();
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let alive = true;
     workspaceApi
@@ -38,6 +39,10 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
           router.replace("/setup");
           return;
         }
+        if (caught instanceof ApiError && caught.code === "conflict") {
+          setState("ambiguous");
+          return;
+        }
         setError(
           caught instanceof Error
             ? caught.message
@@ -48,11 +53,29 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
     return () => {
       alive = false;
     };
-  }, [pathname, router]);
+  }, [attempt, pathname, router]);
   if (state === "checking")
     return (
       <main className="session-loading" aria-live="polite">
         Checking your secure session…
+      </main>
+    );
+  if (state === "ambiguous")
+    return (
+      <main className="session-loading" role="alert">
+        <p>Your account has memberships in multiple workspaces.</p>
+        <p>
+          Ask your workspace administrator to resolve the duplicate memberships,
+          then try again.
+        </p>
+        <button
+          onClick={() => {
+            setState("checking");
+            setAttempt((value) => value + 1);
+          }}
+        >
+          Try again
+        </button>
       </main>
     );
   if (state === "error")
@@ -68,9 +91,17 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [signOutState, setSignOutState] = useState<
+    "idle" | "pending" | "error"
+  >("idle");
   async function signOut() {
-    await authClient.signOut();
-    router.replace("/login");
+    setSignOutState("pending");
+    try {
+      await authClient.signOut();
+      router.replace("/login");
+    } catch {
+      setSignOutState("error");
+    }
   }
   return (
     <div className="workspace-shell">
@@ -90,10 +121,14 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           className="avatar"
           aria-label="Sign out"
           title="Sign out"
+          disabled={signOutState === "pending"}
           onClick={() => void signOut()}
         >
-          HG
+          {signOutState === "pending" ? "…" : "HG"}
         </button>
+        {signOutState === "error" ? (
+          <p role="alert">Sign out failed. Please try again.</p>
+        ) : null}
       </header>
       <aside
         id="workspace-navigation"

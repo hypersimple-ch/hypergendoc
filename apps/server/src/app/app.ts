@@ -71,6 +71,7 @@ import {
 } from "../platform/object-store.js";
 import { createInMemoryRateLimiter } from "../platform/rate-limit.js";
 import { registerMcpArtifactRoute } from "./mcp-artifact-route.js";
+import { shouldRejectMutationOrigin } from "./origin-policy.js";
 
 export interface Application extends FastifyInstance {
   closeDependencies(): Promise<void>;
@@ -247,12 +248,12 @@ export async function createApplication(
   });
   app.addHook("onRequest", (request) => {
     if (
-      request.url.startsWith("/api/") &&
-      request.method !== "GET" &&
-      request.method !== "HEAD" &&
-      request.method !== "OPTIONS" &&
-      !request.url.startsWith("/api/auth/") &&
-      request.headers.origin !== environment.appOrigin
+      shouldRejectMutationOrigin({
+        url: request.url,
+        method: request.method,
+        origin: request.headers.origin,
+        appOrigin: environment.appOrigin,
+      })
     )
       throw new AppError("forbidden", 403);
     return Promise.resolve();
@@ -372,6 +373,7 @@ export async function createApplication(
     createMembershipRoutes({
       authenticate,
       memberships: createMembershipRepository(db),
+      audit,
     }),
   );
   await app.register(createCompanyRoutes({ authenticate, service: companies }));

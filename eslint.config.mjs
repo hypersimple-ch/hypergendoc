@@ -10,6 +10,7 @@ export default tseslint.config(
       "**/coverage/**",
       "**/dist/**",
       "**/migrations/**",
+      "archive/**",
     ],
   },
   eslint.configs.recommended,

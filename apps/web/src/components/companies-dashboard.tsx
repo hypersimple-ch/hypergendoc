@@ -12,7 +12,7 @@ export function CompaniesDashboard() {
   const [busy, setBusy] = useState(false);
   async function create(event: React.FormEvent) {
     event.preventDefault();
-    if (!name.trim()) return;
+    if (busy || !name.trim()) return;
     setBusy(true);
     setMessage(undefined);
     try {
@@ -47,7 +47,9 @@ export function CompaniesDashboard() {
               required
             />
           </FormField>
-          <Button disabled={busy}>{busy ? "Creating…" : "Add company"}</Button>
+          <Button type="submit" disabled={busy}>
+            {busy ? "Creating…" : "Add company"}
+          </Button>
         </form>
         {message && <Status kind="error">{message}</Status>}
       </section>
@@ -92,35 +94,51 @@ function CompanyRow({
 }) {
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(company.name);
-  const [message, setMessage] = useState<string>();
+  const [message, setMessage] = useState<{ text: string; error: boolean }>();
+  const [busy, setBusy] = useState(false);
   async function save() {
+    if (busy) return;
+    setBusy(true);
+    setMessage(undefined);
     try {
       await dashboardApi.updateCompany(company.id, { name });
       setRenaming(false);
       onChange();
     } catch (e) {
-      setMessage(safeError(e));
+      setMessage({ text: safeError(e), error: true });
+    } finally {
+      setBusy(false);
     }
   }
   async function archive() {
     if (
+      busy ||
       !confirm(`Archive ${company.name}? Existing documents remain available.`)
     )
       return;
+    setBusy(true);
+    setMessage(undefined);
     try {
       await dashboardApi.archiveCompany(company.id);
       onChange();
     } catch (e) {
-      setMessage(safeError(e));
+      setMessage({ text: safeError(e), error: true });
+    } finally {
+      setBusy(false);
     }
   }
   async function upload(file?: File) {
-    if (!file) return;
+    if (busy || !file) return;
+    setBusy(true);
+    setMessage(undefined);
     try {
       await dashboardApi.uploadLogo(company.id, file);
-      setMessage("Logo uploaded.");
+      onChange();
+      setMessage({ text: "Logo uploaded.", error: false });
     } catch (e) {
-      setMessage(safeError(e));
+      setMessage({ text: safeError(e), error: true });
+    } finally {
+      setBusy(false);
     }
   }
   return (
@@ -135,7 +153,11 @@ function CompanyRow({
         ) : (
           <strong>{company.name}</strong>
         )}
-        {message && <small className="field-error">{message}</small>}
+        {message && (
+          <small className={message.error ? "field-error" : undefined}>
+            {message.text}
+          </small>
+        )}
       </td>
       <td>
         <span className={`badge ${company.archivedAt ? "badge--muted" : ""}`}>
@@ -146,11 +168,15 @@ function CompanyRow({
       <td>
         <div className="row-actions">
           {renaming ? (
-            <Button tone="quiet" onClick={() => void save()}>
+            <Button tone="quiet" disabled={busy} onClick={() => void save()}>
               Save
             </Button>
           ) : (
-            <Button tone="quiet" onClick={() => setRenaming(true)}>
+            <Button
+              tone="quiet"
+              disabled={busy}
+              onClick={() => setRenaming(true)}
+            >
               Rename
             </Button>
           )}
@@ -160,11 +186,16 @@ function CompanyRow({
               className="visually-hidden"
               type="file"
               accept="image/*"
+              disabled={busy}
               onChange={(e) => void upload(e.target.files?.[0])}
             />
           </label>
           {!company.archivedAt && (
-            <Button tone="danger" onClick={() => void archive()}>
+            <Button
+              tone="danger"
+              disabled={busy}
+              onClick={() => void archive()}
+            >
               Archive
             </Button>
           )}

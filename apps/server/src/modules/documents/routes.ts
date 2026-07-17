@@ -52,6 +52,12 @@ export function registerDocumentRoutes(
       };
       if (params.kind !== "source" && params.kind !== "pdf")
         throw new AppError("not_found", 404);
+      const query = request.query as { disposition?: string };
+      if (
+        query.disposition !== undefined &&
+        (params.kind !== "pdf" || query.disposition !== "inline")
+      )
+        throw new AppError("validation_failed", 400);
       const version = Number(params.version);
       if (!Number.isSafeInteger(version) || version < 1)
         throw new AppError("not_found", 404);
@@ -61,12 +67,15 @@ export function registerDocumentRoutes(
         version,
         params.kind,
       );
+      const extension = params.kind === "pdf" ? "pdf" : "tex";
+      const disposition =
+        query.disposition === "inline" ? "inline" : "attachment";
       return reply
         .header("Content-Type", artifact.contentType)
         .header("Cache-Control", "private, no-store")
         .header(
           "Content-Disposition",
-          `attachment; filename="document-${version}.${params.kind === "pdf" ? "pdf" : "tex"}"`,
+          `${disposition}; filename="document-${version}.${extension}"`,
         )
         .send(Buffer.from(artifact.bytes));
     },

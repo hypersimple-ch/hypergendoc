@@ -1,5 +1,5 @@
 {
-  "name": "@hypergendoc/release-tests",
+  "name": "@hypergendoc/regression-tests",
   "private": true,
   "type": "module"
 }

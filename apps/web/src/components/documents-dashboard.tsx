@@ -20,6 +20,32 @@ export function DocumentsDashboard() {
       ) ?? [],
     [data.value, company, query],
   );
+  const visibleIds = useMemo(
+    () => visible.map((d) => d.id).join(","),
+    [visible],
+  );
+  const currentVersions = useLoaded(
+    () =>
+      Promise.all(
+        visible.map(async (document) => {
+          const detail = await dashboardApi.document(document.id);
+          return {
+            document,
+            version: detail.versions.find(
+              (version) => version.id === document.currentVersionId,
+            ),
+          };
+        }),
+      ),
+    [visibleIds],
+  );
+  const filtered = useMemo(
+    () =>
+      currentVersions.value?.filter(
+        ({ version }) => !status || version?.status === status,
+      ) ?? [],
+    [currentVersions.value, status],
+  );
   return (
     <>
       <section className="page-heading">
@@ -71,34 +97,35 @@ export function DocumentsDashboard() {
       <section className="panel dashboard-panel">
         <LoadState {...data} />
         {data.value &&
-          (visible.length ? (
-            <Table
-              caption="Documents"
-              columns={[
-                "Document",
-                "Company",
-                "Current version",
-                "Updated",
-                "Open",
-              ]}
-            >
-              {visible.map((d) => (
-                <DocumentRow
-                  key={d.id}
-                  document={d}
-                  status={status}
-                  onOpen={() => setSelected(d)}
-                />
-              ))}
-            </Table>
+          (visible.length === 0 ? (
+            <NoMatchingDocuments />
           ) : (
-            <Empty>
-              <strong>No matching documents</strong>
-              <p>
-                Try another filter, or wait for an authorized agent to create
-                one.
-              </p>
-            </Empty>
+            <>
+              <LoadState {...currentVersions} />
+              {currentVersions.value &&
+                (filtered.length ? (
+                  <Table
+                    caption="Documents"
+                    columns={[
+                      "Document",
+                      "Company",
+                      "Current version",
+                      "Updated",
+                      "Open",
+                    ]}
+                  >
+                    {filtered.map(({ document }) => (
+                      <DocumentRow
+                        key={document.id}
+                        document={document}
+                        onOpen={() => setSelected(document)}
+                      />
+                    ))}
+                  </Table>
+                ) : (
+                  <NoMatchingDocuments />
+                ))}
+            </>
           ))}
       </section>
       {selected && (
@@ -110,23 +137,21 @@ export function DocumentsDashboard() {
     </>
   );
 }
+function NoMatchingDocuments() {
+  return (
+    <Empty>
+      <strong>No matching documents</strong>
+      <p>Try another filter, or wait for an authorized agent to create one.</p>
+    </Empty>
+  );
+}
 function DocumentRow({
   document,
-  status,
   onOpen,
 }: {
   document: Document;
-  status: string;
   onOpen: () => void;
 }) {
-  const version = useLoaded(
-    () =>
-      document.currentVersionId
-        ? dashboardApi.documentVersion(document.id, 1)
-        : Promise.resolve(undefined),
-    [document.id],
-  );
-  if (status && version.value?.status !== status) return null;
   return (
     <tr>
       <td>
@@ -209,7 +234,7 @@ function DocumentDetail({
                   <iframe
                     className="pdf-preview"
                     title={`${document.title} version ${active.version} PDF preview`}
-                    src={dashboardApi.pdfUrl(document.id, active.version)}
+                    src={`${dashboardApi.pdfUrl(document.id, active.version)}?disposition=inline`}
                     sandbox="allow-downloads"
                     onError={() => setPreviewError(true)}
                   />

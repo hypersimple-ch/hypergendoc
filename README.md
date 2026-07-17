@@ -37,20 +37,11 @@ See the authoritative [MVP architecture](docs/architecture/mvp.md), [HTTP/MCP co
 pnpm db:migrations:check
 pnpm compose:check
 pnpm test:run
-pnpm test:release-assets
+pnpm test:regression
 pnpm check
 ```
 
-`pnpm check` runs formatting verification, linting, type checks, workspace and release-asset tests, and builds. `pnpm test` runs workspace test watchers. Release suites and their opt-in variables are documented in [`tests/README.md`](tests/README.md). There is no seed-data command; shared test fixture helpers live in `packages/test-support` and integration tests require their documented opt-in environment variables.
-
-To run the full HTTP/MCP flow against the test-only Compose overlay:
-
-```sh
-docker compose -f compose.yaml -f compose.e2e.yaml up --build
-E2E_DATABASE_URL=postgresql://hypergendoc:dev-only-change-me@localhost:15432/hypergendoc pnpm e2e:flow
-```
-
-The overlay exposes dependencies on loopback and substitutes a fake renderer; it is not a deployment configuration. `pnpm e2e:renderer` expects access to the configured renderer Unix socket.
+`pnpm check` runs formatting, linting, type checks, unit/component/service/route/repository tests, focused security regressions, and builds. `pnpm test` runs workspace test watchers. Full browser and real-stack E2E suites are inactive under [`archive/e2e`](archive/e2e). There is no seed-data command; shared test fixture helpers live in `packages/test-support`.
 
 ## Contributing
 

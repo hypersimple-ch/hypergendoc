@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   Company,
   Style,
@@ -9,6 +9,14 @@ import type {
 import { dashboardApi } from "../lib/dashboard-api";
 import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
 import { Button, FormField, Input, Status, Table } from "./primitives";
+const fonts: StyleDefinition["bodyFont"][] = [
+  "Inter",
+  "IBM Plex Sans",
+  "Source Sans 3",
+  "Noto Sans",
+  "Noto Serif",
+  "Libertinus Serif",
+];
 const initial: StyleDefinition = {
   logoObjectId: null,
   bodyFont: "Inter",
@@ -51,20 +59,27 @@ export function StylesDashboard() {
   const [styles, setStyles] = useState<Style[]>();
   const [error, setError] = useState<string>();
   const [selected, setSelected] = useState<Style>();
+  const stylesRequest = useRef(0);
   useEffect(() => {
-    if (!companyId) {
-      setStyles(undefined);
-      return;
-    }
+    const currentRequest = ++stylesRequest.current;
+    setError(undefined);
+    setStyles(undefined);
+    if (!companyId) return;
     dashboardApi
       .styles(companyId)
-      .then(setStyles)
-      .catch((e) => setError(safeError(e)));
+      .then((result) => {
+        if (stylesRequest.current === currentRequest) setStyles(result);
+      })
+      .catch((e) => {
+        if (stylesRequest.current === currentRequest) setError(safeError(e));
+      });
+    return () => {
+      if (stylesRequest.current === currentRequest) stylesRequest.current++;
+    };
   }, [companyId]);
-  async function created(style: Style) {
+  function created(style: Style) {
     setSelected(style);
     setCompanyId(style.companyId);
-    setStyles(await dashboardApi.styles(style.companyId));
   }
   return (
     <>
@@ -149,10 +164,17 @@ function StyleCreate({
   const [companyId, setCompanyId] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (busy) return;
+    if (!companyId) {
+      setError("Choose a company.");
+      return;
+    }
+    setBusy(true);
+    setError(undefined);
     try {
-      if (!companyId) throw new Error("Choose a company.");
       onCreated(
         await dashboardApi.createStyle({
           companyId,
@@ -163,6 +185,8 @@ function StyleCreate({
       setName("");
     } catch (e) {
       setError(safeError(e));
+    } finally {
+      setBusy(false);
     }
   }
   return (
@@ -173,6 +197,7 @@ function StyleCreate({
           required
           maxLength={120}
           onChange={(e) => setName(e.target.value)}
+          disabled={busy}
         />
       </FormField>
       <FormField label="Company">
@@ -181,6 +206,7 @@ function StyleCreate({
           required
           value={companyId}
           onChange={(e) => setCompanyId(e.target.value)}
+          disabled={busy}
         >
           <option value="">Choose…</option>
           {companies
@@ -192,7 +218,9 @@ function StyleCreate({
             ))}
         </select>
       </FormField>
-      <Button>Create style</Button>
+      <Button type="submit" disabled={busy}>
+        {busy ? "Creating…" : "Create style"}
+      </Button>
       {error && <Status kind="error">{error}</Status>}
     </form>
   );
@@ -206,7 +234,8 @@ function StyleEditor({
 }) {
   const detail = useLoaded(() => dashboardApi.style(style.id), [style.id]);
   const [definition, setDefinition] = useState<StyleDefinition>(initial);
-  const [message, setMessage] = useState<string>();
+  const [message, setMessage] = useState<{ text: string; error: boolean }>();
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     const latest = detail.value?.versions.at(-1);
     if (latest) setDefinition(latest.definition);
@@ -215,25 +244,48 @@ function StyleEditor({
     setDefinition((d) => ({ ...d, [path]: Number(value) }));
   }
   async function save(activate: boolean) {
+    if (busy) return;
+    setBusy(true);
+    setMessage(undefined);
     try {
       await dashboardApi.createStyleVersion(style.id, definition, activate);
       detail.reload();
-      setMessage(
-        activate
+      setMessage({
+        text: activate
           ? "New version saved and activated."
           : "New inactive version saved.",
-      );
+        error: false,
+      });
     } catch (e) {
-      setMessage(safeError(e));
+      setMessage({ text: safeError(e), error: true });
+    } finally {
+      setBusy(false);
     }
   }
   async function preview() {
+    if (busy) return;
+    const previewWindow = window.open("", "_blank");
+    setBusy(true);
+    setMessage(undefined);
     try {
       const result = await dashboardApi.previewStyle(style.id, definition);
-      if (result.url) window.open(result.url, "_blank", "noopener,noreferrer");
-      else setMessage("Preview is being prepared. Try again shortly.");
+      if (result.url && previewWindow) {
+        previewWindow.opener = null;
+        previewWindow.location.href = result.url;
+      } else {
+        previewWindow?.close();
+        setMessage({
+          text: result.url
+            ? "Your browser blocked the preview window."
+            : "Preview is being prepared. Try again shortly.",
+          error: true,
+        });
+      }
     } catch (e) {
-      setMessage(safeError(e));
+      previewWindow?.close();
+      setMessage({ text: safeError(e), error: true });
+    } finally {
+      setBusy(false);
     }
   }
   return (
@@ -262,20 +314,14 @@ function StyleEditor({
                   }))
                 }
               >
-                {[
-                  "Inter",
-                  "IBM Plex Sans",
-                  "Source Sans 3",
-                  "Noto Sans",
-                  "Noto Serif",
-                  "Libertinus Serif",
-                ].map((f) => (
+                {fonts.map((f) => (
                   <option key={f}>{f}</option>
                 ))}
               </select>
             </FormField>
             <FormField label="Heading font">
-              <Input
+              <select
+                className="input"
                 value={definition.headingFont}
                 onChange={(e) =>
                   setDefinition((d) => ({
@@ -284,7 +330,11 @@ function StyleEditor({
                       .value as StyleDefinition["headingFont"],
                   }))
                 }
-              />
+              >
+                {fonts.map((f) => (
+                  <option key={f}>{f}</option>
+                ))}
+              </select>
             </FormField>
             <FormField label="Body size (pt)">
               <Input
@@ -424,19 +474,23 @@ function StyleEditor({
             </FormField>
           </div>
           <div className="row-actions">
-            <Button onClick={() => void save(true)}>
+            <Button disabled={busy} onClick={() => void save(true)}>
               Save & activate version
             </Button>
-            <Button tone="quiet" onClick={() => void save(false)}>
+            <Button
+              tone="quiet"
+              disabled={busy}
+              onClick={() => void save(false)}
+            >
               Save inactive version
             </Button>
-            <Button tone="quiet" onClick={() => void preview()}>
+            <Button tone="quiet" disabled={busy} onClick={() => void preview()}>
               Constrained PDF preview
             </Button>
           </div>
           {message && (
-            <Status kind={message.includes("saved") ? "success" : "error"}>
-              {message}
+            <Status kind={message.error ? "error" : "success"}>
+              {message.text}
             </Status>
           )}
           <h3>Version history</h3>

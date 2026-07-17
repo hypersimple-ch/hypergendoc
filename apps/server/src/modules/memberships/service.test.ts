@@ -108,6 +108,32 @@ describe("membership authorization", () => {
     expect(rows).toHaveLength(2);
   });
 
+  it("changes roles and removes members inside the actor workspace", async () => {
+    const rows: MembershipRecord[] = [
+      {
+        id: "owner-a",
+        workspaceId: "workspace-a",
+        userId: "owner",
+        role: "owner",
+      },
+      {
+        id: "member-a",
+        workspaceId: "workspace-a",
+        userId: "member",
+        role: "member",
+      },
+    ];
+    const memberships = repository(rows);
+
+    await expect(
+      changeMemberRole({ memberships }, actor, "member", "owner"),
+    ).resolves.toMatchObject({ role: "owner" });
+    await expect(
+      removeMember({ memberships }, actor, "member"),
+    ).resolves.toBeUndefined();
+    expect(rows.map((row) => row.userId)).toEqual(["owner"]);
+  });
+
   it("never removes or demotes the final owner", async () => {
     const rows: MembershipRecord[] = [
       {

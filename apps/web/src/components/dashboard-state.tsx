@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError } from "../lib/api-client";
 import { Status } from "./primitives";
 
@@ -10,16 +10,27 @@ export function useLoaded<T>(
   const [value, setValue] = useState<T>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
+  const requestId = useRef(0);
   const reload = () => {
+    const currentRequest = ++requestId.current;
     setLoading(true);
     setError(undefined);
     load()
-      .then(setValue)
-      .catch((e: unknown) => setError(safeError(e)))
-      .finally(() => setLoading(false));
+      .then((result) => {
+        if (requestId.current === currentRequest) setValue(result);
+      })
+      .catch((e: unknown) => {
+        if (requestId.current === currentRequest) setError(safeError(e));
+      })
+      .finally(() => {
+        if (requestId.current === currentRequest) setLoading(false);
+      });
   };
   useEffect(() => {
     reload();
+    return () => {
+      requestId.current++;
+    };
   }, deps); // callers pass stable primitive dependencies
   return { value, error, loading, reload };
 }

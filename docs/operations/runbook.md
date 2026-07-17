@@ -19,7 +19,7 @@ This is an MVP operational checklist, not evidence of a production deployment. P
 The specific path rules must take precedence over `/`; Dokploy/Traefik normally derives this from rule specificity. Verify the generated routes after every domain change. Do not add external ports for web, server, PostgreSQL, Garage S3/RPC/admin, renderer, or migration services. The server route itself enforces the MCP 256 KiB body limit and returns HTTP 413, so no Caddy body-limit middleware is required.
 
 4. Deploy through Dokploy. The one-shot `db-migrate`, `object-data-init`, and `renderer-socket-init` services must complete successfully, and Garage must become healthy, before the server starts.
-5. Run `SMOKE_ORIGIN=https://your-host deploy/prod/ops/smoke.sh` from a checkout that targets the deployed Compose project, then run the complete release acceptance suites. `certificate.sh` only verifies Dokploy's trusted HTTPS route; certificate issuance and renewal remain Dokploy responsibilities.
+5. Run `SMOKE_ORIGIN=https://your-host deploy/prod/ops/smoke.sh` from a checkout that targets the deployed Compose project, then run `pnpm check`. Full browser and real-stack E2E suites are archived and are not an active release gate. `certificate.sh` only verifies Dokploy's trusted HTTPS route; certificate issuance and renewal remain Dokploy responsibilities.
 
 The scripts under `deploy/prod/ops` remain useful for VPS-equivalent drills and guarded maintenance from a checkout. Dokploy is the authoritative production deploy/rollback interface. Set Docker's `COMPOSE_PROJECT_NAME` when those scripts must target a Dokploy-managed project whose project name is not the local default.
 
@@ -54,7 +54,7 @@ The future HA path is three Garage nodes across three zones with `replication_fa
 
 ## Renderer incident
 
-If rendering times out, rejects unexpectedly, leaks diagnostics, or isolation is suspect: stop accepting affected render work, preserve only non-sensitive request IDs and image versions, and do not collect bodies, tokens, or raw compiler output in general logs. Verify `network_mode: none`, read-only root, non-root user, dropped capabilities, resource limits, and the sole Unix-socket volume. Run the renderer adversarial suite in the production Compose topology. Do not weaken parser or container controls to restore service.
+If rendering times out, rejects unexpectedly, leaks diagnostics, or isolation is suspect: stop accepting affected render work, preserve only non-sensitive request IDs and image versions, and do not collect bodies, tokens, or raw compiler output in general logs. Verify `network_mode: none`, read-only root, non-root user, dropped capabilities, resource limits, and the sole Unix-socket volume. Restore the archived renderer E2E suite only under an approved incident plan. Do not weaken parser or container controls to restore service.
 
 ## Upgrades and rollback
 
@@ -68,4 +68,4 @@ docker compose --env-file deploy/prod/secrets.env -f compose.prod.yaml config --
   | node deploy/prod/ops/assert-compose.mjs
 ```
 
-Deploy immutable image tags through Dokploy, confirm the migration job, run smoke and acceptance checks, then record application, Garage, AWS CLI, and migration versions. Upgrade Garage only by changing its pinned version and digest together after reviewing release/config compatibility, running S3 integration plus backup/restore tests, and passing the HIGH/CRITICAL image scan; retain existing metadata and data volumes. Use Dokploy's rollback for application images only; migrations remain forward-only. Stop a failed rollout and use a verified backup restore only under an approved schema-recovery procedure. Do not claim rollback readiness without a tested drill.
+Deploy immutable image tags through Dokploy, confirm the migration job, run smoke and active regression checks, then record application, Garage, AWS CLI, and migration versions. Upgrade Garage only by changing its pinned version and digest together after reviewing release/config compatibility, running S3 integration plus backup/restore tests, and passing the HIGH/CRITICAL image scan; retain existing metadata and data volumes. Use Dokploy's rollback for application images only; migrations remain forward-only. Stop a failed rollout and use a verified backup restore only under an approved schema-recovery procedure. Do not claim rollback readiness without a tested drill.

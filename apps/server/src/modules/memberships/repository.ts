@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { Database } from "@hypergendoc/db";
 import { auditEvents, memberships, users, workspaces } from "@hypergendoc/db";
 import type { WorkspaceRole } from "@hypergendoc/contracts";
@@ -181,10 +181,32 @@ export function createWorkspaceReadRepository(db: Database) {
           role: memberships.role,
           email: users.email,
           name: users.name,
+          createdAt: memberships.createdAt,
         })
         .from(memberships)
         .innerJoin(users, eq(memberships.userId, users.id))
         .where(eq(memberships.workspaceId, workspaceId));
+    },
+    async listAuditEvents(workspaceId: string, limit: number, offset: number) {
+      return (
+        await db
+          .select({
+            id: auditEvents.id,
+            actorType: auditEvents.actorType,
+            action: auditEvents.action,
+            targetType: auditEvents.targetType,
+            outcome: auditEvents.outcome,
+            createdAt: auditEvents.createdAt,
+          })
+          .from(auditEvents)
+          .where(eq(auditEvents.workspaceId, workspaceId))
+          .orderBy(desc(auditEvents.createdAt), desc(auditEvents.id))
+          .limit(limit)
+          .offset(offset)
+      ).map((event) => ({
+        ...event,
+        createdAt: event.createdAt.toISOString(),
+      }));
     },
   };
 }
