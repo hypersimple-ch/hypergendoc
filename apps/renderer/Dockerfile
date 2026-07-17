@@ -26,8 +26,13 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
 FROM tectonic AS tectonic-cache
 ENV TECTONIC_CACHE_DIR=/opt/tectonic-cache
 COPY apps/renderer/tectonic-cache-warmup.tex /tmp/tectonic-cache-warmup.tex
+# article.cls loads distinct cached resources for its supported 10/11/12pt options.
 RUN mkdir -p /opt/tectonic-cache /tmp/out \
+  && sed 's/{article}/[11pt]{article}/' /tmp/tectonic-cache-warmup.tex > /tmp/tectonic-cache-warmup-11.tex \
+  && sed 's/{article}/[12pt]{article}/' /tmp/tectonic-cache-warmup.tex > /tmp/tectonic-cache-warmup-12.tex \
   && tectonic -X compile --outdir /tmp/out /tmp/tectonic-cache-warmup.tex \
+  && tectonic -X compile --outdir /tmp/out /tmp/tectonic-cache-warmup-11.tex \
+  && tectonic -X compile --outdir /tmp/out /tmp/tectonic-cache-warmup-12.tex \
   && touch /opt/tectonic-cache/.hypergendoc-bundle-ready
 
 FROM node:22.23.1-bookworm-slim

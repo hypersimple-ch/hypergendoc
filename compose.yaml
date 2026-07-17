@@ -70,6 +70,10 @@ services:
         condition: service_completed_successfully
       object-store:
         condition: service_healthy
+      renderer-socket-init:
+        condition: service_completed_successfully
+      renderer:
+        condition: service_healthy
     read_only: true
     cap_drop: [ALL]
     group_add: ["10001"]
@@ -108,27 +112,50 @@ services:
     networks: [data]
     restart: "no"
 
+  renderer-socket-init:
+    image: busybox:1.37.0-musl
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - chown 0:0 /run/hypergendoc && chmod 2770 /run/hypergendoc && chown 10001:10001 /run/hypergendoc
+    network_mode: none
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - renderer-socket:/run/hypergendoc
+    restart: "no"
+    mem_limit: 32m
+    cpus: 0.1
+
   renderer:
     build:
       context: .
-      dockerfile: Dockerfile.dev
-    command: ["pnpm", "--filter", "@hypergendoc/renderer", "dev"]
+      dockerfile: apps/renderer/Dockerfile
     environment:
-      NODE_ENV: development
+      NODE_ENV: production
       RENDERER_SOCKET: /run/hypergendoc/renderer.sock
     network_mode: none
     read_only: true
-    user: "1000:1000"
+    user: "10001:10001"
     cap_drop: [ALL]
-    group_add: ["10001"]
     security_opt: [no-new-privileges:true]
     pids_limit: 64
     mem_limit: 512m
     cpus: 1.0
     tmpfs:
-      - /tmp:rw,noexec,nosuid,size=128m,uid=1000,gid=1000
+      - /tmp:rw,noexec,nosuid,size=128m,uid=10001,gid=10001
     volumes:
       - renderer-socket:/run/hypergendoc
+    depends_on:
+      renderer-socket-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD-SHELL, "test -S /run/hypergendoc/renderer.sock"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   postgres:
     image: postgres:17.10-alpine

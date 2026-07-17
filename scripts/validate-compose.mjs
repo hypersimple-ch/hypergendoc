@@ -39,6 +39,34 @@ if (
 ) {
   failures.push("renderer must not mount a container-engine socket");
 }
+if (renderer?.build?.dockerfile !== "apps/renderer/Dockerfile") {
+  failures.push("renderer must use its Tectonic-enabled Dockerfile");
+}
+if (
+  renderer?.depends_on?.["renderer-socket-init"]?.condition !==
+  "service_completed_successfully"
+) {
+  failures.push("renderer must wait for socket initialization");
+}
+
+const socketInit = services["renderer-socket-init"];
+if (
+  !socketInit ||
+  socketInit.network_mode !== "none" ||
+  socketInit.read_only !== true ||
+  socketInit.user !== "0:0" ||
+  !socketInit.cap_add?.includes("CHOWN") ||
+  !socketInit.volumes?.some((volume) => volume.target === "/run/hypergendoc")
+) {
+  failures.push("renderer socket initialization must remain constrained");
+}
+if (
+  services.server?.depends_on?.["renderer-socket-init"]?.condition !==
+    "service_completed_successfully" ||
+  services.server?.depends_on?.renderer?.condition !== "service_healthy"
+) {
+  failures.push("server must wait for the initialized healthy renderer");
+}
 
 const proxyPorts = services.proxy?.ports ?? [];
 if (proxyPorts.length !== 1 || Number(proxyPorts[0]?.target) !== 8080) {
