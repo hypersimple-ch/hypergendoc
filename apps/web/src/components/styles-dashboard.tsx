@@ -1,58 +1,13 @@
 "use client";
+
 import { useEffect, useRef, useState } from "react";
-import type {
-  Company,
-  Style,
-  StyleDefinition,
-  StyleVersion,
-} from "@hypergendoc/contracts";
+import type { Company, Style } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
+import { initialStyleDefinition } from "./style-studio-definition";
+import { StyleStudio } from "./style-studio";
 import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
-import { Button, FormField, Input, Status, Table } from "./primitives";
-const fonts: StyleDefinition["bodyFont"][] = [
-  "Inter",
-  "IBM Plex Sans",
-  "Source Sans 3",
-  "Noto Sans",
-  "Noto Serif",
-  "Libertinus Serif",
-];
-const initial: StyleDefinition = {
-  logoObjectId: null,
-  bodyFont: "Inter",
-  headingFont: "Noto Serif",
-  bodySizePt: 10,
-  headingScale: 1.5,
-  italicStyle: "italic",
-  colors: {
-    text: "#1D2624",
-    heading: "#1D403C",
-    primary: "#1D403C",
-    accent: "#A9442A",
-    muted: "#68716B",
-  },
-  page: {
-    size: "A4",
-    marginTopMm: 20,
-    marginRightMm: 20,
-    marginBottomMm: 20,
-    marginLeftMm: 20,
-  },
-  header: {
-    enabled: false,
-    leftText: "",
-    centerText: "",
-    rightText: "",
-    showPageNumber: false,
-  },
-  footer: {
-    enabled: false,
-    leftText: "",
-    centerText: "",
-    rightText: "",
-    showPageNumber: true,
-  },
-};
+import { Button, FormField, Input, Status } from "./primitives";
+
 export function StylesDashboard() {
   const companies = useLoaded(dashboardApi.companies);
   const [companyId, setCompanyId] = useState("");
@@ -60,87 +15,114 @@ export function StylesDashboard() {
   const [error, setError] = useState<string>();
   const [selected, setSelected] = useState<Style>();
   const stylesRequest = useRef(0);
+
   useEffect(() => {
-    const currentRequest = ++stylesRequest.current;
+    const request = ++stylesRequest.current;
     setError(undefined);
     setStyles(undefined);
     if (!companyId) return;
     dashboardApi
       .styles(companyId)
       .then((result) => {
-        if (stylesRequest.current === currentRequest) setStyles(result);
+        if (stylesRequest.current === request) setStyles(result);
       })
-      .catch((e) => {
-        if (stylesRequest.current === currentRequest) setError(safeError(e));
+      .catch((reason) => {
+        if (stylesRequest.current === request) setError(safeError(reason));
       });
     return () => {
-      if (stylesRequest.current === currentRequest) stylesRequest.current++;
+      if (stylesRequest.current === request) stylesRequest.current++;
     };
   }, [companyId]);
+
   function created(style: Style) {
     setSelected(style);
     setCompanyId(style.companyId);
   }
+
   return (
-    <>
-      <section className="page-heading">
+    <main className="styles-page">
+      <section className="styles-hero">
         <div>
           <p className="eyebrow">Styles</p>
           <h1>Structured brand systems.</h1>
           <p>
-            Each save creates an immutable version. Documents remain pinned to
-            the version used for their render.
+            Build an intentional visual language. Every save remains an
+            immutable version for reliable document rendering.
           </p>
         </div>
       </section>
-      <section className="panel dashboard-panel">
+      <section className="style-create-card">
         <LoadState {...companies} />
         {companies.value && (
-          <StyleCreate
-            companies={companies.value}
-            onCreated={(style) => void created(style)}
-          />
+          <StyleCreate companies={companies.value} onCreated={created} />
         )}
       </section>
-      <section className="panel dashboard-panel">
-        <FormField label="Filter styles by company">
-          <select
-            className="input"
-            value={companyId}
-            onChange={(e) => setCompanyId(e.target.value)}
-          >
-            <option value="">Choose a company</option>
-            {companies.value
-              ?.filter((c) => !c.archivedAt)
-              .map((c) => (
-                <option value={c.id} key={c.id}>
-                  {c.name}
-                </option>
-              ))}
-          </select>
-        </FormField>
+      <section className="style-library" aria-labelledby="style-library-title">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Library</p>
+            <h2 id="style-library-title">Your style systems</h2>
+          </div>
+          <FormField label="Filter styles by company">
+            <select
+              className="input"
+              value={companyId}
+              onChange={(event) => setCompanyId(event.target.value)}
+            >
+              <option value="">Choose a company</option>
+              {companies.value
+                ?.filter((company) => !company.archivedAt)
+                .map((company) => (
+                  <option value={company.id} key={company.id}>
+                    {company.name}
+                  </option>
+                ))}
+            </select>
+          </FormField>
+        </div>
         {error && <Status kind="error">{error}</Status>}
         {styles &&
           (styles.length ? (
-            <Table
-              caption="Styles"
-              columns={["Style", "Active version", "Created", "Open"]}
-            >
-              {styles.map((s) => (
-                <tr key={s.id}>
-                  <td>
-                    <strong>{s.name}</strong>
-                  </td>
-                  <td>{s.activeVersionId ? "Active" : "Inactive"}</td>
-                  <td>{new Date(s.createdAt).toLocaleDateString()}</td>
-                  <td>
-                    <Button tone="quiet" onClick={() => setSelected(s)}>
-                      Edit versions
-                    </Button>
-                  </td>
-                </tr>
+            <div className="style-card-grid">
+              {styles.map((style) => (
+                <article className="style-card" key={style.id}>
+                  <div className="style-card__head">
+                    <span
+                      className={`badge ${style.activeVersionId ? "" : "badge--quiet"}`}
+                    >
+                      {style.activeVersionId ? "Active" : "Inactive"}
+                    </span>
+                    <time dateTime={style.createdAt}>
+                      Created {new Date(style.createdAt).toLocaleDateString()}
+                    </time>
+                  </div>
+                  <h3>{style.name}</h3>
+                  <div
+                    className="style-card__swatches"
+                    aria-label="Example color palette"
+                  >
+                    <span
+                      style={{
+                        backgroundColor: initialStyleDefinition.colors.primary,
+                      }}
+                    />
+                    <span
+                      style={{
+                        backgroundColor: initialStyleDefinition.colors.accent,
+                      }}
+                    />
+                    <span
+                      style={{
+                        backgroundColor: initialStyleDefinition.colors.muted,
+                      }}
+                    />
+                  </div>
+                  <Button tone="quiet" onClick={() => setSelected(style)}>
+                    Edit versions
+                  </Button>
+                </article>
               ))}
-            </Table>
+            </div>
           ) : (
             <Empty>
               <strong>No styles for this company</strong>
@@ -149,11 +131,12 @@ export function StylesDashboard() {
           ))}
       </section>
       {selected && (
-        <StyleEditor style={selected} onClose={() => setSelected(undefined)} />
+        <StyleStudio style={selected} onClose={() => setSelected(undefined)} />
       )}
-    </>
+    </main>
   );
 }
+
 function StyleCreate({
   companies,
   onCreated,
@@ -165,8 +148,9 @@ function StyleCreate({
   const [name, setName] = useState("");
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
     if (busy) return;
     if (!companyId) {
       setError("Choose a company.");
@@ -179,16 +163,17 @@ function StyleCreate({
         await dashboardApi.createStyle({
           companyId,
           name,
-          definition: initial,
+          definition: initialStyleDefinition,
         }),
       );
       setName("");
-    } catch (e) {
-      setError(safeError(e));
+    } catch (reason) {
+      setError(safeError(reason));
     } finally {
       setBusy(false);
     }
   }
+
   return (
     <form className="inline-form" onSubmit={(event) => void submit(event)}>
       <FormField label="New style name">
@@ -196,7 +181,7 @@ function StyleCreate({
           value={name}
           required
           maxLength={120}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(event) => setName(event.target.value)}
           disabled={busy}
         />
       </FormField>
@@ -205,15 +190,15 @@ function StyleCreate({
           className="input"
           required
           value={companyId}
-          onChange={(e) => setCompanyId(e.target.value)}
+          onChange={(event) => setCompanyId(event.target.value)}
           disabled={busy}
         >
           <option value="">Choose…</option>
           {companies
-            .filter((c) => !c.archivedAt)
-            .map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
+            .filter((company) => !company.archivedAt)
+            .map((company) => (
+              <option key={company.id} value={company.id}>
+                {company.name}
               </option>
             ))}
         </select>
@@ -223,311 +208,5 @@ function StyleCreate({
       </Button>
       {error && <Status kind="error">{error}</Status>}
     </form>
-  );
-}
-function StyleEditor({
-  style,
-  onClose,
-}: {
-  style: Style;
-  onClose: () => void;
-}) {
-  const detail = useLoaded(() => dashboardApi.style(style.id), [style.id]);
-  const [definition, setDefinition] = useState<StyleDefinition>(initial);
-  const [message, setMessage] = useState<{ text: string; error: boolean }>();
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    const latest = detail.value?.versions.at(-1);
-    if (latest) setDefinition(latest.definition);
-  }, [detail.value]);
-  function set(path: "bodySizePt" | "headingScale", value: string) {
-    setDefinition((d) => ({ ...d, [path]: Number(value) }));
-  }
-  async function save(activate: boolean) {
-    if (busy) return;
-    setBusy(true);
-    setMessage(undefined);
-    try {
-      await dashboardApi.createStyleVersion(style.id, definition, activate);
-      detail.reload();
-      setMessage({
-        text: activate
-          ? "New version saved and activated."
-          : "New inactive version saved.",
-        error: false,
-      });
-    } catch (e) {
-      setMessage({ text: safeError(e), error: true });
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function preview() {
-    if (busy) return;
-    const previewWindow = window.open("", "_blank");
-    setBusy(true);
-    setMessage(undefined);
-    try {
-      const result = await dashboardApi.previewStyle(style.id, definition);
-      if (result.url && previewWindow) {
-        previewWindow.opener = null;
-        previewWindow.location.href = result.url;
-      } else {
-        previewWindow?.close();
-        setMessage({
-          text: result.url
-            ? "Your browser blocked the preview window."
-            : "Preview is being prepared. Try again shortly.",
-          error: true,
-        });
-      }
-    } catch (e) {
-      previewWindow?.close();
-      setMessage({ text: safeError(e), error: true });
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <section className="panel dashboard-panel">
-      <div className="panel-heading">
-        <div>
-          <p className="eyebrow">Style editor</p>
-          <h2>{style.name}</h2>
-        </div>
-        <Button tone="quiet" onClick={onClose}>
-          Close
-        </Button>
-      </div>
-      <LoadState {...detail} />
-      {detail.value && (
-        <>
-          <div className="style-fields">
-            <FormField label="Body font">
-              <select
-                className="input"
-                value={definition.bodyFont}
-                onChange={(e) =>
-                  setDefinition((d) => ({
-                    ...d,
-                    bodyFont: e.target.value as StyleDefinition["bodyFont"],
-                  }))
-                }
-              >
-                {fonts.map((f) => (
-                  <option key={f}>{f}</option>
-                ))}
-              </select>
-            </FormField>
-            <FormField label="Heading font">
-              <select
-                className="input"
-                value={definition.headingFont}
-                onChange={(e) =>
-                  setDefinition((d) => ({
-                    ...d,
-                    headingFont: e.target
-                      .value as StyleDefinition["headingFont"],
-                  }))
-                }
-              >
-                {fonts.map((f) => (
-                  <option key={f}>{f}</option>
-                ))}
-              </select>
-            </FormField>
-            <FormField label="Body size (pt)">
-              <Input
-                type="number"
-                min="8"
-                max="16"
-                value={definition.bodySizePt}
-                onChange={(e) => set("bodySizePt", e.target.value)}
-              />
-            </FormField>
-            <FormField label="Heading scale">
-              <Input
-                type="number"
-                min="1.05"
-                max="2.5"
-                step=".05"
-                value={definition.headingScale}
-                onChange={(e) => set("headingScale", e.target.value)}
-              />
-            </FormField>
-            {Object.entries(definition.colors).map(([key, value]) => (
-              <FormField key={key} label={`${key} color`}>
-                <Input
-                  pattern="#[0-9A-Fa-f]{6}"
-                  value={value}
-                  onChange={(e) =>
-                    setDefinition((d) => ({
-                      ...d,
-                      colors: { ...d.colors, [key]: e.target.value },
-                    }))
-                  }
-                />
-              </FormField>
-            ))}
-            <FormField label="Logo object ID">
-              <Input
-                value={definition.logoObjectId ?? ""}
-                placeholder="Optional uploaded logo ID"
-                onChange={(e) =>
-                  setDefinition((d) => ({
-                    ...d,
-                    logoObjectId: e.target.value || null,
-                  }))
-                }
-              />
-            </FormField>
-            <FormField label="Italic style">
-              <select
-                className="input"
-                value={definition.italicStyle}
-                onChange={(e) =>
-                  setDefinition((d) => ({
-                    ...d,
-                    italicStyle: e.target.value as "italic" | "oblique",
-                  }))
-                }
-              >
-                <option>italic</option>
-                <option>oblique</option>
-              </select>
-            </FormField>
-            <FormField label="Page size">
-              <select
-                className="input"
-                value={definition.page.size}
-                onChange={(e) =>
-                  setDefinition((d) => ({
-                    ...d,
-                    page: {
-                      ...d.page,
-                      size: e.target.value as "A4" | "LETTER",
-                    },
-                  }))
-                }
-              >
-                <option>A4</option>
-                <option>LETTER</option>
-              </select>
-            </FormField>
-            {(
-              [
-                "marginTopMm",
-                "marginRightMm",
-                "marginBottomMm",
-                "marginLeftMm",
-              ] as const
-            ).map((key) => (
-              <FormField
-                key={key}
-                label={`${key.replace("margin", "Margin ").replace("Mm", " (mm)")}`}
-              >
-                <Input
-                  type="number"
-                  min="0"
-                  max="80"
-                  value={definition.page[key]}
-                  onChange={(e) =>
-                    setDefinition((d) => ({
-                      ...d,
-                      page: { ...d.page, [key]: Number(e.target.value) },
-                    }))
-                  }
-                />
-              </FormField>
-            ))}
-            <FormField label="Header text">
-              <Input
-                value={definition.header.leftText}
-                maxLength={120}
-                onChange={(e) =>
-                  setDefinition((d) => ({
-                    ...d,
-                    header: {
-                      ...d.header,
-                      leftText: e.target.value,
-                      enabled: Boolean(e.target.value),
-                    },
-                  }))
-                }
-              />
-            </FormField>
-            <FormField label="Footer text">
-              <Input
-                value={definition.footer.leftText}
-                maxLength={120}
-                onChange={(e) =>
-                  setDefinition((d) => ({
-                    ...d,
-                    footer: {
-                      ...d.footer,
-                      leftText: e.target.value,
-                      enabled: Boolean(e.target.value),
-                    },
-                  }))
-                }
-              />
-            </FormField>
-          </div>
-          <div className="row-actions">
-            <Button disabled={busy} onClick={() => void save(true)}>
-              Save & activate version
-            </Button>
-            <Button
-              tone="quiet"
-              disabled={busy}
-              onClick={() => void save(false)}
-            >
-              Save inactive version
-            </Button>
-            <Button tone="quiet" disabled={busy} onClick={() => void preview()}>
-              Constrained PDF preview
-            </Button>
-          </div>
-          {message && (
-            <Status kind={message.error ? "error" : "success"}>
-              {message.text}
-            </Status>
-          )}
-          <h3>Version history</h3>
-          <VersionList
-            versions={detail.value.versions}
-            active={style.activeVersionId}
-          />
-        </>
-      )}
-    </section>
-  );
-}
-function VersionList({
-  versions,
-  active,
-}: {
-  versions: StyleVersion[];
-  active: string | null;
-}) {
-  return (
-    <Table
-      caption="Style version history"
-      columns={["Version", "Created", "State"]}
-    >
-      {versions.map((v) => (
-        <tr key={v.id}>
-          <td>v{v.version}</td>
-          <td>{new Date(v.createdAt).toLocaleString()}</td>
-          <td>
-            {v.id === active ? (
-              <span className="badge">Active</span>
-            ) : (
-              "Immutable"
-            )}
-          </td>
-        </tr>
-      ))}
-    </Table>
   );
 }
