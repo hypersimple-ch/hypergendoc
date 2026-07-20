@@ -39,6 +39,10 @@ WHERE target_id IN (
 --> statement-breakpoint
 DELETE FROM render_records WHERE id IN (SELECT id FROM legacy_render_record_ids);
 --> statement-breakpoint
+UPDATE documents
+SET current_version_id = NULL
+WHERE id IN (SELECT id FROM legacy_document_ids);
+--> statement-breakpoint
 DELETE FROM document_versions WHERE id IN (SELECT id FROM legacy_document_version_ids);
 --> statement-breakpoint
 DELETE FROM documents WHERE id IN (SELECT id FROM legacy_document_ids);

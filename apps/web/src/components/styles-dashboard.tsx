@@ -39,6 +39,14 @@ export function StylesDashboard() {
     setCompanyId(style.companyId);
   }
 
+  if (selected) {
+    return (
+      <main className="styles-page">
+        <StyleStudio style={selected} onClose={() => setSelected(undefined)} />
+      </main>
+    );
+  }
+
   return (
     <main className="styles-page">
       <section className="styles-hero">
@@ -130,9 +138,6 @@ export function StylesDashboard() {
             </Empty>
           ))}
       </section>
-      {selected && (
-        <StyleStudio style={selected} onClose={() => setSelected(undefined)} />
-      )}
     </main>
   );
 }

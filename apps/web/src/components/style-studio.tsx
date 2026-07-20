@@ -94,7 +94,7 @@ export function StyleStudio({
           <h2 id="style-studio-title">{style.name}</h2>
         </div>
         <Button tone="quiet" onClick={onClose}>
-          Close
+          Back to style library
         </Button>
       </header>
       <LoadState {...detail} />

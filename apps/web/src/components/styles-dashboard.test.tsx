@@ -125,7 +125,7 @@ afterEach(() => {
 });
 
 describe("StylesDashboard", () => {
-  it("keeps page, create, and style-list controls accessible while ignoring stale style results and errors", async () => {
+  it("renders the browse presentation and ignores stale style results and errors", async () => {
     companies.mockResolvedValue([companyA, companyB]);
     let rejectFirst!: (reason: Error) => void;
     let resolveSecond!: (value: (typeof styleB)[]) => void;
@@ -147,6 +147,9 @@ describe("StylesDashboard", () => {
     expect(screen.getByLabelText("New style name")).toBeVisible();
     expect(screen.getByLabelText("Company")).toBeVisible();
     expect(screen.getByRole("button", { name: "Create style" })).toBeEnabled();
+    expect(
+      screen.getByRole("heading", { name: "Your style systems" }),
+    ).toBeVisible();
 
     const filter = screen.getByLabelText("Filter styles by company");
     fireEvent.change(filter, { target: { value: companyA.id } });
@@ -160,6 +163,52 @@ describe("StylesDashboard", () => {
         screen.queryByText("We could not load this page. Please try again."),
       ).not.toBeInTheDocument(),
     );
+  });
+
+  it("replaces browse with the selected style studio and restores browse when returning", async () => {
+    companies.mockResolvedValue([companyB]);
+    styles.mockResolvedValue([styleB]);
+    style.mockResolvedValue({ style: styleB, versions: [version()] });
+    render(<StylesDashboard />);
+    await waitFor(() =>
+      expect(screen.getAllByRole("option", { name: "Beta" })).toHaveLength(2),
+    );
+    fireEvent.change(screen.getByLabelText("Filter styles by company"), {
+      target: { value: companyB.id },
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit versions" }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Beta style" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Back to style library" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "Structured brand systems." }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("New style name")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Filter styles by company"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Edit versions" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Back to style library" }),
+    );
+    expect(
+      screen.getByRole("heading", { name: "Structured brand systems." }),
+    ).toBeVisible();
+    expect(screen.getByLabelText("New style name")).toBeVisible();
+    expect(screen.getByLabelText("Filter styles by company")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Edit versions" })).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Back to style library" }),
+    ).not.toBeInTheDocument();
   });
 
   it("loads the latest definition and applies selected font families to the live sample", async () => {

@@ -49,6 +49,16 @@ integration("Git document history migration", () => {
   it("discards ready document artifacts without affecting styles or logos", async () => {
     const client = await pool!.connect();
     const schema = `migration_${randomUUID().replaceAll("-", "")}`;
+    const legacyWorkspace = randomUUID();
+    const legacyCompany = randomUUID();
+    const legacyStyle = randomUUID();
+    const legacyStyleVersion = randomUUID();
+    const legacyDocument = randomUUID();
+    const legacyDocumentVersion = randomUUID();
+    const legacyRenderRecord = randomUUID();
+    const legacySource = randomUUID();
+    const legacyPdf = randomUUID();
+    const legacyUser = `legacy-migration-${randomUUID()}`;
     const workspace = randomUUID();
     const company = randomUUID();
     const style = randomUUID();
@@ -69,6 +79,87 @@ integration("Git document history migration", () => {
 
       await beginInSchema(client, schema);
       await applyMigration(client, schema, "0000_ambitious_blink.sql");
+      await client.query("COMMIT");
+
+      await beginInSchema(client, schema);
+      await client.query(
+        "INSERT INTO workspaces (id, name) VALUES ($1, 'legacy migration')",
+        [legacyWorkspace],
+      );
+      await client.query(
+        "INSERT INTO companies (id, workspace_id, name) VALUES ($1, $2, 'legacy company')",
+        [legacyCompany, legacyWorkspace],
+      );
+      await client.query(
+        "INSERT INTO \"user\" (id, name, email) VALUES ($1, 'Legacy Migration User', $2)",
+        [legacyUser, `${legacyUser}@example.test`],
+      );
+      await client.query(
+        "INSERT INTO memberships (workspace_id, user_id, role) VALUES ($1, $2, 'owner')",
+        [legacyWorkspace, legacyUser],
+      );
+      await client.query(
+        "INSERT INTO styles (id, workspace_id, company_id, name) VALUES ($1, $2, $3, 'legacy style')",
+        [legacyStyle, legacyWorkspace, legacyCompany],
+      );
+      await client.query(
+        "INSERT INTO style_versions (id, workspace_id, style_id, version, definition) VALUES ($1, $2, $3, 1, '{}'::jsonb)",
+        [legacyStyleVersion, legacyWorkspace, legacyStyle],
+      );
+      await client.query(
+        "UPDATE styles SET active_version_id = $1 WHERE id = $2",
+        [legacyStyleVersion, legacyStyle],
+      );
+      await client.query(
+        "INSERT INTO stored_objects (id, workspace_id, company_id, purpose, object_key, content_type, byte_size, sha256) VALUES ($1, $2, $3, 'source', $4, 'text/plain', 1, $5), ($6, $2, $3, 'pdf', $7, 'application/pdf', 1, $8)",
+        [
+          legacySource,
+          legacyWorkspace,
+          legacyCompany,
+          `legacy-source-${legacySource}`,
+          sourceHash,
+          legacyPdf,
+          `legacy-pdf-${legacyPdf}`,
+          outputHash,
+        ],
+      );
+      await client.query(
+        "INSERT INTO documents (id, workspace_id, company_id, title) VALUES ($1, $2, $3, 'legacy document')",
+        [legacyDocument, legacyWorkspace, legacyCompany],
+      );
+      await client.query(
+        "INSERT INTO document_versions (id, workspace_id, document_id, version, style_version_id, normalized_body, normalized_input_hash, source_hash, output_hash, source_object_id, pdf_object_id, renderer_version, status, created_by_actor_type, created_by_actor_id) VALUES ($1, $2, $3, 1, $4, 'legacy body', $5, $6, $7, $8, $9, 'renderer', 'ready', 'user', $10)",
+        [
+          legacyDocumentVersion,
+          legacyWorkspace,
+          legacyDocument,
+          legacyStyleVersion,
+          inputHash,
+          sourceHash,
+          outputHash,
+          legacySource,
+          legacyPdf,
+          legacyUser,
+        ],
+      );
+      await client.query(
+        "UPDATE documents SET current_version_id = $1 WHERE id = $2",
+        [legacyDocumentVersion, legacyDocument],
+      );
+      await client.query(
+        "INSERT INTO render_records (id, workspace_id, document_version_id, status, renderer_version, normalized_input_hash, source_hash, output_hash) VALUES ($1, $2, $3, 'ready', 'renderer', $4, $5, $6)",
+        [
+          legacyRenderRecord,
+          legacyWorkspace,
+          legacyDocumentVersion,
+          inputHash,
+          sourceHash,
+          outputHash,
+        ],
+      );
+      await client.query("COMMIT");
+
+      await beginInSchema(client, schema);
       await applyMigration(
         client,
         schema,
@@ -76,6 +167,29 @@ integration("Git document history migration", () => {
       );
       await client.query("COMMIT");
 
+      await beginInSchema(client, schema);
+      const legacyResult = await client.query<{
+        document: number;
+        documentVersion: number;
+        renderRecord: number;
+        storedObjects: number;
+      }>(
+        'SELECT (SELECT count(*)::int FROM documents WHERE id = $1) AS document, (SELECT count(*)::int FROM document_versions WHERE id = $2) AS "documentVersion", (SELECT count(*)::int FROM render_records WHERE id = $3) AS "renderRecord", (SELECT count(*)::int FROM stored_objects WHERE id = ANY($4::uuid[])) AS "storedObjects"',
+        [
+          legacyDocument,
+          legacyDocumentVersion,
+          legacyRenderRecord,
+          [legacySource, legacyPdf],
+        ],
+      );
+      expect(legacyResult.rows[0]).toEqual({
+        document: 0,
+        documentVersion: 0,
+        renderRecord: 0,
+        storedObjects: 0,
+      });
+
+      await client.query("COMMIT");
       await beginInSchema(client, schema);
       await client.query(
         "INSERT INTO workspaces (id, name) VALUES ($1, 'migration')",

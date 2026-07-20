@@ -23,34 +23,40 @@ export function TypographyControls({
   return (
     <fieldset className="control-section">
       <legend>Typography</legend>
-      <div className="font-grid">
-        {(["bodyFont", "headingFont"] as const).flatMap((kind) =>
-          fonts.map((font) => {
-            const selected = definition[kind] === font;
-            const label = `${kind === "bodyFont" ? "Body" : "Heading"} font ${font}`;
-            return (
-              <label
-                className={`font-option${selected ? " font-option--selected" : ""}`}
-                key={`${kind}-${font}`}
-                style={{ fontFamily: font }}
-              >
-                <input
-                  type="radio"
-                  name={kind}
-                  value={font}
-                  checked={selected}
-                  aria-label={label}
-                  onChange={() =>
-                    setDefinition((draft) => ({ ...draft, [kind]: font }))
-                  }
-                />
-                <span>{label}</span>
-                <b>Aa</b>
-              </label>
-            );
-          }),
-        )}
-      </div>
+      {(["bodyFont", "headingFont"] as const).map((kind) => {
+        const groupLabel = kind === "bodyFont" ? "Body font" : "Heading font";
+        return (
+          <fieldset className="font-group" key={kind}>
+            <legend>{groupLabel}</legend>
+            <div className="font-grid">
+              {fonts.map((font) => {
+                const selected = definition[kind] === font;
+                const label = `${groupLabel} ${font}`;
+                return (
+                  <label
+                    className={`font-option${selected ? " font-option--selected" : ""}`}
+                    key={font}
+                    style={{ fontFamily: font }}
+                  >
+                    <input
+                      type="radio"
+                      name={kind}
+                      value={font}
+                      checked={selected}
+                      aria-label={label}
+                      onChange={() =>
+                        setDefinition((draft) => ({ ...draft, [kind]: font }))
+                      }
+                    />
+                    <span>{font}</span>
+                    <b>Aa</b>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+        );
+      })}
       <Range
         label="Body size"
         value={definition.bodySizePt}
