@@ -2,19 +2,25 @@
 import { useState } from "react";
 import type { WorkspaceRole } from "@hypergendoc/contracts";
 import { dashboardApi, type Member } from "../lib/dashboard-api";
+import { useActiveCompany } from "./active-company";
 import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
 import { Button, FormField, Input, Status, Table } from "./primitives";
 
 type Notice = { kind: "success" | "error"; text: string };
 
 export function MembersDashboard() {
-  const context = useLoaded(dashboardApi.context);
+  const {
+    context,
+    loading: contextLoading,
+    error: contextError,
+    reload,
+  } = useActiveCompany();
   const members = useLoaded(dashboardApi.members);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<WorkspaceRole>("member");
   const [notice, setNotice] = useState<Notice>();
   const [inviting, setInviting] = useState(false);
-  const owner = context.value?.role === "owner";
+  const owner = context?.role === "owner";
 
   async function invite(event: React.FormEvent) {
     event.preventDefault();
@@ -45,8 +51,12 @@ export function MembersDashboard() {
           </p>
         </div>
       </section>
-      <LoadState {...context} />
-      {context.value && !owner && (
+      <LoadState
+        loading={contextLoading}
+        error={contextError}
+        reload={reload}
+      />
+      {context && !owner && (
         <Status kind="warning">
           You can view members, but only workspace owners can send invitations
           or change roles.
@@ -109,7 +119,7 @@ export function MembersDashboard() {
                   key={member.id}
                   member={member}
                   owner={owner}
-                  currentUserId={context.value?.userId}
+                  currentUserId={context?.userId}
                   onChange={members.reload}
                   onNotice={setNotice}
                 />

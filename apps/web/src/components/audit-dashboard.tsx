@@ -1,14 +1,16 @@
 "use client";
 import { useState } from "react";
 import { dashboardApi, type WorkspaceAuditEvent } from "../lib/dashboard-api";
+import { useActiveCompany } from "./active-company";
 import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
 import { Button, Status, Table } from "./primitives";
 
 export function AuditDashboard() {
-  const context = useLoaded(dashboardApi.context);
+  const { context, loading, error, reload } = useActiveCompany();
 
-  if (context.loading || context.error) return <LoadState {...context} />;
-  if (context.value?.role !== "owner")
+  if (loading || error)
+    return <LoadState loading={loading} error={error} reload={reload} />;
+  if (context?.role !== "owner")
     return (
       <section className="panel feature-state">
         <p className="eyebrow">Audit log</p>

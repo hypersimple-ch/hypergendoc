@@ -24,6 +24,7 @@ export type Member = {
   createdAt: string;
 };
 export type WorkspaceContext = {
+  id: string;
   name?: string;
   userId?: string;
   role: WorkspaceRole;
@@ -60,7 +61,10 @@ export const dashboardApi = {
       unknown
     >;
     const membership = (value.membership ?? value) as Record<string, unknown>;
+    if (typeof value.id !== "string")
+      throw new Error("Workspace context did not include an id.");
     return {
+      id: value.id,
       ...(typeof value.name === "string" ? { name: value.name } : {}),
       ...(typeof membership.userId === "string"
         ? { userId: membership.userId }

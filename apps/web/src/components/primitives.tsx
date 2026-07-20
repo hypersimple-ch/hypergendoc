@@ -2,13 +2,16 @@
 
 import * as SelectPrimitive from "@radix-ui/react-select";
 import {
+  cloneElement,
   forwardRef,
+  isValidElement,
   useEffect,
   useId,
   useRef,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type KeyboardEvent,
+  type ReactElement,
   type ReactNode,
 } from "react";
 
@@ -49,18 +52,48 @@ export function FormField({
   error?: string;
   children: ReactNode;
 }) {
-  const id = label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const fieldId = useId();
+  const generatedControlId = `field-${fieldId}`;
+  const hintId = `field-${fieldId}-hint`;
+  const errorId = `field-${fieldId}-error`;
+  const child = isValidElement(children)
+    ? (children as ReactElement<{
+        id?: string | undefined;
+        "aria-describedby"?: string | undefined;
+        "aria-invalid"?: boolean | "true" | "false" | undefined;
+      }>)
+    : null;
+  const controlId = child?.props.id ?? generatedControlId;
+  const describedBy = [
+    child?.props["aria-describedby"],
+    hint ? hintId : undefined,
+    error ? errorId : undefined,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const control = child
+    ? cloneElement(child, {
+        id: controlId,
+        ...(describedBy ? { "aria-describedby": describedBy } : {}),
+        ...(error
+          ? { "aria-invalid": true }
+          : child.props["aria-invalid"] !== undefined
+            ? { "aria-invalid": child.props["aria-invalid"] }
+            : {}),
+      })
+    : children;
+
   return (
-    <label className="field">
-      <span>{label}</span>
-      {children}
-      {hint ? <small id={`${id}-hint`}>{hint}</small> : null}
+    <div className="field">
+      <label htmlFor={child ? controlId : undefined}>{label}</label>
+      {control}
+      {hint ? <small id={hintId}>{hint}</small> : null}
       {error ? (
-        <small className="field-error" role="alert">
+        <small id={errorId} className="field-error" role="alert">
           {error}
         </small>
       ) : null}
-    </label>
+    </div>
   );
 }
 
@@ -72,7 +105,10 @@ export function Select({
   disabled = false,
   required = false,
   name,
+  id,
   "aria-label": ariaLabel,
+  "aria-describedby": ariaDescribedBy,
+  "aria-invalid": ariaInvalid,
 }: {
   value: string;
   onValueChange: (value: string) => void;
@@ -81,7 +117,10 @@ export function Select({
   disabled?: boolean;
   required?: boolean;
   name?: string;
+  id?: string;
   "aria-label"?: string;
+  "aria-describedby"?: string;
+  "aria-invalid"?: boolean | "true" | "false";
 }) {
   return (
     <SelectPrimitive.Root
@@ -92,8 +131,11 @@ export function Select({
       {...(name ? { name } : {})}
     >
       <SelectPrimitive.Trigger
+        id={id}
         className="select-trigger"
         aria-label={ariaLabel}
+        aria-describedby={ariaDescribedBy}
+        aria-invalid={ariaInvalid}
         aria-required={required || undefined}
       >
         <SelectPrimitive.Value placeholder={placeholder} />

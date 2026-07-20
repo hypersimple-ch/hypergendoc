@@ -11,23 +11,22 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
-  companies,
   styles,
   createStyle,
   style,
   createStyleVersion,
   previewStyle,
+  useActiveCompany,
 } = vi.hoisted(() => ({
-  companies: vi.fn(),
   styles: vi.fn(),
   createStyle: vi.fn(),
   style: vi.fn(),
   createStyleVersion: vi.fn(),
   previewStyle: vi.fn(),
+  useActiveCompany: vi.fn(),
 }));
 vi.mock("../lib/dashboard-api", () => ({
   dashboardApi: {
-    companies,
     styles,
     createStyle,
     style,
@@ -35,6 +34,7 @@ vi.mock("../lib/dashboard-api", () => ({
     previewStyle,
   },
 }));
+vi.mock("./active-company", () => ({ useActiveCompany }));
 
 import { StylesDashboard } from "./styles-dashboard";
 
@@ -113,13 +113,27 @@ async function chooseOption(selectName: string, optionName: string) {
   fireEvent.click(await screen.findByRole("option", { name: optionName }));
 }
 
+function activeCompanyState(company = companyB) {
+  return {
+    activeCompany: company,
+    companies: [company],
+    loading: false,
+    error: undefined,
+    reload: vi.fn(),
+    setActiveCompany: vi.fn(),
+    noActiveCompany: false,
+  };
+}
+
+function renderWithActiveCompany(company = companyB) {
+  useActiveCompany.mockReturnValue(activeCompanyState(company));
+  return render(<StylesDashboard />);
+}
+
 async function openEditor() {
-  companies.mockResolvedValue([companyB]);
   styles.mockResolvedValue([styleB]);
   style.mockResolvedValue({ style: styleB, versions: [version()] });
-  render(<StylesDashboard />);
-  await screen.findByRole("combobox", { name: "Filter styles by company" });
-  await chooseOption("Filter styles by company", "Beta");
+  renderWithActiveCompany();
   fireEvent.click(await screen.findByRole("button", { name: "Edit versions" }));
   await screen.findByRole("radio", { name: /Body font Inter/ });
 }
@@ -131,8 +145,82 @@ afterEach(() => {
 });
 
 describe("StylesDashboard", () => {
-  it("renders the browse presentation and ignores stale style results and errors", async () => {
-    companies.mockResolvedValue([companyA, companyB]);
+  it("automatically loads styles for the active company", async () => {
+    styles.mockResolvedValue([styleB]);
+    renderWithActiveCompany();
+
+    expect(
+      screen.getByRole("heading", { name: "Structured brand systems." }),
+    ).toBeVisible();
+    expect(screen.getByLabelText("New style name")).toBeVisible();
+    expect(screen.queryByLabelText("Company")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Filter styles by company"),
+    ).not.toBeInTheDocument();
+    await waitFor(() => expect(styles).toHaveBeenCalledWith(companyB.id));
+    expect(await screen.findByText("Beta style")).toBeVisible();
+    expect(
+      screen
+        .getByRole("heading", { name: "Create for Beta" })
+        .closest("section"),
+    ).toHaveClass("panel", "dashboard-panel");
+    expect(
+      screen
+        .getByRole("heading", { name: "Your style systems" })
+        .closest("section"),
+    ).toHaveClass("panel", "dashboard-panel");
+    expect(
+      document.querySelector(".style-create-card, .style-library"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reloads styles when the active company changes", async () => {
+    styles.mockResolvedValueOnce([]).mockResolvedValueOnce([styleB]);
+    const { rerender } = renderWithActiveCompany(companyA);
+    await waitFor(() => expect(styles).toHaveBeenCalledWith(companyA.id));
+
+    useActiveCompany.mockReturnValue(activeCompanyState(companyB));
+    rerender(<StylesDashboard />);
+
+    await waitFor(() => expect(styles).toHaveBeenLastCalledWith(companyB.id));
+    expect(await screen.findByText("Beta style")).toBeVisible();
+  });
+
+  it("creates a style for the active company", async () => {
+    styles.mockResolvedValue([]);
+    style.mockResolvedValue({ style: styleB, versions: [version()] });
+    createStyle.mockResolvedValue(styleB);
+    renderWithActiveCompany();
+    fireEvent.change(screen.getByLabelText("New style name"), {
+      target: { value: "Beta style" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create style" }));
+    await waitFor(() =>
+      expect(createStyle).toHaveBeenCalledWith(
+        expect.objectContaining({ companyId: companyB.id, name: "Beta style" }),
+      ),
+    );
+  });
+
+  it("shows company guidance without scoped API calls when no company is active", () => {
+    useActiveCompany.mockReturnValue({
+      ...activeCompanyState(),
+      activeCompany: undefined,
+      companies: [],
+      noActiveCompany: true,
+    });
+    render(<StylesDashboard />);
+
+    expect(screen.getByText("Choose a company to manage styles")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Companies" })).toHaveAttribute(
+      "href",
+      "/workspace/companies",
+    );
+    expect(styles).not.toHaveBeenCalled();
+    expect(createStyle).not.toHaveBeenCalled();
+  });
+
+  it("ignores stale style results and errors after an active-company switch", async () => {
     let rejectFirst!: (reason: Error) => void;
     let resolveSecond!: (value: (typeof styleB)[]) => void;
     styles
@@ -142,27 +230,13 @@ describe("StylesDashboard", () => {
       .mockImplementationOnce(
         () => new Promise((resolve) => (resolveSecond = resolve)),
       );
-    render(<StylesDashboard />);
+    const { rerender } = renderWithActiveCompany(companyA);
+    await waitFor(() => expect(styles).toHaveBeenCalledWith(companyA.id));
 
-    expect(
-      screen.getByRole("heading", { name: "Structured brand systems." }),
-    ).toBeVisible();
-    await screen.findByRole("combobox", { name: "Company" });
-    expect(
-      document.querySelector('select:not([aria-hidden="true"])'),
-    ).not.toBeInTheDocument();
-    expect(screen.getByLabelText("New style name")).toBeVisible();
-    expect(screen.getByLabelText("Company")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Create style" })).toBeEnabled();
-    expect(
-      screen.getByRole("heading", { name: "Your style systems" }),
-    ).toBeVisible();
-
-    await chooseOption("Filter styles by company", "Alpha");
-    await chooseOption("Filter styles by company", "Beta");
+    useActiveCompany.mockReturnValue(activeCompanyState(companyB));
+    rerender(<StylesDashboard />);
     resolveSecond([styleB]);
     expect(await screen.findByText("Beta style")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Edit versions" })).toBeEnabled();
     rejectFirst(new Error("stale failure"));
     await waitFor(() =>
       expect(
@@ -171,32 +245,10 @@ describe("StylesDashboard", () => {
     );
   });
 
-  it("creates a style from the company select", async () => {
-    companies.mockResolvedValue([companyB]);
-    styles.mockResolvedValue([styleB]);
-    style.mockResolvedValue({ style: styleB, versions: [version()] });
-    createStyle.mockResolvedValue(styleB);
-    render(<StylesDashboard />);
-    await screen.findByRole("combobox", { name: "Company" });
-    fireEvent.change(screen.getByLabelText("New style name"), {
-      target: { value: "Beta style" },
-    });
-    await chooseOption("Company", "Beta");
-    fireEvent.click(screen.getByRole("button", { name: "Create style" }));
-    await waitFor(() =>
-      expect(createStyle).toHaveBeenCalledWith(
-        expect.objectContaining({ companyId: companyB.id, name: "Beta style" }),
-      ),
-    );
-  });
-
   it("replaces browse with the selected style studio and restores browse when returning", async () => {
-    companies.mockResolvedValue([companyB]);
     styles.mockResolvedValue([styleB]);
     style.mockResolvedValue({ style: styleB, versions: [version()] });
-    render(<StylesDashboard />);
-    await screen.findByRole("combobox", { name: "Filter styles by company" });
-    await chooseOption("Filter styles by company", "Beta");
+    renderWithActiveCompany();
     fireEvent.click(
       await screen.findByRole("button", { name: "Edit versions" }),
     );
@@ -212,9 +264,6 @@ describe("StylesDashboard", () => {
     ).not.toBeInTheDocument();
     expect(screen.queryByLabelText("New style name")).not.toBeInTheDocument();
     expect(
-      screen.queryByLabelText("Filter styles by company"),
-    ).not.toBeInTheDocument();
-    expect(
       screen.queryByRole("button", { name: "Edit versions" }),
     ).not.toBeInTheDocument();
 
@@ -225,10 +274,29 @@ describe("StylesDashboard", () => {
       screen.getByRole("heading", { name: "Structured brand systems." }),
     ).toBeVisible();
     expect(screen.getByLabelText("New style name")).toBeVisible();
-    expect(
-      screen.getByRole("combobox", { name: "Filter styles by company" }),
-    ).toBeVisible();
     expect(screen.getByRole("button", { name: "Edit versions" })).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Back to style library" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("leaves an open editor when the global company changes", async () => {
+    styles.mockResolvedValue([styleB]);
+    style.mockResolvedValue({ style: styleB, versions: [version()] });
+    const view = renderWithActiveCompany();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit versions" }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Beta style" }),
+    ).toBeVisible();
+
+    useActiveCompany.mockReturnValue(activeCompanyState(companyA));
+    view.rerender(<StylesDashboard />);
+
+    expect(
+      screen.getByRole("heading", { name: "Structured brand systems." }),
+    ).toBeVisible();
     expect(
       screen.queryByRole("button", { name: "Back to style library" }),
     ).not.toBeInTheDocument();

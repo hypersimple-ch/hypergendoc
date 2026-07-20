@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Document, DocumentCommit } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
+import { useActiveCompany } from "./active-company";
 import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
 import { Button, FormField, Input, Status, Table } from "./primitives";
 
@@ -10,20 +11,33 @@ const formatLabel = (format: DocumentCommit["format"]) =>
 const shortSha = (commitSha: string) => commitSha.slice(0, 8);
 
 export function DocumentsDashboard() {
-  const data = useLoaded(dashboardApi.documents);
-  const companies = useLoaded(dashboardApi.companies);
-  const [company, setCompany] = useState("");
+  const {
+    activeCompany,
+    error: companyError,
+    loading: companyLoading,
+    noActiveCompany,
+  } = useActiveCompany();
+  const data = useLoaded(
+    () => (activeCompany ? dashboardApi.documents() : Promise.resolve([])),
+    [activeCompany?.id],
+  );
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Document>();
   const visible = useMemo(
     () =>
       data.value?.filter(
-        (d) =>
-          (!company || d.companyId === company) &&
-          (!query || d.title.toLowerCase().includes(query.toLowerCase())),
+        (document) =>
+          document.companyId === activeCompany?.id &&
+          (!query ||
+            document.title.toLowerCase().includes(query.toLowerCase())),
       ) ?? [],
-    [data.value, company, query],
+    [data.value, activeCompany?.id, query],
   );
+
+  useEffect(() => {
+    setSelected(undefined);
+  }, [activeCompany?.id]);
+
   return (
     <>
       <section className="page-heading">
@@ -36,50 +50,48 @@ export function DocumentsDashboard() {
           </p>
         </div>
       </section>
-      <section className="panel dashboard-panel filters">
-        <FormField label="Search documents">
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Title"
-          />
-        </FormField>
-        <FormField label="Company">
-          <select
-            className="input"
-            value={company}
-            onChange={(e) => setCompany(e.target.value)}
-          >
-            <option value="">All companies</option>
-            {companies.value?.map((c) => (
-              <option value={c.id} key={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </FormField>
-      </section>
+      {activeCompany && (
+        <section className="panel dashboard-panel filters">
+          <p className="subtle">Showing documents for {activeCompany.name}.</p>
+          <FormField label="Search documents">
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Title"
+            />
+          </FormField>
+        </section>
+      )}
       <section className="panel dashboard-panel">
-        <LoadState {...data} />
-        {data.value &&
-          (visible.length ? (
-            <Table
-              caption="Documents"
-              columns={["Document", "Company", "Updated", "Open"]}
-            >
-              {visible.map((document) => (
-                <DocumentRow
-                  key={document.id}
-                  document={document}
-                  onOpen={() => setSelected(document)}
-                />
+        <LoadState loading={companyLoading} error={companyError} />
+        {noActiveCompany ? (
+          <NoActiveCompany />
+        ) : activeCompany ? (
+          <>
+            <LoadState {...data} />
+            {data.value &&
+              (visible.length ? (
+                <Table
+                  caption="Documents"
+                  columns={["Document", "Updated", "Open"]}
+                >
+                  {visible.map((document) => (
+                    <DocumentRow
+                      key={document.id}
+                      document={document}
+                      onOpen={() => setSelected(document)}
+                    />
+                  ))}
+                </Table>
+              ) : query ? (
+                <NoMatchingDocuments />
+              ) : (
+                <NoDocumentsForCompany companyName={activeCompany.name} />
               ))}
-            </Table>
-          ) : (
-            <NoMatchingDocuments />
-          ))}
+          </>
+        ) : null}
       </section>
-      {selected && (
+      {selected && selected.companyId === activeCompany?.id && (
         <DocumentDetail
           document={selected}
           onClose={() => setSelected(undefined)}
@@ -88,11 +100,27 @@ export function DocumentsDashboard() {
     </>
   );
 }
+function NoActiveCompany() {
+  return (
+    <Empty>
+      <strong>Choose or create a company to view documents</strong>
+      <p>Documents are organized by the active company in this workspace.</p>
+    </Empty>
+  );
+}
+function NoDocumentsForCompany({ companyName }: { companyName: string }) {
+  return (
+    <Empty>
+      <strong>No documents for {companyName}</strong>
+      <p>Wait for an authorized agent to create one.</p>
+    </Empty>
+  );
+}
 function NoMatchingDocuments() {
   return (
     <Empty>
       <strong>No matching documents</strong>
-      <p>Try another filter, or wait for an authorized agent to create one.</p>
+      <p>Try another search, or wait for an authorized agent to create one.</p>
     </Empty>
   );
 }
@@ -108,7 +136,6 @@ function DocumentRow({
       <td>
         <strong>{document.title}</strong>
       </td>
-      <td>{document.companyId.slice(0, 8)}…</td>
       <td>{new Date(document.updatedAt).toLocaleDateString()}</td>
       <td>
         <Button tone="quiet" onClick={onOpen}>
