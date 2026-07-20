@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
-import type { StyleDefinition } from "@hypergendoc/contracts";
+import type { StyleDefinition, TextStyleRole } from "@hypergendoc/contracts";
+import { legacyTextStyles } from "./style-studio-definition";
 
 export function StyleStudioPreview({
   definition,
@@ -7,6 +8,7 @@ export function StyleStudioPreview({
   definition: StyleDefinition;
 }) {
   const { colors, page, header, footer } = definition;
+  const textStyles = definition.textStyles ?? legacyTextStyles(definition);
   const pageStyle = {
     fontFamily: definition.bodyFont,
     fontSize: `${definition.bodySizePt}pt`,
@@ -27,14 +29,16 @@ export function StyleStudioPreview({
     "--preview-accent": colors.accent,
     "--preview-muted": colors.muted,
     "--preview-italic": definition.italicStyle,
-    "--page-margin-top": `${page.marginTopMm * 1.6}px`,
-    "--page-margin-right": `${page.marginRightMm * 1.6}px`,
-    "--page-margin-bottom": `${page.marginBottomMm * 1.6}px`,
-    "--page-margin-left": `${page.marginLeftMm * 1.6}px`,
     padding: `${page.marginTopMm * 1.6}px ${page.marginRightMm * 1.6}px ${page.marginBottomMm * 1.6}px ${page.marginLeftMm * 1.6}px`,
     aspectRatio: page.size === "A4" ? "0.707" : "0.773",
   } as CSSProperties;
-
+  const textStyle = (role: TextStyleRole): CSSProperties => ({
+    fontFamily: textStyles[role].fontFamily,
+    fontSize: `${textStyles[role].fontSizePt}pt`,
+    fontWeight: textStyles[role].fontWeight,
+    lineHeight: textStyles[role].lineHeight,
+    color: textStyles[role].color,
+  });
   const running = (content: StyleDefinition["header"]) => (
     <>
       <span>{content.leftText}</span>
@@ -74,15 +78,11 @@ export function StyleStudioPreview({
               <div className="style-preview-page__logo">Logo</div>
             )}
             <p className="style-preview-page__eyebrow">Brand briefing · 2025</p>
-            <h1
-              style={{
-                fontFamily: definition.headingFont,
-                fontSize: `${definition.bodySizePt * definition.headingScale * 2}pt`,
-              }}
+            <h1 style={textStyle("h1")}>A clearer way to make progress</h1>
+            <p
+              className="style-preview-page__meta"
+              style={textStyle("caption")}
             >
-              A clearer way to make progress
-            </h1>
-            <p className="style-preview-page__meta">
               A representative document system
             </p>
             <p>
@@ -90,6 +90,13 @@ export function StyleStudioPreview({
               sample makes the selected type, scale, and colors immediately
               visible.
             </p>
+            <div className="style-preview-page__hierarchy">
+              <h2 style={textStyle("h2")}>Strategy and direction</h2>
+              <h3 style={textStyle("h3")}>A focused structure</h3>
+              <h4 style={textStyle("h4")}>Team alignment</h4>
+              <h5 style={textStyle("h5")}>Delivery detail</h5>
+              <h6 style={textStyle("h6")}>Supporting note</h6>
+            </div>
             <aside className="style-preview-page__callout">
               A focused callout gives your key idea a confident accent.
             </aside>

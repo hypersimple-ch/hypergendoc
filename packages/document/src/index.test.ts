@@ -45,6 +45,58 @@ const style = {
   },
 } as const;
 
+const textStyles = {
+  h1: {
+    fontFamily: "Inter",
+    fontSizePt: 24,
+    fontWeight: 700,
+    lineHeight: 1.1,
+    color: "#101112",
+  },
+  h2: {
+    fontFamily: "IBM Plex Sans",
+    fontSizePt: 20,
+    fontWeight: 600,
+    lineHeight: 1.2,
+    color: "#202122",
+  },
+  h3: {
+    fontFamily: "Source Sans 3",
+    fontSizePt: 18,
+    fontWeight: 500,
+    lineHeight: 1.3,
+    color: "#303132",
+  },
+  h4: {
+    fontFamily: "Noto Sans",
+    fontSizePt: 16,
+    fontWeight: 400,
+    lineHeight: 1.4,
+    color: "#404142",
+  },
+  h5: {
+    fontFamily: "Noto Serif",
+    fontSizePt: 14,
+    fontWeight: 700,
+    lineHeight: 1.5,
+    color: "#505152",
+  },
+  h6: {
+    fontFamily: "Libertinus Serif",
+    fontSizePt: 12,
+    fontWeight: 600,
+    lineHeight: 1.6,
+    color: "#606162",
+  },
+  caption: {
+    fontFamily: "Noto Serif",
+    fontSizePt: 9,
+    fontWeight: 500,
+    lineHeight: 1.7,
+    color: "#707172",
+  },
+} as const;
+
 describe("document content foundation", () => {
   it("validates exact input and hashes both format and body", () => {
     const body = "  # Exact\n";
@@ -68,6 +120,71 @@ describe("document content foundation", () => {
     expect(markdown).toBe(
       renderDocumentHtml("# Heading\n\nText", "markdown", style),
     );
+  });
+
+  it("renders explicit deterministic text styles for every semantic role", () => {
+    const styled = { ...style, textStyles };
+    const output = renderDocumentHtml(
+      "<table><caption>Quarterly results</caption><tr><td>Value</td></tr></table>",
+      "html",
+      styled,
+    );
+
+    expect(output).toContain(
+      "h1 { color: #101112; font-family: Arial, sans-serif; font-size: 24pt; font-weight: 700; line-height: 1.1; }",
+    );
+    expect(output).toContain(
+      "h2 { color: #202122; font-family: Arial, sans-serif; font-size: 20pt; font-weight: 600; line-height: 1.2; }",
+    );
+    expect(output).toContain(
+      "h3 { color: #303132; font-family: Arial, sans-serif; font-size: 18pt; font-weight: 500; line-height: 1.3; }",
+    );
+    expect(output).toContain(
+      "h4 { color: #404142; font-family: Arial, sans-serif; font-size: 16pt; font-weight: 400; line-height: 1.4; }",
+    );
+    expect(output).toContain(
+      "h5 { color: #505152; font-family: Georgia, serif; font-size: 14pt; font-weight: 700; line-height: 1.5; }",
+    );
+    expect(output).toContain(
+      "h6 { color: #606162; font-family: Georgia, serif; font-size: 12pt; font-weight: 600; line-height: 1.6; }",
+    );
+    expect(output).toContain(
+      "caption { color: #707172; font-family: Georgia, serif; font-size: 9pt; font-weight: 500; line-height: 1.7; }",
+    );
+    expect(output).toBe(
+      renderDocumentHtml(
+        "<table><caption>Quarterly results</caption><tr><td>Value</td></tr></table>",
+        "html",
+        styled,
+      ),
+    );
+  });
+
+  it("keeps captions while applying existing sanitizer safeguards", () => {
+    const output = renderDocumentHtml(
+      '<table><caption onclick="x()"><img src="x">Quarterly <strong>results</strong></caption><tr><td>Value</td></tr></table>',
+      "html",
+      style,
+    );
+    expect(output).toContain(
+      "<caption>Quarterly <strong>results</strong></caption>",
+    );
+    expect(output).not.toMatch(/onclick|<img/i);
+    expect(() =>
+      renderDocumentHtml(
+        "<table><caption><script>alert(1)</script></caption></table>",
+        "html",
+        style,
+      ),
+    ).toThrow(DocumentInputError);
+  });
+
+  it("preserves the exact legacy heading fallback without text styles", () => {
+    const output = renderDocumentHtml("# Heading", "markdown", style);
+    expect(output).toContain(
+      "h1, h2, h3, h4, h5, h6 { color: #17201c; font-family: Georgia, serif; line-height: 1.2; }\nh1 { font-size: 14.00pt; } h2 { font-size: 11.90pt; }",
+    );
+    expect(output).not.toContain("caption {");
   });
 
   it("strips active content, embeds, images, event handlers, and unsafe URLs", () => {

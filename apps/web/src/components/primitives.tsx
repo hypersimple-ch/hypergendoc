@@ -1,5 +1,6 @@
 "use client";
 
+import * as SelectPrimitive from "@radix-ui/react-select";
 import {
   forwardRef,
   useEffect,
@@ -60,6 +61,74 @@ export function FormField({
         </small>
       ) : null}
     </label>
+  );
+}
+
+export function Select({
+  value,
+  onValueChange,
+  options,
+  placeholder,
+  disabled = false,
+  required = false,
+  name,
+  "aria-label": ariaLabel,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+  options: { value: string; label: string; disabled?: boolean }[];
+  placeholder: string;
+  disabled?: boolean;
+  required?: boolean;
+  name?: string;
+  "aria-label"?: string;
+}) {
+  return (
+    <SelectPrimitive.Root
+      value={value}
+      onValueChange={onValueChange}
+      disabled={disabled}
+      required={required}
+      {...(name ? { name } : {})}
+    >
+      <SelectPrimitive.Trigger
+        className="select-trigger"
+        aria-label={ariaLabel}
+        aria-required={required || undefined}
+      >
+        <SelectPrimitive.Value placeholder={placeholder} />
+        <SelectPrimitive.Icon
+          className="select-trigger__icon"
+          aria-hidden="true"
+        >
+          ▾
+        </SelectPrimitive.Icon>
+      </SelectPrimitive.Trigger>
+      <SelectPrimitive.Portal>
+        <SelectPrimitive.Content className="select-content" position="popper">
+          <SelectPrimitive.Viewport>
+            {options.map((option) => (
+              <SelectPrimitive.Item
+                key={option.value}
+                value={option.value}
+                {...(option.disabled ? { disabled: true } : {})}
+                className="select-item"
+              >
+                <SelectPrimitive.ItemText>
+                  {option.label}
+                </SelectPrimitive.ItemText>
+                <SelectPrimitive.ItemIndicator
+                  className="select-item__indicator"
+                  aria-hidden="true"
+                >
+                  ✓
+                </SelectPrimitive.ItemIndicator>
+              </SelectPrimitive.Item>
+            ))}
+          </SelectPrimitive.Viewport>
+        </SelectPrimitive.Content>
+      </SelectPrimitive.Portal>
+    </SelectPrimitive.Root>
   );
 }
 

@@ -38,6 +38,11 @@ vi.mock("../lib/dashboard-api", () => ({
 
 import { StylesDashboard } from "./styles-dashboard";
 
+Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+  value: () => undefined,
+  configurable: true,
+});
+
 const companyA = {
   id: "company-a",
   name: "Alpha",
@@ -103,17 +108,18 @@ const version = (overrides: Partial<typeof definition> = {}) => ({
   definition: { ...definition, ...overrides },
 });
 
+async function chooseOption(selectName: string, optionName: string) {
+  fireEvent.click(screen.getByRole("combobox", { name: selectName }));
+  fireEvent.click(await screen.findByRole("option", { name: optionName }));
+}
+
 async function openEditor() {
   companies.mockResolvedValue([companyB]);
   styles.mockResolvedValue([styleB]);
   style.mockResolvedValue({ style: styleB, versions: [version()] });
   render(<StylesDashboard />);
-  await waitFor(() =>
-    expect(screen.getAllByRole("option", { name: "Beta" })).toHaveLength(2),
-  );
-  fireEvent.change(screen.getByLabelText("Filter styles by company"), {
-    target: { value: companyB.id },
-  });
+  await screen.findByRole("combobox", { name: "Filter styles by company" });
+  await chooseOption("Filter styles by company", "Beta");
   fireEvent.click(await screen.findByRole("button", { name: "Edit versions" }));
   await screen.findByRole("radio", { name: /Body font Inter/ });
 }
@@ -141,9 +147,10 @@ describe("StylesDashboard", () => {
     expect(
       screen.getByRole("heading", { name: "Structured brand systems." }),
     ).toBeVisible();
-    await waitFor(() =>
-      expect(screen.getAllByRole("option", { name: "Alpha" })).toHaveLength(2),
-    );
+    await screen.findByRole("combobox", { name: "Company" });
+    expect(
+      document.querySelector('select:not([aria-hidden="true"])'),
+    ).not.toBeInTheDocument();
     expect(screen.getByLabelText("New style name")).toBeVisible();
     expect(screen.getByLabelText("Company")).toBeVisible();
     expect(screen.getByRole("button", { name: "Create style" })).toBeEnabled();
@@ -151,9 +158,8 @@ describe("StylesDashboard", () => {
       screen.getByRole("heading", { name: "Your style systems" }),
     ).toBeVisible();
 
-    const filter = screen.getByLabelText("Filter styles by company");
-    fireEvent.change(filter, { target: { value: companyA.id } });
-    fireEvent.change(filter, { target: { value: companyB.id } });
+    await chooseOption("Filter styles by company", "Alpha");
+    await chooseOption("Filter styles by company", "Beta");
     resolveSecond([styleB]);
     expect(await screen.findByText("Beta style")).toBeVisible();
     expect(screen.getByRole("button", { name: "Edit versions" })).toBeEnabled();
@@ -165,17 +171,32 @@ describe("StylesDashboard", () => {
     );
   });
 
+  it("creates a style from the company select", async () => {
+    companies.mockResolvedValue([companyB]);
+    styles.mockResolvedValue([styleB]);
+    style.mockResolvedValue({ style: styleB, versions: [version()] });
+    createStyle.mockResolvedValue(styleB);
+    render(<StylesDashboard />);
+    await screen.findByRole("combobox", { name: "Company" });
+    fireEvent.change(screen.getByLabelText("New style name"), {
+      target: { value: "Beta style" },
+    });
+    await chooseOption("Company", "Beta");
+    fireEvent.click(screen.getByRole("button", { name: "Create style" }));
+    await waitFor(() =>
+      expect(createStyle).toHaveBeenCalledWith(
+        expect.objectContaining({ companyId: companyB.id, name: "Beta style" }),
+      ),
+    );
+  });
+
   it("replaces browse with the selected style studio and restores browse when returning", async () => {
     companies.mockResolvedValue([companyB]);
     styles.mockResolvedValue([styleB]);
     style.mockResolvedValue({ style: styleB, versions: [version()] });
     render(<StylesDashboard />);
-    await waitFor(() =>
-      expect(screen.getAllByRole("option", { name: "Beta" })).toHaveLength(2),
-    );
-    fireEvent.change(screen.getByLabelText("Filter styles by company"), {
-      target: { value: companyB.id },
-    });
+    await screen.findByRole("combobox", { name: "Filter styles by company" });
+    await chooseOption("Filter styles by company", "Beta");
     fireEvent.click(
       await screen.findByRole("button", { name: "Edit versions" }),
     );
@@ -204,37 +225,31 @@ describe("StylesDashboard", () => {
       screen.getByRole("heading", { name: "Structured brand systems." }),
     ).toBeVisible();
     expect(screen.getByLabelText("New style name")).toBeVisible();
-    expect(screen.getByLabelText("Filter styles by company")).toBeVisible();
+    expect(
+      screen.getByRole("combobox", { name: "Filter styles by company" }),
+    ).toBeVisible();
     expect(screen.getByRole("button", { name: "Edit versions" })).toBeVisible();
     expect(
       screen.queryByRole("button", { name: "Back to style library" }),
     ).not.toBeInTheDocument();
   });
 
-  it("loads the latest definition and applies selected font families to the live sample", async () => {
+  it("edits one text role at a time and applies its styles to the live sample", async () => {
     await openEditor();
 
-    const bodyFont = screen.getByRole("radio", { name: /Body font Inter/ });
-    const headingFont = screen.getByRole("radio", {
-      name: /Heading font Noto Serif/,
+    fireEvent.click(
+      screen.getByRole("radio", { name: /Body font IBM Plex Sans/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "H2" }));
+    await chooseOption("Font family", "Libertinus Serif");
+    await chooseOption("Weight", "500");
+    fireEvent.change(screen.getByRole("slider", { name: "Font size" }), {
+      target: { value: "30" },
     });
-    expect(bodyFont).toHaveAttribute("type", "radio");
-    expect(headingFont).toHaveAttribute("type", "radio");
-    expect(bodyFont).toBeChecked();
-    expect(headingFont).toBeChecked();
-
-    fireEvent.click(
-      screen.getByRole("radio", { name: /Body font IBM Plex Sans/ }),
+    expect(screen.getByRole("button", { name: "H2" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
     );
-    fireEvent.click(
-      screen.getByRole("radio", { name: /Heading font Libertinus Serif/ }),
-    );
-    expect(
-      screen.getByRole("radio", { name: /Body font IBM Plex Sans/ }),
-    ).toBeChecked();
-    expect(
-      screen.getByRole("radio", { name: /Heading font Libertinus Serif/ }),
-    ).toBeChecked();
     expect(
       screen
         .getByText(
@@ -242,11 +257,45 @@ describe("StylesDashboard", () => {
         )
         .closest("article"),
     ).toHaveStyle({ fontFamily: "IBM Plex Sans" });
-    expect(
-      screen.getByRole("heading", { name: "A clearer way to make progress" }),
-    ).toHaveStyle({
+    const h2 = screen.getByRole("heading", { name: "Strategy and direction" });
+    expect(h2).toHaveStyle({
       fontFamily: "Libertinus Serif",
+      fontSize: "30pt",
+      fontWeight: "500",
     });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Heading color" }));
+    fireEvent.change(screen.getByLabelText("Heading color hex"), {
+      target: { value: "334455" },
+    });
+    expect(h2).toHaveStyle({ color: "#334455" });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save & activate version" }),
+    );
+    await waitFor(() => expect(createStyleVersion).toHaveBeenCalled());
+    const saved = createStyleVersion.mock.calls.at(-1) as unknown as [
+      string,
+      {
+        textStyles?: {
+          h2: {
+            fontFamily: string;
+            fontSizePt: number;
+            fontWeight: number;
+            color: string;
+          };
+        };
+      },
+      boolean,
+    ];
+    expect(saved[0]).toBe(styleB.id);
+    expect(saved[1].textStyles?.h2).toMatchObject({
+      fontFamily: "Libertinus Serif",
+      fontSizePt: 30,
+      fontWeight: 500,
+      color: "#334455",
+    });
+    expect(saved[2]).toBe(true);
   });
 
   it("integrates the hex picker without a native color input and closes its disclosure", async () => {
@@ -265,7 +314,25 @@ describe("StylesDashboard", () => {
       .closest("article");
     expect(previewPage).toHaveStyle("--primary-color: #A9442A");
 
-    fireEvent.keyDown(hex, { key: "Escape" });
+    fireEvent.pointerDown(document.body);
+    await waitFor(() =>
+      expect(
+        screen.queryByLabelText("Primary color hex"),
+      ).not.toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Primary color" }));
+    fireEvent.keyDown(screen.getByLabelText("Primary color hex"), {
+      key: "Escape",
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryByLabelText("Primary color hex"),
+      ).not.toBeInTheDocument(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Primary color" }));
+    screen.getByRole("button", { name: "Back to style library" }).focus();
     await waitFor(() =>
       expect(
         screen.queryByLabelText("Primary color hex"),
@@ -276,20 +343,22 @@ describe("StylesDashboard", () => {
   it("updates representative page, typography, header, and footer controls in the live sample", async () => {
     await openEditor();
 
-    const sliders = within(
-      screen.getByRole("group", { name: "Typography" }),
-    ).getAllByRole("slider");
-    expect(sliders).toHaveLength(2);
-    const bodySize = sliders[0]!;
-    const headingScale = sliders[1]!;
+    expect(screen.getByRole("heading", { name: "Typography" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Color palette" }),
+    ).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Page layout" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Brand assets" })).toBeVisible();
+    const bodySize = screen.getByRole("slider", { name: "Body size" });
+    const fontSize = screen.getByRole("slider", { name: "Font size" });
     fireEvent.change(bodySize, { target: { value: "12" } });
-    fireEvent.change(headingScale, { target: { value: "2" } });
+    fireEvent.change(fontSize, { target: { value: "24" } });
     fireEvent.click(screen.getByRole("radio", { name: "LETTER" }));
     fireEvent.change(screen.getByLabelText(/Top.*mm/), {
       target: { value: "30" },
     });
-    const header = within(screen.getByRole("group", { name: "Header" }));
-    const footer = within(screen.getByRole("group", { name: "Footer" }));
+    const header = within(screen.getByRole("region", { name: "Header" }));
+    const footer = within(screen.getByRole("region", { name: "Footer" }));
     fireEvent.click(header.getByRole("checkbox", { name: /Enable header/i }));
     fireEvent.change(header.getByLabelText(/Header .*left text/i), {
       target: { value: "CONFIDENTIAL" },
@@ -303,7 +372,7 @@ describe("StylesDashboard", () => {
     });
 
     expect(bodySize).toHaveValue("12");
-    expect(headingScale).toHaveValue("2");
+    expect(fontSize).toHaveValue("24");
     expect(screen.getByRole("radio", { name: "LETTER" })).toBeChecked();
     expect(screen.getByText("CONFIDENTIAL")).toBeVisible();
     expect(screen.getByText("Prepared for Beta")).toBeVisible();

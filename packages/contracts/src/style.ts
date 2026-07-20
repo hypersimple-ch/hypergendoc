@@ -12,6 +12,31 @@ export const FontFamilySchema = z.enum([
 ]);
 
 const LengthMmSchema = z.number().min(0).max(80);
+const TextStyleSchema = z
+  .object({
+    fontFamily: FontFamilySchema,
+    fontSizePt: z.number().min(6).max(72),
+    fontWeight: z.union([
+      z.literal(400),
+      z.literal(500),
+      z.literal(600),
+      z.literal(700),
+    ]),
+    lineHeight: z.number().min(1).max(2),
+    color: HexColorSchema,
+  })
+  .strict();
+const TextStylesSchema = z
+  .object({
+    h1: TextStyleSchema,
+    h2: TextStyleSchema,
+    h3: TextStyleSchema,
+    h4: TextStyleSchema,
+    h5: TextStyleSchema,
+    h6: TextStyleSchema,
+    caption: TextStyleSchema,
+  })
+  .strict();
 const HeaderFooterSchema = z
   .object({
     enabled: z.boolean(),
@@ -29,6 +54,7 @@ export const StyleDefinitionSchema = z
     headingFont: FontFamilySchema,
     bodySizePt: z.number().min(8).max(16),
     headingScale: z.number().min(1.05).max(2.5),
+    textStyles: TextStylesSchema.optional(),
     italicStyle: z.enum(["italic", "oblique"]),
     colors: z
       .object({
@@ -90,6 +116,8 @@ export const StyleVersionSchema = z
   })
   .strict();
 
+export type TextStyles = z.infer<typeof TextStylesSchema>;
+export type TextStyleRole = keyof TextStyles;
 export type StyleDefinition = z.infer<typeof StyleDefinitionSchema>;
 export type Style = z.infer<typeof StyleSchema>;
 export type StyleVersion = z.infer<typeof StyleVersionSchema>;

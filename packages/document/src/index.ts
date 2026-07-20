@@ -65,6 +65,7 @@ const allowedTags = [
   "code",
   "a",
   "table",
+  "caption",
   "thead",
   "tbody",
   "tr",
@@ -147,6 +148,8 @@ const font = (name: StyleDefinition["bodyFont"]) =>
     "Libertinus Serif": "Georgia, serif",
   })[name];
 
+const textStyleRoles = ["h1", "h2", "h3", "h4", "h5", "h6", "caption"] as const;
+
 const pageMarginBoxes = (
   position: "top" | "bottom",
   value: StyleDefinition["header"],
@@ -176,10 +179,17 @@ export function renderDocumentHtml(
   const fragment = sanitizeFragment(rendered);
   if (!semanticText(fragment)) fail("invalid_body");
 
-  const headingSize = (style.bodySizePt * style.headingScale).toFixed(2);
-  const subheadingSize = (style.bodySizePt * style.headingScale * 0.85).toFixed(
-    2,
-  );
+  const legacyHeadingCss = `h1, h2, h3, h4, h5, h6 { color: ${style.colors.heading}; font-family: ${font(style.headingFont)}; line-height: 1.2; }
+h1 { font-size: ${(style.bodySizePt * style.headingScale).toFixed(2)}pt; } h2 { font-size: ${(style.bodySizePt * style.headingScale * 0.85).toFixed(2)}pt; }`;
+  const textStyles = style.textStyles;
+  const textStylesCss = textStyles
+    ? textStyleRoles
+        .map((role) => {
+          const textStyle = textStyles[role];
+          return `${role} { color: ${textStyle.color}; font-family: ${font(textStyle.fontFamily)}; font-size: ${textStyle.fontSizePt}pt; font-weight: ${textStyle.fontWeight}; line-height: ${textStyle.lineHeight}; }`;
+        })
+        .join("\n")
+    : legacyHeadingCss;
   const emphasis = style.italicStyle;
   const pageSize = style.page.size === "A4" ? "A4" : "letter";
   return `<!doctype html>
@@ -195,8 +205,7 @@ ${pageMarginBoxes("bottom", style.footer, style.colors.muted)}
 * { box-sizing: border-box; }
 body { color: ${style.colors.text}; font-family: ${font(style.bodyFont)}; font-size: ${style.bodySizePt}pt; line-height: 1.5; margin: 0; }
 main { min-height: 100%; }
-h1, h2, h3, h4, h5, h6 { color: ${style.colors.heading}; font-family: ${font(style.headingFont)}; line-height: 1.2; }
-h1 { font-size: ${headingSize}pt; } h2 { font-size: ${subheadingSize}pt; }
+${textStylesCss}
 em { font-style: ${emphasis}; } a { color: ${style.colors.primary}; } blockquote { border-left: 3px solid ${style.colors.accent}; color: ${style.colors.muted}; margin-left: 0; padding-left: 1em; }
 table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid ${style.colors.muted}; padding: .35em; text-align: left; } pre { overflow-wrap: anywhere; white-space: pre-wrap; }
 </style>

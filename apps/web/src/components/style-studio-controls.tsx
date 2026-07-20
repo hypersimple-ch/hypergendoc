@@ -1,13 +1,18 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { HexColorInput, HexColorPicker } from "react-colorful";
-import type { StyleDefinition } from "@hypergendoc/contracts";
+import type {
+  StyleDefinition,
+  TextStyleRole,
+  TextStyles,
+} from "@hypergendoc/contracts";
 import {
   colorKeys,
   fonts,
+  legacyTextStyles,
   normalizeHex,
-  type ColorKey,
+  textStyleRoles,
 } from "./style-studio-definition";
-import { FormField, Input } from "./primitives";
+import { FormField, Input, Select } from "./primitives";
 
 type SetDefinition = React.Dispatch<React.SetStateAction<StyleDefinition>>;
 
@@ -20,43 +25,49 @@ export function TypographyControls({
   setDefinition: SetDefinition;
   updateNumber: (key: "bodySizePt" | "headingScale", value: string) => void;
 }) {
+  const [role, setRole] = useState<TextStyleRole>("h1");
+  const textStyles = definition.textStyles ?? legacyTextStyles(definition);
+  const style = textStyles[role];
+  const updateRole = (change: Partial<TextStyles[TextStyleRole]>) =>
+    setDefinition((draft) => {
+      const styles = draft.textStyles ?? legacyTextStyles(draft);
+      return {
+        ...draft,
+        textStyles: { ...styles, [role]: { ...styles[role], ...change } },
+      };
+    });
+
   return (
-    <fieldset className="control-section">
-      <legend>Typography</legend>
-      {(["bodyFont", "headingFont"] as const).map((kind) => {
-        const groupLabel = kind === "bodyFont" ? "Body font" : "Heading font";
-        return (
-          <fieldset className="font-group" key={kind}>
-            <legend>{groupLabel}</legend>
-            <div className="font-grid">
-              {fonts.map((font) => {
-                const selected = definition[kind] === font;
-                const label = `${groupLabel} ${font}`;
-                return (
-                  <label
-                    className={`font-option${selected ? " font-option--selected" : ""}`}
-                    key={font}
-                    style={{ fontFamily: font }}
-                  >
-                    <input
-                      type="radio"
-                      name={kind}
-                      value={font}
-                      checked={selected}
-                      aria-label={label}
-                      onChange={() =>
-                        setDefinition((draft) => ({ ...draft, [kind]: font }))
-                      }
-                    />
-                    <span>{font}</span>
-                    <b>Aa</b>
-                  </label>
-                );
-              })}
-            </div>
-          </fieldset>
-        );
-      })}
+    <section className="control-section" aria-labelledby="typography-title">
+      <h3 id="typography-title">Typography</h3>
+      <fieldset className="font-group">
+        <legend>Body font</legend>
+        <div className="font-grid">
+          {fonts.map((font) => {
+            const selected = definition.bodyFont === font;
+            return (
+              <label
+                className={`font-option${selected ? " font-option--selected" : ""}`}
+                key={font}
+                style={{ fontFamily: font }}
+              >
+                <input
+                  type="radio"
+                  name="bodyFont"
+                  value={font}
+                  checked={selected}
+                  aria-label={`Body font ${font}`}
+                  onChange={() =>
+                    setDefinition((draft) => ({ ...draft, bodyFont: font }))
+                  }
+                />
+                <span>{font}</span>
+                <b>Aa</b>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
       <Range
         label="Body size"
         value={definition.bodySizePt}
@@ -66,15 +77,77 @@ export function TypographyControls({
         unit="pt"
         onChange={(value) => updateNumber("bodySizePt", value)}
       />
-      <Range
-        label="Heading scale"
-        value={definition.headingScale}
-        min={1.05}
-        max={2.5}
-        step={0.05}
-        unit="×"
-        onChange={(value) => updateNumber("headingScale", value)}
-      />
+      <div className="role-editor" aria-labelledby="text-role-title">
+        <h4 id="text-role-title">Text roles</h4>
+        <div className="role-tabs" role="group" aria-label="Text role">
+          {textStyleRoles.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              aria-pressed={role === item.value}
+              onClick={() => setRole(item.value)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <FormField label="Font family">
+          <Select
+            value={style.fontFamily}
+            onValueChange={(fontFamily) =>
+              updateRole({
+                fontFamily: fontFamily as StyleDefinition["bodyFont"],
+              })
+            }
+            options={fonts.map((font) => ({ value: font, label: font }))}
+            placeholder="Choose a font"
+            aria-label="Font family"
+          />
+        </FormField>
+        <Range
+          label="Font size"
+          value={style.fontSizePt}
+          min={6}
+          max={72}
+          step={1}
+          unit="pt"
+          onChange={(fontSizePt) =>
+            updateRole({ fontSizePt: Number(fontSizePt) })
+          }
+        />
+        <FormField label="Weight">
+          <Select
+            value={String(style.fontWeight)}
+            onValueChange={(fontWeight) =>
+              updateRole({
+                fontWeight: Number(fontWeight) as 400 | 500 | 600 | 700,
+              })
+            }
+            options={[400, 500, 600, 700].map((weight) => ({
+              value: String(weight),
+              label: String(weight),
+            }))}
+            placeholder="Choose a weight"
+            aria-label="Weight"
+          />
+        </FormField>
+        <Range
+          label="Line height"
+          value={style.lineHeight}
+          min={1}
+          max={2}
+          step={0.05}
+          unit=""
+          onChange={(lineHeight) =>
+            updateRole({ lineHeight: Number(lineHeight) })
+          }
+        />
+        <ColorControl
+          name={`${textStyleRoles.find((item) => item.value === role)?.label} color`}
+          value={style.color}
+          onChange={(color) => updateRole({ color })}
+        />
+      </div>
       <fieldset className="segmented-control">
         <legend>Italic style</legend>
         {(["italic", "oblique"] as const).map((value) => (
@@ -91,7 +164,7 @@ export function TypographyControls({
           </label>
         ))}
       </fieldset>
-    </fieldset>
+    </section>
   );
 }
 
@@ -142,8 +215,8 @@ export function ColorControls({
   setDefinition: SetDefinition;
 }) {
   return (
-    <fieldset className="control-section">
-      <legend>Color palette</legend>
+    <section className="control-section" aria-labelledby="color-palette-title">
+      <h3 id="color-palette-title">Color palette</h3>
       <div className="color-grid">
         {colorKeys.map((key) => (
           <ColorControl
@@ -154,12 +227,25 @@ export function ColorControls({
               setDefinition((draft) => ({
                 ...draft,
                 colors: { ...draft.colors, [key]: value },
+                ...(key === "heading" && draft.textStyles
+                  ? {
+                      textStyles: {
+                        ...draft.textStyles,
+                        h1: { ...draft.textStyles.h1, color: value },
+                        h2: { ...draft.textStyles.h2, color: value },
+                        h3: { ...draft.textStyles.h3, color: value },
+                        h4: { ...draft.textStyles.h4, color: value },
+                        h5: { ...draft.textStyles.h5, color: value },
+                        h6: { ...draft.textStyles.h6, color: value },
+                      },
+                    }
+                  : {}),
               }))
             }
           />
         ))}
       </div>
-    </fieldset>
+    </section>
   );
 }
 
@@ -168,24 +254,39 @@ function ColorControl({
   value,
   onChange,
 }: {
-  name: ColorKey;
+  name: string;
   value: string;
   onChange: (value: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const id = useId();
-  const displayName = `${name.charAt(0).toUpperCase()}${name.slice(1)} color`;
+  const control = useRef<HTMLDivElement>(null);
+  const displayName = name.endsWith("color")
+    ? name
+    : `${name.charAt(0).toUpperCase()}${name.slice(1)} color`;
   const update = (next: string) => {
     const normalized = normalizeHex(next);
     if (normalized) onChange(normalized);
   };
 
+  useEffect(() => {
+    if (!open) return;
+    const closeOutside = (event: PointerEvent | FocusEvent) => {
+      if (!control.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("focusin", closeOutside);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("focusin", closeOutside);
+    };
+  }, [open]);
+
   return (
     <div
+      ref={control}
       className="color-control"
-      onKeyDown={(event) => {
-        if (event.key === "Escape") setOpen(false);
-      }}
+      onKeyDown={(event) => event.key === "Escape" && setOpen(false)}
     >
       <span>{displayName}</span>
       <button
@@ -236,8 +337,8 @@ export function PageControls({
     ["marginLeftMm", "Left"],
   ] as const;
   return (
-    <fieldset className="control-section">
-      <legend>Page layout</legend>
+    <section className="control-section" aria-labelledby="page-layout-title">
+      <h3 id="page-layout-title">Page layout</h3>
       <fieldset className="segmented-control">
         <legend>Page size</legend>
         {(["A4", "LETTER"] as const).map((size) => (
@@ -277,7 +378,7 @@ export function PageControls({
           </label>
         ))}
       </div>
-    </fieldset>
+    </section>
   );
 }
 
@@ -290,8 +391,8 @@ export function BrandControls({
 }) {
   return (
     <>
-      <fieldset className="control-section">
-        <legend>Brand/header</legend>
+      <section className="control-section" aria-labelledby="brand-assets-title">
+        <h3 id="brand-assets-title">Brand assets</h3>
         <FormField label="Logo object ID">
           <Input
             value={definition.logoObjectId ?? ""}
@@ -304,7 +405,7 @@ export function BrandControls({
             }
           />
         </FormField>
-      </fieldset>
+      </section>
       <HeaderFooterControls
         label="Header"
         value={definition.header}
@@ -324,8 +425,11 @@ export function HeaderFooterControls({
   onChange: (value: StyleDefinition["header"]) => void;
 }) {
   return (
-    <fieldset className="control-section">
-      <legend>{label}</legend>
+    <section
+      className="control-section"
+      aria-labelledby={`${label.toLowerCase()}-controls-title`}
+    >
+      <h3 id={`${label.toLowerCase()}-controls-title`}>{label}</h3>
       <label className="toggle-row">
         <input
           type="checkbox"
@@ -339,9 +443,7 @@ export function HeaderFooterControls({
       {(["leftText", "centerText", "rightText"] as const).map((key) => (
         <FormField
           key={key}
-          label={`${label} ${key
-            .replace("Text", " text")
-            .replace(/^./, (letter) => letter.toUpperCase())}`}
+          label={`${label} ${key.replace("Text", " text").replace(/^./, (letter) => letter.toUpperCase())}`}
         >
           <Input
             value={value[key]}
@@ -362,6 +464,6 @@ export function HeaderFooterControls({
         />
         Show page number
       </label>
-    </fieldset>
+    </section>
   );
 }

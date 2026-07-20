@@ -1,4 +1,8 @@
-import type { StyleDefinition } from "@hypergendoc/contracts";
+import type {
+  StyleDefinition,
+  TextStyleRole,
+  TextStyles,
+} from "@hypergendoc/contracts";
 
 export const fonts: StyleDefinition["bodyFont"][] = [
   "Inter",
@@ -18,12 +22,108 @@ export const colorKeys = [
 ] as const;
 export type ColorKey = (typeof colorKeys)[number];
 
+export const textStyleRoles: { value: TextStyleRole; label: string }[] = [
+  { value: "h1", label: "H1" },
+  { value: "h2", label: "H2" },
+  { value: "h3", label: "H3" },
+  { value: "h4", label: "H4" },
+  { value: "h5", label: "H5" },
+  { value: "h6", label: "H6" },
+  { value: "caption", label: "Caption" },
+];
+
+export const initialTextStyles: TextStyles = {
+  h1: {
+    fontFamily: "Noto Serif",
+    fontSizePt: 28,
+    fontWeight: 700,
+    lineHeight: 1.15,
+    color: "#1D403C",
+  },
+  h2: {
+    fontFamily: "Noto Serif",
+    fontSizePt: 22,
+    fontWeight: 700,
+    lineHeight: 1.2,
+    color: "#1D403C",
+  },
+  h3: {
+    fontFamily: "Noto Serif",
+    fontSizePt: 18,
+    fontWeight: 600,
+    lineHeight: 1.25,
+    color: "#1D403C",
+  },
+  h4: {
+    fontFamily: "Noto Serif",
+    fontSizePt: 15,
+    fontWeight: 600,
+    lineHeight: 1.3,
+    color: "#1D403C",
+  },
+  h5: {
+    fontFamily: "Noto Serif",
+    fontSizePt: 12,
+    fontWeight: 600,
+    lineHeight: 1.35,
+    color: "#1D403C",
+  },
+  h6: {
+    fontFamily: "Noto Serif",
+    fontSizePt: 10,
+    fontWeight: 600,
+    lineHeight: 1.4,
+    color: "#1D403C",
+  },
+  caption: {
+    fontFamily: "Inter",
+    fontSizePt: 8,
+    fontWeight: 500,
+    lineHeight: 1.3,
+    color: "#68716B",
+  },
+};
+
+export function legacyTextStyles(definition: StyleDefinition): TextStyles {
+  const heading = (
+    fontSizePt: number,
+    fontWeight: 400 | 500 | 600 | 700,
+    lineHeight: number,
+  ) => ({
+    fontFamily: definition.headingFont,
+    fontSizePt: Math.max(6, Math.min(72, fontSizePt)),
+    fontWeight,
+    lineHeight,
+    color: definition.colors.heading,
+  });
+  return {
+    h1: heading(definition.bodySizePt * definition.headingScale, 700, 1.2),
+    h2: heading(
+      definition.bodySizePt * definition.headingScale * 0.85,
+      700,
+      1.2,
+    ),
+    h3: heading(definition.bodySizePt * 1.17, 700, 1.2),
+    h4: heading(definition.bodySizePt, 700, 1.2),
+    h5: heading(definition.bodySizePt * 0.83, 700, 1.2),
+    h6: heading(definition.bodySizePt * 0.67, 700, 1.2),
+    caption: {
+      fontFamily: definition.bodyFont,
+      fontSizePt: Math.max(6, definition.bodySizePt * 0.8),
+      fontWeight: 500,
+      lineHeight: 1.3,
+      color: definition.colors.muted,
+    },
+  };
+}
+
 export const initialStyleDefinition: StyleDefinition = {
   logoObjectId: null,
   bodyFont: "Inter",
   headingFont: "Noto Serif",
   bodySizePt: 10,
   headingScale: 1.5,
+  textStyles: initialTextStyles,
   italicStyle: "italic",
   colors: {
     text: "#1D2624",

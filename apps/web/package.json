@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@hypergendoc/contracts": "workspace:*",
+    "@radix-ui/react-select": "^2.3.3",
     "better-auth": "^1.6.23",
     "next": "^16.2.10",
     "react": "^19.2.7",

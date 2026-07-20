@@ -3,7 +3,12 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { createElement as h, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { Dialog, FormField, Input } from "./primitives";
+import { Dialog, FormField, Input, Select } from "./primitives";
+
+Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+  value: () => undefined,
+  configurable: true,
+});
 
 describe("accessible primitives", () => {
   it("connects a labelled field and exposes errors", () => {
@@ -17,6 +22,37 @@ describe("accessible primitives", () => {
     expect(screen.getByRole("textbox", { name: "Email" })).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("Required");
   });
+  it("uses a controlled accessible select with keyboard opening and a selected indicator", () => {
+    function Example() {
+      const [value, setValue] = useState("");
+      return h(Select, {
+        value,
+        onValueChange: setValue,
+        placeholder: "Choose a company",
+        "aria-label": "Company",
+        required: true,
+        options: [
+          { value: "alpha", label: "Alpha" },
+          { value: "beta", label: "Beta" },
+        ],
+      });
+    }
+    render(h(Example));
+    const trigger = screen.getByRole("combobox", { name: "Company" });
+    expect(trigger).toHaveAttribute("aria-required", "true");
+    expect(trigger).toHaveTextContent("Choose a company");
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    expect(screen.getByRole("listbox")).toBeVisible();
+    fireEvent.keyDown(trigger, { key: "Escape" });
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    fireEvent.click(trigger);
+    const beta = screen.getByRole("option", { name: "Beta" });
+    fireEvent.click(beta);
+    expect(trigger).toHaveTextContent("Beta");
+    expect(beta).toHaveAttribute("data-state", "checked");
+  });
+
   it("manages unique labels, focus, Escape, and click-only backdrop closing", () => {
     const close = vi.fn();
     function Example() {

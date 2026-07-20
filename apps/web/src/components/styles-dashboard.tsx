@@ -6,7 +6,7 @@ import { dashboardApi } from "../lib/dashboard-api";
 import { initialStyleDefinition } from "./style-studio-definition";
 import { StyleStudio } from "./style-studio";
 import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
-import { Button, FormField, Input, Status } from "./primitives";
+import { Button, FormField, Input, Select, Status } from "./primitives";
 
 export function StylesDashboard() {
   const companies = useLoaded(dashboardApi.companies);
@@ -72,20 +72,20 @@ export function StylesDashboard() {
             <h2 id="style-library-title">Your style systems</h2>
           </div>
           <FormField label="Filter styles by company">
-            <select
-              className="input"
+            <Select
               value={companyId}
-              onChange={(event) => setCompanyId(event.target.value)}
-            >
-              <option value="">Choose a company</option>
-              {companies.value
-                ?.filter((company) => !company.archivedAt)
-                .map((company) => (
-                  <option value={company.id} key={company.id}>
-                    {company.name}
-                  </option>
-                ))}
-            </select>
+              onValueChange={setCompanyId}
+              placeholder="Choose a company"
+              aria-label="Filter styles by company"
+              options={
+                companies.value
+                  ?.filter((company) => !company.archivedAt)
+                  .map((company) => ({
+                    value: company.id,
+                    label: company.name,
+                  })) ?? []
+              }
+            />
           </FormField>
         </div>
         {error && <Status kind="error">{error}</Status>}
@@ -191,22 +191,18 @@ function StyleCreate({
         />
       </FormField>
       <FormField label="Company">
-        <select
-          className="input"
-          required
+        <Select
           value={companyId}
-          onChange={(event) => setCompanyId(event.target.value)}
+          onValueChange={setCompanyId}
+          placeholder="Choose…"
+          aria-label="Company"
+          name="companyId"
+          required
           disabled={busy}
-        >
-          <option value="">Choose…</option>
-          {companies
+          options={companies
             .filter((company) => !company.archivedAt)
-            .map((company) => (
-              <option key={company.id} value={company.id}>
-                {company.name}
-              </option>
-            ))}
-        </select>
+            .map((company) => ({ value: company.id, label: company.name }))}
+        />
       </FormField>
       <Button type="submit" disabled={busy}>
         {busy ? "Creating…" : "Create style"}

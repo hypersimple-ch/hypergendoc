@@ -66,6 +66,7 @@ h2 {
 }
 .button:focus-visible,
 .input:focus-visible,
+.select-trigger:focus-visible,
 a:focus-visible {
   outline: 3px solid #e49b4d;
   outline-offset: 3px;
@@ -804,8 +805,7 @@ legend {
 }
 .control-section > h2,
 .control-section > h3,
-.control-section > header,
-.control-section > legend {
+.control-section > header {
   width: 100%;
   margin: 0 0 1rem;
   padding: 0;
@@ -830,7 +830,6 @@ legend {
 }
 .style-controls
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
-.style-controls select,
 .style-controls textarea {
   width: 100%;
   min-height: 2.75rem;
@@ -869,6 +868,111 @@ legend {
 .font-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.45rem;
+}
+.select-trigger {
+  display: inline-flex;
+  width: 100%;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #aeb4ac;
+  border-radius: 2px;
+  background: #fffefa;
+  color: var(--studio-ink, #1d2624);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.select-trigger[data-placeholder] {
+  color: #626a65;
+}
+.select-trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.select-trigger__icon {
+  color: var(--studio-rust, #a9442a);
+}
+.select-content {
+  z-index: 50;
+  min-width: var(--radix-select-trigger-width);
+  max-height: min(18rem, var(--radix-select-content-available-height));
+  padding: 0.3rem;
+  border: 1px solid #aeb4ac;
+  background: #fffdf8;
+  box-shadow: 5px 5px 0 #d9cfbd;
+}
+.select-item {
+  position: relative;
+  display: flex;
+  min-height: 2.4rem;
+  align-items: center;
+  padding: 0.55rem 2rem 0.55rem 0.65rem;
+  color: var(--studio-ink, #1d2624);
+  font-size: 0.9rem;
+  outline: none;
+  cursor: pointer;
+}
+.select-item[data-highlighted] {
+  background: #edf0eb;
+}
+.select-item[data-state="checked"] {
+  background: #e4ece6;
+  font-weight: 700;
+}
+.select-item[data-disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.select-item__indicator {
+  position: absolute;
+  right: 0.65rem;
+  color: var(--studio-rust, #a9442a);
+}
+.role-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid #d7cebd;
+  background: #f8f4eb;
+}
+.role-editor h4 {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.role-tabs {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border: 1px solid #c8c0b1;
+  background: #f2ede3;
+}
+.role-tabs button {
+  min-height: 2.35rem;
+  padding: 0.35rem;
+  border: 0;
+  background: transparent;
+  color: #59635d;
+  font:
+    700 0.72rem Manrope,
+    sans-serif;
+  cursor: pointer;
+}
+.role-tabs button:hover {
+  color: var(--studio-forest);
+}
+.role-tabs button[aria-pressed="true"] {
+  background: #fffdf8;
+  color: var(--studio-forest);
+  box-shadow: 0 1px 3px #80766633;
 }
 .font-option {
   position: relative;
@@ -1238,7 +1342,10 @@ legend {
 }
 .style-preview-page h1,
 .style-preview-page h2,
-.style-preview-page h3 {
+.style-preview-page h3,
+.style-preview-page h4,
+.style-preview-page h5,
+.style-preview-page h6 {
   color: var(--heading-color, currentColor);
   font-family: var(--heading-font-family, var(--preview-heading-font));
   letter-spacing: -0.025em;
@@ -1248,6 +1355,16 @@ legend {
 }
 .style-preview-page h2 {
   font-size: 1.35em;
+}
+.style-preview-page__hierarchy {
+  margin: 1.25em 0;
+}
+.style-preview-page__hierarchy h2,
+.style-preview-page__hierarchy h3,
+.style-preview-page__hierarchy h4,
+.style-preview-page__hierarchy h5,
+.style-preview-page__hierarchy h6 {
+  margin: 0.55em 0;
 }
 .style-preview-page header,
 .style-preview-page footer {
@@ -1357,8 +1474,12 @@ legend {
   .font-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .color-grid {
+  .color-grid,
+  .role-editor {
     grid-template-columns: 1fr;
+  }
+  .role-tabs {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
   .style-preview-frame {
     margin-inline: -0.25rem;

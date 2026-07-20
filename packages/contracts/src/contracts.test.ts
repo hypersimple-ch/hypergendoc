@@ -14,6 +14,58 @@ import {
 } from "./index.js";
 
 const id = "00000000-0000-4000-8000-000000000001";
+const textStyles = {
+  h1: {
+    fontFamily: "Noto Serif",
+    fontSizePt: 28,
+    fontWeight: 700,
+    lineHeight: 1.15,
+    color: "#17201c",
+  },
+  h2: {
+    fontFamily: "Noto Serif",
+    fontSizePt: 22,
+    fontWeight: 700,
+    lineHeight: 1.2,
+    color: "#17201c",
+  },
+  h3: {
+    fontFamily: "Noto Serif",
+    fontSizePt: 18,
+    fontWeight: 600,
+    lineHeight: 1.25,
+    color: "#17201c",
+  },
+  h4: {
+    fontFamily: "Noto Serif",
+    fontSizePt: 15,
+    fontWeight: 600,
+    lineHeight: 1.3,
+    color: "#17201c",
+  },
+  h5: {
+    fontFamily: "Noto Serif",
+    fontSizePt: 12,
+    fontWeight: 600,
+    lineHeight: 1.35,
+    color: "#17201c",
+  },
+  h6: {
+    fontFamily: "Noto Serif",
+    fontSizePt: 10,
+    fontWeight: 600,
+    lineHeight: 1.4,
+    color: "#17201c",
+  },
+  caption: {
+    fontFamily: "Inter",
+    fontSizePt: 8,
+    fontWeight: 400,
+    lineHeight: 1.4,
+    color: "#767b76",
+  },
+} as const;
+
 const style = {
   logoObjectId: null,
   bodyFont: "Inter",
@@ -61,6 +113,31 @@ describe("shared contracts", () => {
       }),
     ).toMatchObject({ email: "ada@example.com" });
     expect(StyleDefinitionSchema.parse(style)).toEqual(style);
+    expect(StyleDefinitionSchema.parse({ ...style, textStyles })).toMatchObject(
+      { textStyles },
+    );
+  });
+
+  it("validates explicit text styles while retaining legacy definitions", () => {
+    expect(StyleDefinitionSchema.parse(style)).toEqual(style);
+    expect(() =>
+      StyleDefinitionSchema.parse({
+        ...style,
+        textStyles: {
+          ...textStyles,
+          h1: { ...textStyles.h1, fontSizePt: 73 },
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      StyleDefinitionSchema.parse({
+        ...style,
+        textStyles: {
+          ...textStyles,
+          caption: { ...textStyles.caption, tracking: 0.1 },
+        },
+      }),
+    ).toThrow();
   });
 
   it("accepts the reference document request", () => {
