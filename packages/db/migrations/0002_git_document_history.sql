@@ -35,13 +35,21 @@ WHERE target_id IN (
   UNION SELECT id FROM discarded_object_ids
 );
 --> statement-breakpoint
+DROP TRIGGER IF EXISTS documents_tenant_lineage ON documents;
+--> statement-breakpoint
+ALTER TABLE "documents" DROP COLUMN "current_version_id";
+--> statement-breakpoint
+DELETE FROM render_records WHERE id IN (SELECT id FROM discarded_render_record_ids);
+--> statement-breakpoint
+DELETE FROM document_versions WHERE id IN (SELECT id FROM discarded_document_version_ids);
+--> statement-breakpoint
+DELETE FROM documents WHERE id IN (SELECT id FROM discarded_document_ids);
+--> statement-breakpoint
 DELETE FROM stored_objects WHERE id IN (SELECT id FROM discarded_object_ids);
 --> statement-breakpoint
 DROP TABLE "document_versions" CASCADE;
 --> statement-breakpoint
 DROP TABLE "render_records" CASCADE;
---> statement-breakpoint
-DROP TRIGGER IF EXISTS documents_tenant_lineage ON documents;
 --> statement-breakpoint
 DROP FUNCTION IF EXISTS enforce_document_lineage();
 --> statement-breakpoint
@@ -66,8 +74,6 @@ CREATE TYPE "public"."stored_object_purpose" AS ENUM('logo');
 ALTER TABLE "stored_objects" ALTER COLUMN "purpose" SET DATA TYPE "public"."stored_object_purpose" USING "purpose"::"public"."stored_object_purpose";
 --> statement-breakpoint
 ALTER TABLE "stored_objects" ALTER COLUMN "company_id" SET NOT NULL;
---> statement-breakpoint
-ALTER TABLE "documents" DROP COLUMN "current_version_id";
 --> statement-breakpoint
 DROP TYPE "public"."render_status";
 --> statement-breakpoint

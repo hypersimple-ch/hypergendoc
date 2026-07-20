@@ -428,6 +428,7 @@ export async function createApplication(
         await documents.history({ type: "agent", ...actor }, input.documentId),
         input.cursor,
         input.limit,
+        (commit) => commit.commitSha,
       ),
     readDocumentCommit: (actor, input) =>
       documents.readCommit(

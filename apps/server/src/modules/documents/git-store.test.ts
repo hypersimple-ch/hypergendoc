@@ -104,6 +104,36 @@ describe("CompanyDocumentGitStore", () => {
     });
   });
 
+  it("reads the HEAD document commit when commit timestamps are non-monotonic", async () => {
+    const gitStore = await store();
+    await gitStore.write(writeInput({ body: "older" }));
+    const repo = gitStore.repositoryPath(ids.workspace, ids.company);
+    const path = join(repo, "documents", ids.document, "document.md");
+    const body = "latest reachable";
+
+    await writeFile(path, body);
+    await git.add({
+      fs,
+      dir: repo,
+      filepath: join("documents", ids.document, "document.md"),
+    });
+    const commitId = await git.commit({
+      fs,
+      dir: repo,
+      ref: "main",
+      message: `Document update\n\nDocument-Id: ${ids.document}\nStyle-Version-Id: ${ids.style}\nFormat: markdown\nActor-Type: user\nActor-Id: ${ids.actor}`,
+      author: { name: "test", email: "test@example.com", timestamp: 1 },
+      committer: { name: "test", email: "test@example.com", timestamp: 1 },
+    });
+
+    const [latest] = await gitStore.history(writeInput());
+    expect(latest).toMatchObject({ commitId });
+    await expect(gitStore.readCurrent(writeInput())).resolves.toMatchObject({
+      commitId,
+      body,
+    });
+  });
+
   it("renames format paths and follows history across markdown/html changes", async () => {
     const gitStore = await store();
     const markdown = await gitStore.write(writeInput({ body: "markdown" }));

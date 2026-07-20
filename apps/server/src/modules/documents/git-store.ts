@@ -208,11 +208,7 @@ export class CompanyDocumentGitStore {
           committedAt: new Date(entry.commit.committer.timestamp * 1000),
         };
       })
-      .filter((entry): entry is GitDocumentHistoryEntry => entry !== undefined)
-      .sort(
-        (left, right) =>
-          right.committedAt.getTime() - left.committedAt.getTime(),
-      );
+      .filter((entry): entry is GitDocumentHistoryEntry => entry !== undefined);
   }
 
   async revert(input: RevertDocumentGitInput): Promise<GitDocumentRevision> {
