@@ -15,6 +15,13 @@
       "when": 1784154677280,
       "tag": "0001_replace_document_pipeline",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784569647026,
+      "tag": "0002_git_document_history",
+      "breakpoints": true
     }
   ]
 }

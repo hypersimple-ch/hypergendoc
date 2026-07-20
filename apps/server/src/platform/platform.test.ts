@@ -135,6 +135,7 @@ describe("platform", () => {
       BETTER_AUTH_SECRET: "auth-secret",
       CREDENTIAL_PEPPER: "credential-pepper",
       DATABASE_URL: "postgresql://database",
+      DOCUMENT_GIT_ROOT: "/var/lib/hypergendoc/git",
       S3_REGION: "us-east-1",
       S3_BUCKET: "private",
       S3_ACCESS_KEY: "access",
@@ -150,6 +151,7 @@ describe("platform", () => {
       S3_ENDPOINT: "http://object-store:3900",
     });
     expect(environment.s3.endpoint).toBe("http://object-store:3900");
+    expect(environment.documentGitRoot).toBe("/var/lib/hypergendoc/git");
     expect(environment.smtp).toEqual({
       host: "mail.example.test",
       port: 465,
@@ -165,6 +167,12 @@ describe("platform", () => {
     expect(() =>
       loadServerEnvironment({ ...values, SMTP_PASSWORD: "" }),
     ).toThrow("Missing required environment variable: SMTP_PASSWORD");
+    expect(() =>
+      loadServerEnvironment({ ...values, DOCUMENT_GIT_ROOT: undefined }),
+    ).toThrow("Missing required environment variable: DOCUMENT_GIT_ROOT");
+    expect(() =>
+      loadServerEnvironment({ ...values, DOCUMENT_GIT_ROOT: "relative/git" }),
+    ).toThrow("DOCUMENT_GIT_ROOT must be an absolute path");
   });
 
   it("reports failed dependencies and enforces windows", async () => {

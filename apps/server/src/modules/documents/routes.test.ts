@@ -13,14 +13,24 @@ const actor: ActorContext = {
   role: "member",
   requestId: "request-1",
 };
-const artifact = vi.fn();
-const input = vi.fn();
+const sha = "a".repeat(40);
+const pdf = vi.fn();
+const readCommit = vi.fn();
+const get = vi.fn();
+const update = vi.fn();
+const revert = vi.fn();
 
 function appFor() {
   const app = Fastify();
   registerSafeErrorHandler(app);
   registerDocumentRoutes(app, {
-    service: { artifact, input } as unknown as DocumentService,
+    service: {
+      pdf,
+      readCommit,
+      get,
+      update,
+      revert,
+    } as unknown as DocumentService,
     actorFor: () => actor,
   });
   return app;
@@ -28,94 +38,117 @@ function appFor() {
 
 afterEach(() => vi.clearAllMocks());
 
-describe("document artifact routes", () => {
-  it("serves PDF previews inline without changing private cache or authorization behavior", async () => {
-    artifact.mockResolvedValue({
+describe("Git-backed document routes", () => {
+  it("streams the current PDF inline only from the current endpoint", async () => {
+    pdf.mockResolvedValue({
       bytes: new Uint8Array([1, 2, 3]),
       contentType: "application/pdf",
+      commitSha: sha,
     });
     const app = appFor();
-
     const response = await app.inject({
       method: "GET",
-      url: "/api/documents/document/versions/2/pdf?disposition=inline",
+      url: "/api/documents/document/pdf?disposition=inline",
     });
-
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-disposition"]).toBe(
-      'inline; filename="document-2.pdf"',
+      `inline; filename="document-${sha.slice(0, 12)}.pdf"`,
     );
     expect(response.headers["cache-control"]).toBe("private, no-store");
-    expect(artifact).toHaveBeenCalledWith(actor, "document", 2, "pdf");
+    expect(response.headers["x-document-commit"]).toBe(sha);
+    expect(pdf).toHaveBeenCalledWith(actor, "document");
     await app.close();
   });
 
-  it("keeps artifact downloads as attachments by default", async () => {
-    artifact.mockResolvedValue({
-      bytes: new Uint8Array([1, 2, 3]),
+  it("uses attachment disposition by default and validates overrides", async () => {
+    pdf.mockResolvedValue({
+      bytes: new Uint8Array([1]),
       contentType: "application/pdf",
+      commitSha: sha,
     });
     const app = appFor();
+    const attachment = await app.inject({
+      method: "GET",
+      url: "/api/documents/document/pdf",
+    });
+    expect(attachment.headers["content-disposition"]).toContain("attachment;");
+    const invalid = await app.inject({
+      method: "GET",
+      url: "/api/documents/document/pdf?disposition=open",
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(pdf).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
 
+  it("downloads exact historical source with a sanitized title", async () => {
+    readCommit.mockResolvedValue({
+      commit: {},
+      snapshot: { commitSha: sha, body: "# Exact\n", format: "markdown" },
+    });
+    get.mockResolvedValue({ title: "Unsafe / title" });
+    const app = appFor();
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/documents/document/commits/${sha}/source`,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toBe("# Exact\n");
+    expect(response.headers["content-disposition"]).toBe(
+      'attachment; filename="Unsafe-title.md"',
+    );
+    expect(response.headers["x-document-commit"]).toBe(sha);
+    expect(readCommit).toHaveBeenCalledWith(actor, "document", sha);
+    expect(pdf).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("rejects malformed commit identifiers before repository access", async () => {
+    const app = appFor();
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/documents/document/commits/..%2Fsecret/source",
+    });
+    expect(response.statusCode).toBe(404);
+    expect(readCommit).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("delegates current source updates and append-only reverts", async () => {
+    update.mockResolvedValue({ snapshot: { commitSha: sha } });
+    revert.mockResolvedValue({ snapshot: { commitSha: "b".repeat(40) } });
+    const app = appFor();
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/documents/document/source",
+          payload: { format: "markdown", body: "next" },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/documents/document/revert",
+          payload: { commitSha: sha },
+        })
+      ).statusCode,
+    ).toBe(200);
+    expect(update).toHaveBeenCalled();
+    expect(revert).toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("leaves removed numeric-version routes unavailable", async () => {
+    const app = appFor();
     const response = await app.inject({
       method: "GET",
       url: "/api/documents/document/versions/2/pdf",
     });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.headers["content-disposition"]).toBe(
-      'attachment; filename="document-2.pdf"',
-    );
-    expect(response.headers["cache-control"]).toBe("private, no-store");
-    await app.close();
-  });
-
-  it("returns exact immutable input as a sanitized attachment and never uses an artifact", async () => {
-    input.mockResolvedValue({
-      body: "# Exact\n",
-      format: "markdown",
-      title: "Unsafe / title",
-    });
-    const app = appFor();
-    const response = await app.inject({
-      method: "GET",
-      url: "/api/documents/document/versions/2/input",
-    });
-    expect(response.statusCode).toBe(200);
-    expect(response.body).toBe("# Exact\n");
-    expect(response.headers["content-type"]).toContain(
-      "text/plain; charset=utf-8",
-    );
-    expect(response.headers["content-disposition"]).toBe(
-      'attachment; filename="Unsafe-title.md"',
-    );
-    expect(input).toHaveBeenCalledWith(actor, "document", 2);
-    expect(artifact).not.toHaveBeenCalled();
-    await app.close();
-  });
-
-  it("keeps the removed source artifact route unavailable", async () => {
-    const app = appFor();
-    const removedKind = "source";
-    const response = await app.inject({
-      method: "GET",
-      url: `/api/documents/document/versions/2/${removedKind}`,
-    });
     expect(response.statusCode).toBe(404);
-    expect(artifact).not.toHaveBeenCalled();
-    await app.close();
-  });
-
-  it("rejects unsupported dispositions before loading an artifact", async () => {
-    const app = appFor();
-
-    const response = await app.inject({
-      method: "GET",
-      url: "/api/documents/document/versions/2/pdf?disposition=attachment",
-    });
-
-    expect(response.statusCode).toBe(400);
-    expect(artifact).not.toHaveBeenCalled();
+    expect(pdf).not.toHaveBeenCalled();
     await app.close();
   });
 });

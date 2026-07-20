@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  CommitShaSchema,
   CreateDocumentInputSchema,
-  CreateMcpCredentialInputSchema,
   CreateDocumentToolInputSchema,
-  CreateDocumentVersionToolInputSchema,
+  CreateMcpCredentialInputSchema,
   ErrorEnvelopeSchema,
   ListStylesToolInputSchema,
+  McpToolNameSchema,
   RegisterInputSchema,
+  RevertDocumentToolInputSchema,
   StyleDefinitionSchema,
+  UpdateDocumentToolInputSchema,
 } from "./index.js";
 
 const id = "00000000-0000-4000-8000-000000000001";
@@ -73,7 +76,7 @@ describe("shared contracts", () => {
     ).toMatchObject({ companyId: id, styleId: id });
   });
 
-  it("makes document format explicit in MCP create schemas", () => {
+  it("makes document format and style explicit in MCP write schemas", () => {
     expect(
       CreateDocumentToolInputSchema.parse({
         companyId: id,
@@ -84,18 +87,49 @@ describe("shared contracts", () => {
       }),
     ).toMatchObject({ format: "markdown", body: "# Exact" });
     expect(
-      CreateDocumentVersionToolInputSchema.parse({
+      UpdateDocumentToolInputSchema.parse({
         documentId: id,
+        styleVersionId: id,
         format: "html",
         body: "<p>Exact</p>",
       }),
     ).toMatchObject({ format: "html", body: "<p>Exact</p>" });
     expect(() =>
-      CreateDocumentVersionToolInputSchema.parse({
+      UpdateDocumentToolInputSchema.parse({
         documentId: id,
-        body: "# Missing",
+        styleVersionId: "not-a-style",
+        format: "html",
+        body: "<p>Exact</p>",
       }),
     ).toThrow();
+    expect(() =>
+      UpdateDocumentToolInputSchema.parse({
+        documentId: id,
+        styleVersionId: id,
+        body: "# Missing format",
+      }),
+    ).toThrow();
+  });
+
+  it("accepts only lowercase SHA-1 or SHA-256 document commits", () => {
+    const sha1 = "a".repeat(40);
+    const sha256 = "b".repeat(64);
+    expect(CommitShaSchema.parse(sha1)).toBe(sha1);
+    expect(CommitShaSchema.parse(sha256)).toBe(sha256);
+    expect(
+      RevertDocumentToolInputSchema.parse({ documentId: id, commitSha: sha1 }),
+    ).toMatchObject({ commitSha: sha1 });
+    for (const invalidSha of ["A".repeat(40), "a".repeat(39), "g".repeat(64)]) {
+      expect(() => CommitShaSchema.parse(invalidSha)).toThrow();
+    }
+  });
+
+  it("rejects removed numeric-version MCP tools", () => {
+    expect(() => McpToolNameSchema.parse("get_document_version")).toThrow();
+    expect(() => McpToolNameSchema.parse("create_document_version")).toThrow();
+    expect(McpToolNameSchema.parse("read_document_commit")).toBe(
+      "read_document_commit",
+    );
   });
 
   it("rejects unknown fields and malformed identifiers", () => {

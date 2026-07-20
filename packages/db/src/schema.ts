@@ -26,24 +26,13 @@ const createdAt = () =>
   timestamp("created_at", { withTimezone: true }).defaultNow().notNull();
 
 export const workspaceRole = pgEnum("workspace_role", ["owner", "member"]);
-export const renderStatus = pgEnum("render_status", [
-  "pending",
-  "ready",
-  "failed",
-]);
-export const documentFormat = pgEnum("document_format", ["markdown", "html"]);
 export const deletionStatus = pgEnum("deletion_status", [
   "pending",
   "running",
   "completed",
   "failed",
 ]);
-export const storedObjectPurpose = pgEnum("stored_object_purpose", [
-  "logo",
-  "source",
-  "pdf",
-  "other",
-]);
+export const storedObjectPurpose = pgEnum("stored_object_purpose", ["logo"]);
 
 export const users = pgTable(
   "user",
@@ -199,8 +188,7 @@ export const storedObjects = pgTable(
     workspaceId: uuid("workspace_id")
       .notNull()
       .references(() => workspaces.id, { onDelete: "restrict" }),
-    /** Logo lineage is mandatory; source/PDF objects may also be company-bound. */
-    companyId: uuid("company_id"),
+    companyId: uuid("company_id").notNull(),
     purpose: storedObjectPurpose("purpose").notNull(),
     objectKey: text("object_key").notNull(),
     contentType: text("content_type").notNull(),
@@ -221,10 +209,6 @@ export const storedObjects = pgTable(
     index("stored_object_workspace_company_idx").on(
       table.workspaceId,
       table.companyId,
-    ),
-    check(
-      "stored_object_logo_requires_company",
-      sql`${table.purpose} <> 'logo' OR ${table.companyId} IS NOT NULL`,
     ),
     check("stored_object_size_positive", sql`${table.byteSize} > 0`),
     check("stored_object_sha256_hex", sql`${table.sha256} ~ '^[0-9a-f]{64}$'`),
@@ -301,7 +285,6 @@ export const documents = pgTable(
       .notNull()
       .references(() => companies.id, { onDelete: "restrict" }),
     title: text("title").notNull(),
-    currentVersionId: uuid("current_version_id"),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -319,129 +302,8 @@ export const documents = pgTable(
       table.workspaceId,
       table.companyId,
     ),
-    index("document_current_version_idx").on(table.currentVersionId),
   ],
 );
-export const documentVersions = pgTable(
-  "document_versions",
-  {
-    id: id(),
-    workspaceId: uuid("workspace_id")
-      .notNull()
-      .references(() => workspaces.id, { onDelete: "cascade" }),
-    documentId: uuid("document_id")
-      .notNull()
-      .references(() => documents.id, { onDelete: "cascade" }),
-    version: integer("version").notNull(),
-    styleVersionId: uuid("style_version_id")
-      .notNull()
-      .references(() => styleVersions.id, { onDelete: "restrict" }),
-    format: documentFormat("format").notNull(),
-    body: text("body").notNull(),
-    inputHash: text("input_hash").notNull(),
-    sourceHash: text("source_hash"),
-    outputHash: text("output_hash"),
-    sourceObjectId: uuid("source_object_id").references(
-      () => storedObjects.id,
-      { onDelete: "restrict" },
-    ),
-    pdfObjectId: uuid("pdf_object_id").references(() => storedObjects.id, {
-      onDelete: "restrict",
-    }),
-    rendererVersion: text("renderer_version"),
-    status: renderStatus("status").notNull().default("pending"),
-    safeDiagnostics: jsonb("safe_diagnostics"),
-    createdByActorType: text("created_by_actor_type").notNull(),
-    createdByActorId: text("created_by_actor_id").notNull(),
-    createdAt: createdAt(),
-  },
-  (table) => [
-    unique("document_version_unique").on(table.documentId, table.version),
-    unique("document_version_workspace_id_unique").on(
-      table.workspaceId,
-      table.id,
-    ),
-    unique("document_version_workspace_document_id_unique").on(
-      table.workspaceId,
-      table.documentId,
-      table.id,
-    ),
-    foreignKey({
-      columns: [table.workspaceId, table.documentId],
-      foreignColumns: [documents.workspaceId, documents.id],
-      name: "document_versions_workspace_document_fk",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [table.workspaceId, table.styleVersionId],
-      foreignColumns: [styleVersions.workspaceId, styleVersions.id],
-      name: "document_versions_workspace_style_version_fk",
-    }).onDelete("restrict"),
-    foreignKey({
-      columns: [table.workspaceId, table.sourceObjectId],
-      foreignColumns: [storedObjects.workspaceId, storedObjects.id],
-      name: "document_versions_workspace_source_object_fk",
-    }).onDelete("restrict"),
-    foreignKey({
-      columns: [table.workspaceId, table.pdfObjectId],
-      foreignColumns: [storedObjects.workspaceId, storedObjects.id],
-      name: "document_versions_workspace_pdf_object_fk",
-    }).onDelete("restrict"),
-    index("document_version_document_idx").on(table.documentId),
-    check("document_version_positive", sql`${table.version} > 0`),
-    check(
-      "document_version_hash_hex",
-      sql`${table.inputHash} ~ '^[0-9a-f]{64}$' AND (${table.sourceHash} IS NULL OR ${table.sourceHash} ~ '^[0-9a-f]{64}$') AND (${table.outputHash} IS NULL OR ${table.outputHash} ~ '^[0-9a-f]{64}$')`,
-    ),
-    check(
-      "document_version_lifecycle_fields",
-      sql`(${table.status} = 'pending' AND ${table.sourceHash} IS NULL AND ${table.outputHash} IS NULL AND ${table.sourceObjectId} IS NULL AND ${table.pdfObjectId} IS NULL AND ${table.rendererVersion} IS NULL AND ${table.safeDiagnostics} IS NULL) OR (${table.status} = 'ready' AND ${table.sourceHash} IS NOT NULL AND ${table.outputHash} IS NOT NULL AND ${table.sourceObjectId} IS NOT NULL AND ${table.pdfObjectId} IS NOT NULL AND ${table.rendererVersion} IS NOT NULL AND ${table.rendererVersion} <> '' AND ${table.safeDiagnostics} IS NULL) OR (${table.status} = 'failed' AND ${table.sourceHash} IS NULL AND ${table.outputHash} IS NULL AND ${table.sourceObjectId} IS NULL AND ${table.pdfObjectId} IS NULL AND ${table.rendererVersion} IS NOT NULL AND ${table.rendererVersion} <> '' AND ${table.safeDiagnostics} IS NOT NULL)`,
-    ),
-    check(
-      "document_version_creator_actor",
-      sql`${table.createdByActorType} IN ('user', 'credential') AND ${table.createdByActorId} <> ''`,
-    ),
-  ],
-);
-
-export const renderRecords = pgTable(
-  "render_records",
-  {
-    id: id(),
-    workspaceId: uuid("workspace_id")
-      .notNull()
-      .references(() => workspaces.id, { onDelete: "cascade" }),
-    documentVersionId: uuid("document_version_id")
-      .notNull()
-      .references(() => documentVersions.id, { onDelete: "cascade" }),
-    status: renderStatus("status").notNull().default("pending"),
-    rendererVersion: text("renderer_version"),
-    inputHash: text("input_hash").notNull(),
-    sourceHash: text("source_hash"),
-    outputHash: text("output_hash"),
-    startedAt: timestamp("started_at", { withTimezone: true }),
-    completedAt: timestamp("completed_at", { withTimezone: true }),
-    safeDiagnostics: jsonb("safe_diagnostics"),
-    createdAt: createdAt(),
-  },
-  (table) => [
-    unique("render_record_version_unique").on(table.documentVersionId),
-    foreignKey({
-      columns: [table.workspaceId, table.documentVersionId],
-      foreignColumns: [documentVersions.workspaceId, documentVersions.id],
-      name: "render_records_workspace_document_version_fk",
-    }).onDelete("cascade"),
-    index("render_record_workspace_idx").on(table.workspaceId),
-    check(
-      "render_record_hash_hex",
-      sql`${table.inputHash} ~ '^[0-9a-f]{64}$' AND (${table.sourceHash} IS NULL OR ${table.sourceHash} ~ '^[0-9a-f]{64}$') AND (${table.outputHash} IS NULL OR ${table.outputHash} ~ '^[0-9a-f]{64}$')`,
-    ),
-    check(
-      "render_record_lifecycle_fields",
-      sql`(${table.status} = 'pending' AND ${table.sourceHash} IS NULL AND ${table.outputHash} IS NULL AND ${table.rendererVersion} IS NULL AND ${table.safeDiagnostics} IS NULL) OR (${table.status} = 'ready' AND ${table.sourceHash} IS NOT NULL AND ${table.outputHash} IS NOT NULL AND ${table.rendererVersion} IS NOT NULL AND ${table.rendererVersion} <> '' AND ${table.safeDiagnostics} IS NULL) OR (${table.status} = 'failed' AND ${table.sourceHash} IS NULL AND ${table.outputHash} IS NULL AND ${table.rendererVersion} IS NOT NULL AND ${table.rendererVersion} <> '' AND ${table.safeDiagnostics} IS NOT NULL)`,
-    ),
-  ],
-);
-
 export const mcpCredentials = pgTable(
   "mcp_credentials",
   {

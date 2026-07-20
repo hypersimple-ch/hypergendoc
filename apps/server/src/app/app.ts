@@ -25,6 +25,7 @@ import {
   createCredentialService,
 } from "../modules/credentials/index.js";
 import {
+  CompanyDocumentGitStore,
   createDocumentRenderer,
   createDocumentRepository,
   createDocumentService,
@@ -70,27 +71,12 @@ import {
   createAwsS3ObjectClient,
 } from "../platform/object-store.js";
 import { createInMemoryRateLimiter } from "../platform/rate-limit.js";
-import { registerMcpArtifactRoute } from "./mcp-artifact-route.js";
 import { shouldRejectMutationOrigin } from "./origin-policy.js";
+import { page } from "./page.js";
 
 export interface Application extends FastifyInstance {
   closeDependencies(): Promise<void>;
 }
-
-const page = <T>(items: readonly T[], cursor?: string, limit = 50) => {
-  const start = cursor
-    ? Math.max(
-        0,
-        items.findIndex((item) => (item as { id: string }).id === cursor) + 1,
-      )
-    : 0;
-  const selected = items.slice(start, start + limit);
-  const last = selected.at(-1) as { id: string } | undefined;
-  return {
-    items: selected,
-    ...(last && start + limit < items.length ? { nextCursor: last.id } : {}),
-  };
-};
 
 function actorContext(actor: HumanActor): ActorContext {
   return { type: "human", ...actor };
@@ -185,9 +171,9 @@ export async function createApplication(
   });
   const documents = createDocumentService({
     repository: createDocumentRepository(db),
+    git: new CompanyDocumentGitStore({ rootDir: environment.documentGitRoot }),
     renderer,
     sourceBuilder: createHtmlDocumentSourceBuilder(),
-    objects,
     audit,
   });
   const smtp = environment.smtp
@@ -405,7 +391,6 @@ export async function createApplication(
     }),
   );
   registerDocumentRoutes(app, { service: documents, actorFor });
-  registerMcpArtifactRoute(app, { credentials, documents });
 
   const services: DomainServices = {
     listCompanies: async (actor, input) =>
@@ -423,28 +408,11 @@ export async function createApplication(
         input.limit,
       ),
     getDocument: (actor, input) =>
-      documents.get({ type: "agent", ...actor }, input.documentId),
-    async getDocumentVersion(actor, input) {
-      const context = { type: "agent" as const, ...actor };
-      const documentVersion = await documents.getVersion(
-        context,
-        input.documentId,
-        input.version,
-      );
-      return {
-        documentVersion,
-        downloadUrl: new URL(
-          `/mcp-artifacts/${input.documentId}/${input.version}/pdf`,
-          environment.appOrigin,
-        ).toString(),
-      };
-    },
-    async createDocument(actor, input) {
-      return (await documents.create({ type: "agent", ...actor }, input))
-        .document;
-    },
-    createDocumentVersion: (actor, input) =>
-      documents.createVersion(
+      documents.detail({ type: "agent", ...actor }, input.documentId),
+    createDocument: (actor, input) =>
+      documents.create({ type: "agent", ...actor }, input),
+    updateDocument: (actor, input) =>
+      documents.update(
         { type: "agent", ...actor },
         input.documentId,
         input.styleVersionId
@@ -455,6 +423,22 @@ export async function createApplication(
             }
           : { format: input.format, body: input.body },
       ),
+    listDocumentCommits: async (actor, input) =>
+      page(
+        await documents.history({ type: "agent", ...actor }, input.documentId),
+        input.cursor,
+        input.limit,
+      ),
+    readDocumentCommit: (actor, input) =>
+      documents.readCommit(
+        { type: "agent", ...actor },
+        input.documentId,
+        input.commitSha,
+      ),
+    revertDocument: (actor, input) =>
+      documents.revert({ type: "agent", ...actor }, input.documentId, {
+        commitSha: input.commitSha,
+      }),
   };
   await app.register(
     createMcpPlugin({

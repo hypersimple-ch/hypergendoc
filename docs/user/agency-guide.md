@@ -2,35 +2,30 @@
 
 ## Roles and companies
 
-The first user creates a workspace as its owner. Owners and members can create, read, and update companies; create style versions; activate styles; and review document versions, submitted inputs, and PDFs. Only owners manage memberships and MCP credentials or archive a company. A workspace must retain an owner. Workspace selection comes from the authenticated membership, not a submitted ID; another workspace's ID is reported as not found.
+The first user is the workspace owner. Owners and members manage companies, styles, and documents; only owners manage memberships, MCP credentials, and company archival. Workspace access comes from the authenticated membership. Other-workspace IDs appear as not found.
 
-Create each client as a company, then upload its logo (validated image type; maximum 10 MiB) and create a structured style. Logos and artifacts are private storage objects, not public links.
+Create a client company, upload its validated logo, and configure a structured style. Logos are private objects, not public links.
 
-## Versioned styles and documents
+## Documents and history
 
-A style edit creates a new immutable style version. Activating a version changes what a _new_ document selects; it never changes existing document versions. Deactivating a style prevents new selection but preserves history.
+Creating or updating a document writes its exact Markdown or HTML source to the company's private Git history. Each change has a commit SHA; history is immutable. Revert selects an older commit and creates a new commit, rather than overwriting it.
 
-Creating a document records pending version 1 with the original exact body and an explicit `format` of `"markdown"` or `"html"`, validates it, resolves the active exact style version, and renders it. Format is never inferred. A successful render marks the version ready and advances the document's current pointer. A failed render does not advance that pointer. Review the ready PDF, original input, and version metadata in the dashboard before relying on an artifact.
+The dashboard can read current or historical source. PDF is available only for the current document and is generated on demand; historical commits do not have PDF previews or downloads. Document source, generated HTML, and PDFs are not retained in object storage.
 
-Each revision is a new immutable, monotonic document version. It inherits the preceding version's exact style version unless an authorized caller explicitly selects another active style version. Versions are not overwritten. The input identity hash includes both the exact body and format.
-
-HTML is an input fragment format, not an HTML document or styling surface. Its sanitized semantic fragment is rendered, while the original exact submitted HTML is retained as the immutable input. Empty sanitized input is rejected. Structured server-owned style fields generate all CSS, page layout, headers, footers, and page numbering; users do not supply CSS or style markup. See the [MCP client guide](../mcp/client-guide.md) for the sanitizer allow-list and input examples.
+HTML is a sanitized fragment, not a styling surface. `format` is required as `markdown` or `html`; user CSS is not accepted.
 
 ## MCP credentials
 
-Owners issue a credential with a company allow-list and only the required actions. The plaintext token appears once: place it directly in the approved MCP client's secret store, not chat, tickets, repositories, or logs. Owners can revoke it; revocation is checked by the next request. See the [MCP client guide](../mcp/client-guide.md).
+Owners issue credentials with the minimum company allow-list and actions. The token appears once; put it in the approved MCP client's secret store. Revocation applies on the next request.
 
-## Deletion and backups
+## Archival and backups
 
-The current owner flow can archive a company; it does not expose a complete self-service workspace/customer purge. A destructive purge is a reviewed operator procedure and remains a release limitation until the application purge job is implemented and tested. The approved replacement deployment cleanup may purge pre-replacement document history and render metadata after review. SQL removes database metadata only; it cannot remove old Garage object bytes. Operators must separately identify and delete those stale object bytes during deployment cleanup. Purged live data can remain in encrypted backups until their finite retention expires. Do not treat archival or normal versioning as full deletion.
+Archiving a company retains its private Git history. Purge is not currently provided; neither archival nor normal history is deletion. The service operator performs encrypted off-VPS backups and restore drills. A usable restore requires PostgreSQL and the private Git volume from the same consistent recovery set. See the [data policy](../operations/data-policy.md).
 
-The MVP policy calls for encrypted off-VPS daily backups and periodic restore drills, operated by the service operator. Guarded scripts are supplied, but scheduling, key custody, and restore evidence are operational responsibilities—not a self-service backup or recovery guarantee. See the [data policy](../operations/data-policy.md).
+## Limits
 
-## Important limits and boundaries
-
-- Body input: 256 KiB UTF-8; rendered PDF: 25 MiB; render wall clock: 30 seconds; rendered document: 100 pages.
+- Source input: 256 KiB UTF-8; PDF: 25 MiB; render time: 30 seconds; document: 100 pages.
 - Pagination defaults to 50 and has a maximum of 100.
-- Documents are artifacts, including proposals and contract-like documents. HyperGenDoc provides no legal validation, legal advice, e-signature, financial workflow, or compliance certification.
-- Agents cannot mutate styles. User-authored CSS/style markup and dashboard content editing are outside this MVP.
+- HyperGenDoc provides no legal validation, legal advice, e-signature, financial workflow, or compliance certification.
 
-For permissions, see the authoritative [permission matrix](../security/permission-matrix.md); for supported service behavior, see the [HTTP/MCP contract](../contracts/http-mcp.md).
+See the [permission matrix](../security/permission-matrix.md) and [HTTP/MCP contract](../contracts/http-mcp.md).

@@ -516,6 +516,15 @@ legend {
   margin-top: 0.35rem;
   color: #68716b;
 }
+.document-source {
+  max-height: 24rem;
+  overflow: auto;
+  padding: 0.75rem;
+  border: 1px solid #d7cebd;
+  background: #f5f0e6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .metadata {
   display: grid;
   grid-template-columns: 9rem minmax(0, 1fr);

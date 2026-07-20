@@ -48,13 +48,7 @@ export function WorkspaceOverview() {
     (left, right) =>
       new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
   );
-  const readyDocuments = recentDocuments.filter((document) => {
-    const detail = detailByDocumentId.get(document.id);
-    return detail?.versions.some(
-      (version) =>
-        version.id === document.currentVersionId && version.status === "ready",
-    );
-  }).length;
+  const trackedDocuments = recentDocuments.length;
   const companiesById = new Map(
     data.value?.companies.map((company) => [company.id, company.name]),
   );
@@ -67,7 +61,7 @@ export function WorkspaceOverview() {
           <h1>The document desk.</h1>
           <p>
             Set up companies and their visual systems before agents create
-            immutable document versions.
+            documents with immutable commit history.
           </p>
         </div>
         <Link className="button button--primary" href="/workspace/companies">
@@ -76,7 +70,10 @@ export function WorkspaceOverview() {
       </section>
       <section className="metric-grid" aria-label="Workspace status">
         <Metric label="Companies" value={data.value?.companies.length} />
-        <Metric label="Ready documents" value={data.value && readyDocuments} />
+        <Metric
+          label="Tracked documents"
+          value={data.value && trackedDocuments}
+        />
         <Metric
           label="MCP credentials"
           value={data.value?.credentialCount}
@@ -96,13 +93,11 @@ export function WorkspaceOverview() {
           (recentDocuments.length ? (
             <Table
               caption="Recent documents"
-              columns={["Document", "Company", "Version", "Status", "Updated"]}
+              columns={["Document", "Company", "Commit", "Format", "Updated"]}
             >
               {recentDocuments.map((document) => {
                 const detail = detailByDocumentId.get(document.id);
-                const version = detail?.versions.find(
-                  (item) => item.id === document.currentVersionId,
-                );
+                const commit = detail?.current.commit;
                 return (
                   <tr key={document.id}>
                     <td>
@@ -111,10 +106,8 @@ export function WorkspaceOverview() {
                     <td>
                       {companiesById.get(document.companyId) ?? "Unavailable"}
                     </td>
-                    <td>
-                      {version ? `Version ${version.version}` : "Pending"}
-                    </td>
-                    <td>{version?.status ?? "pending"}</td>
+                    <td>{commit ? commit.commitSha.slice(0, 8) : "—"}</td>
+                    <td>{commit?.format ?? "—"}</td>
                     <td>{new Date(document.updatedAt).toLocaleDateString()}</td>
                   </tr>
                 );
@@ -125,7 +118,7 @@ export function WorkspaceOverview() {
               <strong>No documents yet</strong>
               <p>
                 Documents are created by authorized agents and retained as
-                immutable versions.
+                immutable commit history.
               </p>
             </Empty>
           ))}

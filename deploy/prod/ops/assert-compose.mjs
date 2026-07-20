@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 const config = JSON.parse(readFileSync(0, "utf8"));
 const productionCompose = readFileSync("compose.prod.yaml", "utf8");
 const services = config.services ?? {};
+const gitRoot = "/var/lib/hypergendoc/git";
 const failures = [];
 const garageImage =
   "docker.io/dxflrs/garage:v2.3.0@sha256:866bd13ed2038ba7e7190e840482bc27234c4afaf77be8cfa439ae088c1e4690";
@@ -60,6 +61,38 @@ if (!services.web?.expose?.some((port) => Number(port) === 3000))
   failures.push("web must expose container port 3000 to Dokploy Traefik");
 if (!services.server?.expose?.some((port) => Number(port) === 4000))
   failures.push("server must expose container port 4000 to Dokploy Traefik");
+
+const server = services.server;
+if (
+  server?.read_only !== true ||
+  server?.user !== "10001:10001" ||
+  server?.environment?.DOCUMENT_GIT_ROOT !== gitRoot ||
+  !hasVolume(server, gitRoot, "git-data")
+) {
+  failures.push(
+    "server must run as 10001 with a read-only root and matching durable Git root volume",
+  );
+}
+if (!("git-data" in (config.volumes ?? {})))
+  failures.push("durable Git data volume must be declared");
+const gitDataInit = services["git-data-init"];
+if (
+  gitDataInit?.network_mode !== "none" ||
+  gitDataInit?.read_only !== true ||
+  gitDataInit?.user !== "0:0" ||
+  !(gitDataInit?.cap_drop ?? []).includes("ALL") ||
+  JSON.stringify(gitDataInit?.cap_add ?? []) !== JSON.stringify(["CHOWN"]) ||
+  gitDataInit?.restart !== "no" ||
+  !hasVolume(gitDataInit, gitRoot, "git-data") ||
+  !String(gitDataInit?.command ?? "").includes("chmod 0700") ||
+  !String(gitDataInit?.command ?? "").includes("chown 10001:10001") ||
+  server?.depends_on?.["git-data-init"]?.condition !==
+    "service_completed_successfully"
+) {
+  failures.push(
+    "Git data initialization must be isolated and establish 10001 ownership before server startup",
+  );
+}
 
 const secretName = /(PASSWORD|SECRET|PEPPER|DATABASE_URL|S3_ACCESS)/;
 for (const name of ["web", "renderer", "renderer-socket-init"]) {
@@ -219,12 +252,17 @@ if (services["db-migrate"]?.restart !== "no")
   failures.push("migrations must be one-shot");
 if (services["db-migrate"]?.image === services.server?.image)
   failures.push("migration and server targets must use distinct image tags");
+const serverDockerfile = readFileSync("deploy/prod/Dockerfile.server", "utf8");
 if (
-  !readFileSync("deploy/prod/Dockerfile.server", "utf8").includes(
-    "COPY --from=build /out/migrate.js ./migrate.js",
-  )
+  !serverDockerfile.includes("COPY --from=build /out/migrate.js ./migrate.js")
 )
   failures.push("migration image must contain the migration entrypoint");
+if (
+  /\b(?:apt(?:-get)?|apk)\s+[^\n]*\binstall\b[^\n]*\bgit\b/i.test(
+    serverDockerfile,
+  )
+)
+  failures.push("server image must not install the Git CLI");
 
 if (failures.length) {
   for (const failure of failures)
@@ -232,5 +270,5 @@ if (failures.length) {
   process.exit(1);
 }
 console.log(
-  "Dokploy production Compose topology and Garage storage policy satisfy assertions.",
+  "Dokploy production Compose topology, Garage storage, and durable Git storage policies satisfy assertions.",
 );

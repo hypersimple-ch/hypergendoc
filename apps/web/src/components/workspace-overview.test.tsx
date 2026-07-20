@@ -72,42 +72,52 @@ describe("WorkspaceOverview", () => {
     );
   });
 
-  it("counts current ready versions, active owner credentials, and sorts recent documents", async () => {
+  it("counts tracked documents and active credentials, then sorts current commits", async () => {
     const earlier = {
       id: "document-earlier",
       companyId: "company",
       title: "Earlier",
-      currentVersionId: "earlier-current",
+      createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     };
     const latest = {
       id: "document-latest",
       companyId: "company",
       title: "Latest",
-      currentVersionId: "latest-current",
+      createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-02T00:00:00.000Z",
     };
     setBaseData("owner", [earlier, latest]);
     api.companies.mockResolvedValue([{ id: "company", name: "Acme" }]);
-    api.document.mockImplementation((id: string) =>
-      Promise.resolve(
-        id === earlier.id
-          ? {
-              document: earlier,
-              versions: [
-                { id: "earlier-old", version: 1, status: "failed" },
-                { id: "earlier-current", version: 2, status: "ready" },
-              ],
-            }
-          : {
-              document: latest,
-              versions: [
-                { id: "latest-old", version: 1, status: "ready" },
-                { id: "latest-current", version: 3, status: "failed" },
-              ],
-            },
-      ),
-    );
+    api.document.mockImplementation((id: string) => {
+      const currentDocument = id === earlier.id ? earlier : latest;
+      const commitSha = id === earlier.id ? "a".repeat(40) : "b".repeat(40);
+      const format = id === earlier.id ? "markdown" : "html";
+      const commit = {
+        documentId: currentDocument.id,
+        commitSha,
+        parentCommitSha: null,
+        styleVersionId: "style-version",
+        format,
+        createdByType: "credential",
+        createdById: "credential",
+        createdAt: currentDocument.updatedAt,
+      };
+      return Promise.resolve({
+        document: currentDocument,
+        current: {
+          commit,
+          snapshot: {
+            documentId: currentDocument.id,
+            commitSha,
+            styleVersionId: "style-version",
+            format,
+            body: "source",
+          },
+        },
+        commits: [commit],
+      });
+    });
     api.credentials.mockResolvedValue([
       { revokedAt: null, expiresAt: null },
       { revokedAt: "2026-01-01T00:00:00.000Z", expiresAt: null },
@@ -117,14 +127,14 @@ describe("WorkspaceOverview", () => {
     render(<WorkspaceOverview />);
 
     expect(await screen.findByText("Latest")).toBeVisible();
-    expect(screen.getByText("Ready documents").parentElement).toHaveTextContent(
-      "1",
-    );
+    expect(
+      screen.getByText("Tracked documents").parentElement,
+    ).toHaveTextContent("2");
     expect(screen.getByText("MCP credentials").parentElement).toHaveTextContent(
       "1",
     );
     expect(screen.getByText("Latest").closest("tr")).toHaveTextContent(
-      "Version 3failed",
+      "bbbbbbbbhtml",
     );
     expect(
       screen

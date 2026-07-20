@@ -1,3 +1,4 @@
+export * from "./git-store.js";
 export * from "./renderer-client.js";
 export * from "./renderer.js";
 export * from "./repository.js";

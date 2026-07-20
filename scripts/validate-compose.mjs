@@ -14,6 +14,7 @@ if (result.status !== 0) {
 
 const config = JSON.parse(result.stdout);
 const services = config.services ?? {};
+const gitRoot = "/var/lib/hypergendoc/git";
 const failures = [];
 
 for (const [name, service] of Object.entries(services)) {
@@ -99,6 +100,49 @@ if (
   failures.push("server must wait for the initialized healthy renderer");
 }
 
+const server = services.server;
+const gitDataInit = services["git-data-init"];
+if (
+  server?.read_only !== true ||
+  server?.user !== "10001:10001" ||
+  server?.environment?.DOCUMENT_GIT_ROOT !== gitRoot ||
+  !server?.volumes?.some(
+    (volume) => volume.source === "git-data" && volume.target === gitRoot,
+  )
+) {
+  failures.push(
+    "server must run as 10001 with a read-only root and matching durable Git root volume",
+  );
+}
+if (!("git-data" in (config.volumes ?? {})))
+  failures.push("durable Git data volume must be declared");
+if (
+  gitDataInit?.network_mode !== "none" ||
+  gitDataInit?.read_only !== true ||
+  gitDataInit?.user !== "0:0" ||
+  !gitDataInit?.cap_drop?.includes("ALL") ||
+  JSON.stringify(gitDataInit?.cap_add ?? []) !== JSON.stringify(["CHOWN"]) ||
+  !gitDataInit?.volumes?.some(
+    (volume) => volume.source === "git-data" && volume.target === gitRoot,
+  ) ||
+  !String(gitDataInit?.command ?? "").includes("chmod 0700") ||
+  !String(gitDataInit?.command ?? "").includes("chown 10001:10001") ||
+  server?.depends_on?.["git-data-init"]?.condition !==
+    "service_completed_successfully"
+) {
+  failures.push(
+    "Git data initialization must be isolated and establish 10001 ownership before server startup",
+  );
+}
+for (const file of ["Dockerfile.dev", "deploy/prod/Dockerfile.server"]) {
+  if (
+    /\b(?:apt(?:-get)?|apk)\s+[^\n]*\binstall\b[^\n]*\bgit\b/i.test(
+      readFileSync(file, "utf8"),
+    )
+  )
+    failures.push(`${file} must not install the Git CLI`);
+}
+
 const proxyPorts = services.proxy?.ports ?? [];
 if (proxyPorts.length !== 1 || Number(proxyPorts[0]?.target) !== 8080) {
   failures.push("development proxy must be the only published HTTP entrypoint");
@@ -109,4 +153,6 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log("Compose topology satisfies baseline isolation policy.");
+console.log(
+  "Compose topology satisfies baseline isolation and durable Git storage policy.",
+);

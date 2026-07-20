@@ -43,6 +43,7 @@ services:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 4000
+      DOCUMENT_GIT_ROOT: /var/lib/hypergendoc/git
       APP_ORIGIN: ${APP_ORIGIN:?set APP_ORIGIN in Dokploy environment}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET}
       CREDENTIAL_PEPPER: ${CREDENTIAL_PEPPER:?set CREDENTIAL_PEPPER}
@@ -70,15 +71,19 @@ services:
         condition: service_healthy
       renderer-socket-init:
         condition: service_completed_successfully
+      git-data-init:
+        condition: service_completed_successfully
       renderer:
         condition: service_healthy
     read_only: true
+    user: "10001:10001"
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m,uid=10001,gid=10001
     volumes:
       - renderer-socket:/run/hypergendoc
+      - git-data:/var/lib/hypergendoc/git
     healthcheck:
       test:
         [
@@ -129,6 +134,23 @@ services:
     security_opt: [no-new-privileges:true]
     volumes:
       - renderer-socket:/run/hypergendoc
+    restart: "no"
+    mem_limit: 32m
+    cpus: 0.10
+
+  git-data-init:
+    image: busybox:1.37.0-musl
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - chown 0:0 /var/lib/hypergendoc/git && chmod 0700 /var/lib/hypergendoc/git && chown 10001:10001 /var/lib/hypergendoc/git
+    network_mode: none
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - git-data:/var/lib/hypergendoc/git
     restart: "no"
     mem_limit: 32m
     cpus: 0.10
@@ -281,3 +303,4 @@ volumes:
   object-metadata:
   object-data:
   renderer-socket:
+  git-data:

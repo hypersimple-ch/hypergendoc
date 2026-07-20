@@ -8,23 +8,32 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Document, DocumentVersion } from "@hypergendoc/contracts";
+import type {
+  Document,
+  DocumentCommit,
+  DocumentCurrentSource,
+  DocumentDetail,
+} from "@hypergendoc/contracts";
 
-const { companies, document, documents } = vi.hoisted(() => ({
-  companies: vi.fn(),
-  document: vi.fn(),
-  documents: vi.fn(),
-}));
+const { companies, document, documentCommit, documents, revertDocument } =
+  vi.hoisted(() => ({
+    companies: vi.fn(),
+    document: vi.fn(),
+    documentCommit: vi.fn(),
+    documents: vi.fn(),
+    revertDocument: vi.fn(),
+  }));
 
 vi.mock("../lib/dashboard-api", () => ({
   dashboardApi: {
     companies,
     document,
+    documentCommit,
     documents,
-    pdfUrl: (id: string, version: number) =>
-      `/api/documents/${id}/versions/${version}/pdf`,
-    inputUrl: (id: string, version: number) =>
-      `/api/documents/${id}/versions/${version}/input`,
+    revertDocument,
+    pdfUrl: (id: string) => `/api/documents/${id}/pdf`,
+    sourceUrl: (id: string, commitSha: string) =>
+      `/api/documents/${id}/commits/${commitSha}/source`,
   },
 }));
 
@@ -32,78 +41,155 @@ import { DocumentsDashboard } from "./documents-dashboard";
 
 const documentId = "11111111-1111-4111-8111-111111111111";
 const companyId = "22222222-2222-4222-8222-222222222222";
-const versionId = "33333333-3333-4333-8333-333333333333";
-const nextVersionId = "44444444-4444-4444-8444-444444444444";
+const styleVersionId = "33333333-3333-4333-8333-333333333333";
+const actorId = "44444444-4444-4444-8444-444444444444";
+const oldSha = "a".repeat(40);
+const currentSha = "b".repeat(40);
 const baseDocument: Document = {
   id: documentId,
   companyId,
   title: "Proposal",
-  currentVersionId: nextVersionId,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-02T00:00:00.000Z",
 };
-const version = (
-  id: string,
-  number: number,
-  status: DocumentVersion["status"],
-  format: DocumentVersion["format"] = "markdown",
-): DocumentVersion => ({
-  id,
+const commit = (
+  commitSha: string,
+  parentCommitSha: string | null,
+  format: DocumentCommit["format"] = "markdown",
+): DocumentCommit => ({
   documentId,
-  version: number,
-  styleVersionId: "55555555-5555-4555-8555-555555555555",
+  commitSha,
+  parentCommitSha,
+  styleVersionId,
   format,
-  body: "Read only",
-  status,
-  inputHash: "a".repeat(64),
-  sourceHash: null,
-  outputHash: null,
-  rendererVersion: null,
-  createdByType: "user",
-  createdById: "66666666-6666-4666-8666-666666666666",
+  createdByType: "credential",
+  createdById: actorId,
   createdAt: "2026-01-01T00:00:00.000Z",
 });
+const oldCommit = commit(oldSha, null);
+const currentCommit = commit(currentSha, oldSha, "html");
+const source = (
+  entry: DocumentCommit,
+  body: string,
+): DocumentCurrentSource => ({
+  commit: entry,
+  snapshot: {
+    documentId,
+    commitSha: entry.commitSha,
+    styleVersionId: entry.styleVersionId,
+    format: entry.format,
+    body,
+  },
+});
+const detail = (): DocumentDetail => ({
+  document: baseDocument,
+  current: source(currentCommit, "<h1>Current source</h1>"),
+  commits: [currentCommit, oldCommit],
+});
 
-function mockDashboard(versions: DocumentVersion[]) {
+function mockDashboard() {
   companies.mockResolvedValue([]);
   documents.mockResolvedValue([baseDocument]);
-  document.mockResolvedValue({ document: baseDocument, versions });
+  document.mockResolvedValue(detail());
+  documentCommit.mockResolvedValue(source(oldCommit, "# Historical source"));
+}
+
+async function openHistory() {
+  render(<DocumentsDashboard />);
+  fireEvent.click(await screen.findByRole("button", { name: "View history" }));
+  await screen.findByText("<h1>Current source</h1>");
 }
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("DocumentsDashboard", () => {
-  it("filters using the current version, including a failed version after version 1", async () => {
-    mockDashboard([
-      version(versionId, 1, "ready"),
-      version(nextVersionId, 2, "failed"),
-    ]);
-    render(<DocumentsDashboard />);
+  it("shows commit metadata and loads historical source when a commit is selected", async () => {
+    mockDashboard();
+    await openHistory();
 
-    await screen.findByRole("button", { name: "View history" });
-    fireEvent.change(screen.getByLabelText("Render status"), {
-      target: { value: "failed" },
-    });
+    expect(screen.getByText(currentSha.slice(0, 8))).toBeVisible();
+    expect(screen.getByText(`credential ${actorId}`)).toBeVisible();
+    expect(screen.getAllByText("HTML")).toHaveLength(2);
+    expect(screen.getByText(styleVersionId)).toBeVisible();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: `Commit ${oldSha.slice(0, 8)}` }),
+    );
+    expect(await screen.findByText("# Historical source")).toBeVisible();
+    expect(documentCommit).toHaveBeenCalledWith(documentId, oldSha);
     expect(
-      await screen.findByRole("button", { name: "View history" }),
-    ).toBeVisible();
-
-    fireEvent.change(screen.getByLabelText("Render status"), {
-      target: { value: "ready" },
-    });
-    await waitFor(() =>
-      expect(screen.getByText("No matching documents")).toBeVisible(),
+      screen.getByRole("link", { name: "Download source" }),
+    ).toHaveAttribute(
+      "href",
+      `/api/documents/${documentId}/commits/${oldSha}/source`,
     );
     expect(
-      screen.queryByRole("columnheader", { name: "Document" }),
+      screen.queryByRole("button", { name: "Preview PDF" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Download PDF" }),
     ).not.toBeInTheDocument();
   });
 
+  it("does not request or display a PDF until preview is explicitly selected", async () => {
+    mockDashboard();
+    await openHistory();
+
+    expect(
+      screen.queryByTitle("Proposal current PDF preview"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Revert as new commit" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Preview PDF" }));
+    expect(screen.getByTitle("Proposal current PDF preview")).toHaveAttribute(
+      "src",
+      `/api/documents/${documentId}/pdf?disposition=inline`,
+    );
+    expect(screen.getByRole("link", { name: "Download PDF" })).toHaveAttribute(
+      "href",
+      `/api/documents/${documentId}/pdf`,
+    );
+  });
+
+  it("confirms a revert, creates a new commit, and refreshes history", async () => {
+    mockDashboard();
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
+    const revertedCommit = commit("c".repeat(40), currentSha);
+    revertDocument.mockResolvedValue(source(revertedCommit, "Reverted source"));
+    document.mockResolvedValueOnce(detail()).mockResolvedValueOnce({
+      ...detail(),
+      current: source(revertedCommit, "Reverted source"),
+      commits: [revertedCommit, currentCommit, oldCommit],
+    });
+    await openHistory();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: `Commit ${oldSha.slice(0, 8)}` }),
+    );
+    await screen.findByText("# Historical source");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Revert as new commit" }),
+    );
+
+    await waitFor(() =>
+      expect(revertDocument).toHaveBeenCalledWith(documentId, oldSha),
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Reverted as a new commit.")).toBeVisible(),
+    );
+    await waitFor(() => expect(document).toHaveBeenCalledTimes(2));
+  });
+
   it("shows a no-match state without an empty table when text filtering removes every row", async () => {
-    mockDashboard([version(nextVersionId, 2, "ready")]);
+    mockDashboard();
     render(<DocumentsDashboard />);
 
     await screen.findByRole("button", { name: "View history" });
@@ -113,44 +199,5 @@ describe("DocumentsDashboard", () => {
 
     expect(await screen.findByText("No matching documents")).toBeVisible();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
-  });
-
-  it("uses a responsive table wrapper and an inline-only PDF preview while downloads remain attachments", async () => {
-    mockDashboard([version(nextVersionId, 2, "ready")]);
-    render(<DocumentsDashboard />);
-
-    const history = await screen.findByRole("button", { name: "View history" });
-    expect(screen.getByRole("table").parentElement).toHaveClass("table-wrap");
-
-    fireEvent.click(history);
-    const preview = await screen.findByTitle("Proposal version 2 PDF preview");
-    expect(preview).toHaveAttribute(
-      "src",
-      `/api/documents/${documentId}/versions/2/pdf?disposition=inline`,
-    );
-    expect(screen.getByRole("link", { name: "Download PDF" })).toHaveAttribute(
-      "href",
-      `/api/documents/${documentId}/versions/2/pdf`,
-    );
-    expect(
-      screen.getByRole("link", { name: "Download input" }),
-    ).toHaveAttribute("href", `/api/documents/${documentId}/versions/2/input`);
-    expect(
-      screen.queryByRole("link", { name: /source/i }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("shows the immutable input format in history and active version metadata", async () => {
-    mockDashboard([
-      version(versionId, 1, "ready", "markdown"),
-      version(nextVersionId, 2, "ready", "html"),
-    ]);
-    render(<DocumentsDashboard />);
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: "View history" }),
-    );
-    expect(await screen.findByText("Markdown")).toBeVisible();
-    await waitFor(() => expect(screen.getAllByText("HTML")).toHaveLength(2));
   });
 });

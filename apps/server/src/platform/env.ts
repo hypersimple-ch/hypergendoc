@@ -1,3 +1,4 @@
+import { isAbsolute, resolve } from "node:path";
 import { limits } from "@hypergendoc/config";
 
 export interface ServerEnvironment {
@@ -8,6 +9,7 @@ export interface ServerEnvironment {
   readonly betterAuthSecret: string;
   readonly credentialPepper: string;
   readonly rendererSocket: string;
+  readonly documentGitRoot: string;
   readonly databaseUrl: string;
   readonly s3: {
     endpoint?: string;
@@ -93,6 +95,9 @@ export function loadServerEnvironment(
       }
     : undefined;
   const mailFrom = values.MAIL_FROM?.trim();
+  const documentGitRoot = required(values, "DOCUMENT_GIT_ROOT");
+  if (!isAbsolute(documentGitRoot))
+    throw new Error("DOCUMENT_GIT_ROOT must be an absolute path");
   if (
     nodeEnv === "production" &&
     objectStoreUrl?.protocol === "http:" &&
@@ -116,6 +121,7 @@ export function loadServerEnvironment(
     credentialPepper: required(values, "CREDENTIAL_PEPPER"),
     rendererSocket:
       values.RENDERER_SOCKET?.trim() || "/run/hypergendoc/renderer.sock",
+    documentGitRoot: resolve(documentGitRoot),
     databaseUrl: required(values, "DATABASE_URL"),
     s3: {
       ...(endpoint === undefined || endpoint === "" ? {} : { endpoint }),

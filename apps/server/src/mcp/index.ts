@@ -1,21 +1,24 @@
 import {
   type Company,
-  type CreateDocumentInput,
   type Document,
-  type DocumentVersion,
+  type DocumentCommit,
+  type DocumentCurrentSource,
+  type DocumentDetail,
   type Style,
   CreateDocumentToolInputSchema,
-  CreateDocumentVersionToolInputSchema,
   GetDocumentToolInputSchema,
-  GetDocumentVersionToolInputSchema,
   ListCompaniesToolInputSchema,
+  ListDocumentCommitsToolInputSchema,
   ListDocumentsToolInputSchema,
   ListStylesToolInputSchema,
+  ReadDocumentCommitToolInputSchema,
+  RevertDocumentToolInputSchema,
+  UpdateDocumentToolInputSchema,
   type McpAction,
 } from "@hypergendoc/contracts";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import type { FastifyPluginAsync, FastifyRequest } from "fastify";
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import type { z } from "zod";
 import type { AgentActor } from "../modules/auth/actors.js";
 import { AppError, toSafeError } from "../platform/errors.js";
@@ -44,21 +47,27 @@ export interface DomainServices {
   getDocument(
     actor: AgentActor,
     input: z.infer<typeof GetDocumentToolInputSchema>,
-  ): Promise<Document>;
-  getDocumentVersion(
-    actor: AgentActor,
-    input: z.infer<typeof GetDocumentVersionToolInputSchema>,
-  ): Promise<
-    Readonly<{ documentVersion: DocumentVersion; downloadUrl?: string }>
-  >;
+  ): Promise<DocumentDetail>;
   createDocument(
     actor: AgentActor,
-    input: CreateDocumentInput,
-  ): Promise<Document>;
-  createDocumentVersion(
+    input: z.infer<typeof CreateDocumentToolInputSchema>,
+  ): Promise<{ document: Document; current: DocumentCurrentSource }>;
+  updateDocument(
     actor: AgentActor,
-    input: z.infer<typeof CreateDocumentVersionToolInputSchema>,
-  ): Promise<DocumentVersion>;
+    input: z.infer<typeof UpdateDocumentToolInputSchema>,
+  ): Promise<DocumentCurrentSource>;
+  listDocumentCommits(
+    actor: AgentActor,
+    input: z.infer<typeof ListDocumentCommitsToolInputSchema>,
+  ): Promise<Page<DocumentCommit>>;
+  readDocumentCommit(
+    actor: AgentActor,
+    input: z.infer<typeof ReadDocumentCommitToolInputSchema>,
+  ): Promise<DocumentCurrentSource>;
+  revertDocument(
+    actor: AgentActor,
+    input: z.infer<typeof RevertDocumentToolInputSchema>,
+  ): Promise<DocumentCurrentSource>;
 }
 
 export interface McpCredentialVerifier {
@@ -83,9 +92,7 @@ function assertAction(actor: AgentActor, action: McpAction): void {
   if (!actor.actions.includes(action)) throw new AppError("forbidden", 403);
 }
 
-function concise(value: unknown): string {
-  return JSON.stringify(value);
-}
+const concise = (value: unknown): string => JSON.stringify(value);
 
 function toolError(error: unknown, requestId: string) {
   const safe = toSafeError(error, requestId).body.error;
@@ -106,20 +113,26 @@ function createServer(actor: AgentActor, services: DomainServices): McpServer {
     content: [{ type: "text" as const, text: concise(structuredContent) }],
     structuredContent: structuredContent as Record<string, unknown>,
   });
+  const execute = async (
+    action: McpAction,
+    operation: () => Promise<object>,
+  ) => {
+    try {
+      assertAction(actor, action);
+      return result(await operation());
+    } catch (error) {
+      return toolError(error, actor.requestId);
+    }
+  };
+
   server.registerTool(
     "list_companies",
     {
       description: "List authorized companies.",
       inputSchema: ListCompaniesToolInputSchema.shape,
     },
-    async (input) => {
-      try {
-        assertAction(actor, "companies:read");
-        return result(await services.listCompanies(actor, input));
-      } catch (error) {
-        return toolError(error, actor.requestId);
-      }
-    },
+    (input) =>
+      execute("companies:read", () => services.listCompanies(actor, input)),
   );
   server.registerTool(
     "list_styles",
@@ -127,14 +140,7 @@ function createServer(actor: AgentActor, services: DomainServices): McpServer {
       description: "List active styles for an authorized company.",
       inputSchema: ListStylesToolInputSchema.shape,
     },
-    async (input) => {
-      try {
-        assertAction(actor, "styles:read");
-        return result(await services.listStyles(actor, input));
-      } catch (error) {
-        return toolError(error, actor.requestId);
-      }
-    },
+    (input) => execute("styles:read", () => services.listStyles(actor, input)),
   );
   server.registerTool(
     "list_documents",
@@ -142,87 +148,77 @@ function createServer(actor: AgentActor, services: DomainServices): McpServer {
       description: "List documents for an authorized company.",
       inputSchema: ListDocumentsToolInputSchema.shape,
     },
-    async (input) => {
-      try {
-        assertAction(actor, "documents:read");
-        return result(await services.listDocuments(actor, input));
-      } catch (error) {
-        return toolError(error, actor.requestId);
-      }
-    },
+    (input) =>
+      execute("documents:read", () => services.listDocuments(actor, input)),
   );
   server.registerTool(
     "get_document",
     {
-      description: "Get an authorized document.",
+      description: "Get current source and commit history for a document.",
       inputSchema: GetDocumentToolInputSchema.shape,
     },
-    async (input) => {
-      try {
-        assertAction(actor, "documents:read");
-        return result(await services.getDocument(actor, input));
-      } catch (error) {
-        return toolError(error, actor.requestId);
-      }
-    },
-  );
-  server.registerTool(
-    "get_document_version",
-    {
-      description: "Get an authorized document version and download reference.",
-      inputSchema: GetDocumentVersionToolInputSchema.shape,
-    },
-    async (input) => {
-      try {
-        assertAction(actor, "documents:read");
-        return result(await services.getDocumentVersion(actor, input));
-      } catch (error) {
-        return toolError(error, actor.requestId);
-      }
-    },
+    (input) =>
+      execute("documents:read", () => services.getDocument(actor, input)),
   );
   server.registerTool(
     "create_document",
     {
-      description: "Create and render a document using an active style.",
+      description: "Create a document and its initial Git commit.",
       inputSchema: CreateDocumentToolInputSchema.shape,
     },
-    async (input) => {
-      try {
-        assertAction(actor, "documents:write");
-        return result(await services.createDocument(actor, input));
-      } catch (error) {
-        return toolError(error, actor.requestId);
-      }
-    },
+    (input) =>
+      execute("documents:write", () => services.createDocument(actor, input)),
   );
   server.registerTool(
-    "create_document_version",
+    "update_document",
     {
-      description: "Create and render an immutable document version.",
-      inputSchema: CreateDocumentVersionToolInputSchema.shape,
+      description: "Replace document source and create a Git commit.",
+      inputSchema: UpdateDocumentToolInputSchema.shape,
     },
-    async (input) => {
-      try {
-        assertAction(actor, "documents:write");
-        return result(await services.createDocumentVersion(actor, input));
-      } catch (error) {
-        return toolError(error, actor.requestId);
-      }
+    (input) =>
+      execute("documents:write", () => services.updateDocument(actor, input)),
+  );
+  server.registerTool(
+    "list_document_commits",
+    {
+      description: "List Git commits for an authorized document.",
+      inputSchema: ListDocumentCommitsToolInputSchema.shape,
     },
+    (input) =>
+      execute("documents:read", () =>
+        services.listDocumentCommits(actor, input),
+      ),
+  );
+  server.registerTool(
+    "read_document_commit",
+    {
+      description: "Read source and pinned style metadata at a commit.",
+      inputSchema: ReadDocumentCommitToolInputSchema.shape,
+    },
+    (input) =>
+      execute("documents:read", () =>
+        services.readDocumentCommit(actor, input),
+      ),
+  );
+  server.registerTool(
+    "revert_document",
+    {
+      description: "Restore an old state as a new Git commit.",
+      inputSchema: RevertDocumentToolInputSchema.shape,
+    },
+    (input) =>
+      execute("documents:write", () => services.revertDocument(actor, input)),
   );
   return server;
 }
 
-function unauthorized(requestId: string) {
-  return {
-    error: {
-      code: "unauthenticated" as const,
-      message: "Authentication required",
-      requestId,
-    },
-  };
-}
+const unauthorized = (requestId: string) => ({
+  error: {
+    code: "unauthenticated" as const,
+    message: "Authentication required",
+    requestId,
+  },
+});
 
 export function createMcpPlugin(options: McpPluginOptions): FastifyPluginAsync {
   return (app) => {
@@ -234,18 +230,15 @@ export function createMcpPlugin(options: McpPluginOptions): FastifyPluginAsync {
       try {
         return await options.credentialVerifier.verify(token, request.id);
       } catch {
-        // Credential failures must remain indistinguishable to clients.
         return null;
       }
     };
-
     const rateLimit = (actor: AgentActor) =>
       options.rateLimiter.consume({
         key: `mcp:${actor.credentialId}`,
         limit: options.rateLimit ?? DEFAULT_RATE_LIMIT,
         windowMs: options.rateWindowMs ?? DEFAULT_RATE_WINDOW_MS,
       });
-
     const rejectUnauthenticated = (
       request: FastifyRequest,
       reply: {
@@ -256,6 +249,22 @@ export function createMcpPlugin(options: McpPluginOptions): FastifyPluginAsync {
       reply.header("WWW-Authenticate", 'Bearer realm="mcp"');
       return reply.code(401).send(unauthorized(request.id));
     };
+    const rejectRateLimited = async (
+      actor: AgentActor,
+      request: FastifyRequest,
+      reply: FastifyReply,
+    ): Promise<boolean> => {
+      const rate = await rateLimit(actor);
+      if (rate.allowed) return false;
+      reply.header(
+        "Retry-After",
+        String(Math.max(1, Math.ceil(rate.retryAfterMs / 1000))),
+      );
+      void reply
+        .code(429)
+        .send(toSafeError(new AppError("rate_limited", 429), request.id).body);
+      return true;
+    };
 
     app.route({
       method: "POST",
@@ -264,18 +273,7 @@ export function createMcpPlugin(options: McpPluginOptions): FastifyPluginAsync {
       handler: async (request, reply) => {
         const actor = await authenticate(request);
         if (actor === null) return rejectUnauthenticated(request, reply);
-        const rate = await rateLimit(actor);
-        if (!rate.allowed) {
-          reply.header(
-            "Retry-After",
-            String(Math.max(1, Math.ceil(rate.retryAfterMs / 1000))),
-          );
-          return reply
-            .code(429)
-            .send(
-              toSafeError(new AppError("rate_limited", 429), request.id).body,
-            );
-        }
+        if (await rejectRateLimited(actor, request, reply)) return;
         if (
           Buffer.byteLength(JSON.stringify(request.body ?? null), "utf8") >
           MAX_BODY_BYTES
@@ -286,10 +284,7 @@ export function createMcpPlugin(options: McpPluginOptions): FastifyPluginAsync {
               toSafeError(new AppError("validation_failed", 413), request.id)
                 .body,
             );
-
         const server = createServer(actor, options.services);
-        // The SDK's declaration is not exact-optional-property compatible, but
-        // the v1 stateless transport API explicitly uses an undefined generator.
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
         } as unknown as ConstructorParameters<
@@ -324,18 +319,7 @@ export function createMcpPlugin(options: McpPluginOptions): FastifyPluginAsync {
         handler: async (request, reply) => {
           const actor = await authenticate(request);
           if (actor === null) return rejectUnauthenticated(request, reply);
-          const rate = await rateLimit(actor);
-          if (!rate.allowed) {
-            reply.header(
-              "Retry-After",
-              String(Math.max(1, Math.ceil(rate.retryAfterMs / 1000))),
-            );
-            return reply
-              .code(429)
-              .send(
-                toSafeError(new AppError("rate_limited", 429), request.id).body,
-              );
-          }
+          if (await rejectRateLimited(actor, request, reply)) return;
           return reply.code(405).send({
             jsonrpc: "2.0",
             error: { code: -32000, message: "Method not allowed." },

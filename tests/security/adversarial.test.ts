@@ -21,7 +21,16 @@ import {
   type DomainServices,
 } from "../../apps/server/src/mcp/index.js";
 import { createInMemoryRateLimiter } from "../../apps/server/src/platform/rate-limit.js";
-import { AppError } from "../../apps/server/src/platform/errors.js";
+import { registerDocumentRoutes } from "../../apps/server/src/modules/documents/routes.js";
+import {
+  DocumentService,
+  type DocumentRepository,
+} from "../../apps/server/src/modules/documents/service.js";
+import type { ActorContext } from "../../apps/server/src/platform/context.js";
+import {
+  AppError,
+  registerSafeErrorHandler,
+} from "../../apps/server/src/platform/errors.js";
 
 const owner: HumanActor = {
   userId: "owner",
@@ -92,13 +101,19 @@ function mcpApp(verifier = vi.fn(async () => agent)) {
     getDocument: vi.fn(async () => {
       throw new AppError("not_found", 404);
     }),
-    getDocumentVersion: vi.fn(async () => {
-      throw new AppError("not_found", 404);
-    }),
     createDocument: vi.fn(async () => {
       throw new AppError("not_found", 404);
     }),
-    createDocumentVersion: vi.fn(async () => {
+    updateDocument: vi.fn(async () => {
+      throw new AppError("not_found", 404);
+    }),
+    listDocumentCommits: vi.fn(async () => {
+      throw new AppError("not_found", 404);
+    }),
+    readDocumentCommit: vi.fn(async () => {
+      throw new AppError("not_found", 404);
+    }),
+    revertDocument: vi.fn(async () => {
       throw new AppError("not_found", 404);
     }),
   };
@@ -129,6 +144,53 @@ async function mcp(
     },
     payload: JSON.stringify(body),
   });
+}
+
+const documentId = "11111111-1111-4111-8111-111111111111";
+const companyId = "33333333-3333-4333-8333-333333333333";
+const commitSha = "a".repeat(40);
+
+function documentApp(actorFor: () => ActorContext) {
+  const document = {
+    id: documentId,
+    companyId,
+    title: "Private document",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  const repository: DocumentRepository = {
+    transaction: async (operation) => operation(repository),
+    companyExists: vi.fn(async () => true),
+    findActiveStyle: vi.fn(async () => undefined),
+    findStyleVersion: vi.fn(async () => undefined),
+    findActiveStyleVersion: vi.fn(async () => undefined),
+    findDocument: vi.fn(async (workspaceId: string, id: string) =>
+      workspaceId === "tenant-a" && id === documentId ? document : undefined,
+    ),
+    listDocuments: vi.fn(async () => []),
+    lockDocument: vi.fn(async () => undefined),
+    insertDocument: vi.fn(async () => document),
+    touchDocument: vi.fn(async () => document),
+    lockCompanyForGitWrites: vi.fn(async () => undefined),
+  };
+  const git = {
+    write: vi.fn(),
+    readCurrent: vi.fn(),
+    readHistorical: vi.fn(),
+    history: vi.fn(),
+    revert: vi.fn(),
+  };
+  const renderer = { render: vi.fn() };
+  const service = new DocumentService({
+    repository,
+    git,
+    renderer,
+    sourceBuilder: { resolve: vi.fn() },
+  });
+  const app = Fastify({ logger: false });
+  registerSafeErrorHandler(app);
+  registerDocumentRoutes(app, { service, actorFor });
+  return { app, git, renderer };
 }
 
 describe("adversarial authorization and credential boundaries", () => {
@@ -197,6 +259,89 @@ describe("adversarial authorization and credential boundaries", () => {
         actions: ["companies:read"],
       }),
     ).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("masks cross-workspace and cross-company document history, revert, and PDF access", async () => {
+    const foreignWorkspace: ActorContext = {
+      type: "human",
+      ...owner,
+      workspaceId: "tenant-b",
+    };
+    const foreignCompany: ActorContext = {
+      type: "agent",
+      ...agent,
+      actions: ["documents:read", "documents:write"],
+      allowedCompanyIds: ["44444444-4444-4444-8444-444444444444"],
+    };
+    for (const actor of [foreignWorkspace, foreignCompany]) {
+      const { app, git, renderer } = documentApp(() => actor);
+      for (const request of [
+        { method: "GET", url: `/api/documents/${documentId}` },
+        { method: "GET", url: `/api/documents/${documentId}/commits` },
+        {
+          method: "GET",
+          url: `/api/documents/${documentId}/commits/${commitSha}/source`,
+        },
+        {
+          method: "POST",
+          url: `/api/documents/${documentId}/revert`,
+          payload: { commitSha },
+        },
+        { method: "GET", url: `/api/documents/${documentId}/pdf` },
+      ] as const) {
+        const response = await app.inject(request);
+        expect(
+          response.statusCode,
+          `${actor.workspaceId} ${request.url} ${response.body}`,
+        ).toBe(404);
+      }
+      expect(git.history).not.toHaveBeenCalled();
+      expect(git.readHistorical).not.toHaveBeenCalled();
+      expect(git.revert).not.toHaveBeenCalled();
+      expect(renderer.render).not.toHaveBeenCalled();
+      await app.close();
+    }
+  });
+
+  it("rejects path-like or malformed commit identifiers and keeps numeric routes and MCP tools absent", async () => {
+    const { app, git } = documentApp(() => ({ type: "human", ...owner }));
+    for (const sha of [
+      "..%2Fsecret",
+      "%2e%2e%2fsecret",
+      "A".repeat(40),
+      "g".repeat(40),
+      "a".repeat(39),
+      "a".repeat(65),
+    ]) {
+      expect(
+        (
+          await app.inject({
+            method: "GET",
+            url: `/api/documents/${documentId}/commits/${sha}/source`,
+          })
+        ).statusCode,
+      ).toBe(404);
+    }
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/api/documents/${documentId}/versions/2/pdf`,
+        })
+      ).statusCode,
+    ).toBe(404);
+    expect(git.readHistorical).not.toHaveBeenCalled();
+    await app.close();
+
+    const { app: mcpTools } = mcpApp();
+    const listed = await mcp(mcpTools, "tool-list", {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/list",
+    });
+    expect(listed.body).not.toContain("get_document_version");
+    expect(listed.body).not.toContain("create_document_version");
+    await mcpTools.close();
   });
 
   it("enforces bearer authentication, action scopes, rate limits, and a 256 KiB request ceiling without token reflection", async () => {

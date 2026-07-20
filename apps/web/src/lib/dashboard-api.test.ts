@@ -147,52 +147,32 @@ describe("dashboard contract adapters", () => {
       safeError(new ApiError("not_found", "internal company details")),
     ).toBe("This item is unavailable in your workspace.");
   });
-  it("uses private authorized artifact routes rather than public object URLs", () => {
-    expect(dashboardApi.pdfUrl("document", 2)).toBe(
-      "/api/documents/document/versions/2/pdf",
-    );
-    expect(dashboardApi.inputUrl("document", 2)).toBe(
-      "/api/documents/document/versions/2/input",
+  it("uses private current-PDF and commit-source routes rather than persisted artifact URLs", () => {
+    const sha = "a".repeat(40);
+    expect(dashboardApi.pdfUrl("document")).toBe("/api/documents/document/pdf");
+    expect(dashboardApi.sourceUrl("document", sha)).toBe(
+      `/api/documents/document/commits/${sha}/source`,
     );
   });
-  it("keeps document history as contract versions rather than editable browser content", async () => {
-    const versions = [
-      {
-        id: "version",
-        documentId: "document",
-        version: 2,
-        styleVersionId: "style-version",
-        format: "markdown",
-        body: "Read only",
-        status: "ready",
-        inputHash: "a".repeat(64),
-        sourceHash: null,
-        outputHash: null,
-        rendererVersion: null,
-        createdByType: "credential",
-        createdById: "actor",
-        createdAt: "2026-01-01T00:00:00.000Z",
-      },
-    ];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(
-        response({
-          document: {
-            id: "document",
-            companyId: "company",
-            title: "Proposal",
-            currentVersionId: "version",
-            createdAt: "2026-01-01T00:00:00.000Z",
-            updatedAt: "2026-01-01T00:00:00.000Z",
-          },
-          versions,
-        }),
-      ),
-    );
-    await expect(dashboardApi.document("document")).resolves.toMatchObject({
-      versions,
-    });
+  it("reads commit-backed document history and reverts by creating a new commit", async () => {
+    const sha = "a".repeat(40);
+    const fetcher = vi.fn().mockResolvedValue(response({}));
+    vi.stubGlobal("fetch", fetcher);
+
+    await dashboardApi.document("document");
+    await dashboardApi.documentCommits("document");
+    await dashboardApi.documentCommit("document", sha);
+    await dashboardApi.revertDocument("document", sha);
+
+    expect(fetcher.mock.calls.map((call) => call[0] as string)).toEqual([
+      "/api/documents/document",
+      "/api/documents/document/commits",
+      `/api/documents/document/commits/${sha}`,
+      "/api/documents/document/revert",
+    ]);
+    const revertInit = fetcher.mock.calls[3]?.[1] as RequestInit;
+    expect(revertInit.method).toBe("POST");
+    expect(revertInit.body).toBe(JSON.stringify({ commitSha: sha }));
   });
   it("keeps style versions immutable by posting a new version and activation separately", async () => {
     const fetcher = vi.fn().mockResolvedValue(response({}));

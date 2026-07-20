@@ -4,31 +4,31 @@
 
 Roles are workspace-scoped. The first registered user creates a workspace as its owner. A workspace must retain at least one owner.
 
-| Capability                                       | Owner | Member |
-| ------------------------------------------------ | :---: | :----: |
-| Read workspace and membership list               |  Yes  |  Yes   |
-| Change workspace settings                        |  Yes  |   No   |
-| Invite, remove, or change member roles           |  Yes  |   No   |
-| Create, read, and update companies               |  Yes  |  Yes   |
-| Archive companies                                |  Yes  |   No   |
-| Create style versions and activate styles        |  Yes  |  Yes   |
-| Read documents, versions, submitted inputs, PDFs |  Yes  |  Yes   |
-| Delete documents/company data                    |  Yes  |   No   |
-| Create, scope, rotate, or revoke MCP credentials |  Yes  |   No   |
-| Read audit events                                |  Yes  |   No   |
+| Capability                                          | Owner | Member |
+| --------------------------------------------------- | :---: | :----: |
+| Read workspace and membership list                  |  Yes  |  Yes   |
+| Change workspace settings                           |  Yes  |   No   |
+| Invite, remove, or change member roles              |  Yes  |   No   |
+| Create, read, and update companies                  |  Yes  |  Yes   |
+| Archive companies                                   |  Yes  |   No   |
+| Create style versions and activate styles           |  Yes  |  Yes   |
+| Read documents, commit history/source, current PDFs |  Yes  |  Yes   |
+| Delete documents/company data                       |  Yes  |   No   |
+| Create, scope, rotate, or revoke MCP credentials    |  Yes  |   No   |
+| Read audit events                                   |  Yes  |   No   |
 
 Every request resolves the workspace from the authenticated membership. A caller cannot select a workspace merely by sending its ID. Cross-workspace identifiers produce `not_found` rather than disclosing existence.
 
-The submitted input is available only through the authorized HTTP input route. It is the exact immutable body, served as a private `text/plain; charset=utf-8` attachment with a `.md` or `.html` filename. Private render evidence is not a user download surface. PDF access is separately authorized and private.
+Document source and history are available only through authorized application routes. Historical source is a private `text/plain; charset=utf-8` attachment named `.md` or `.html`; Git repositories are never directly accessible. PDF access is separately authorized, private, and limited to the current source.
 
 ## MCP actions
 
-| Scope             | Permitted operations                                                                       |
-| ----------------- | ------------------------------------------------------------------------------------------ |
-| `companies:read`  | List/read only companies in the credential company allow-list.                             |
-| `styles:read`     | List/read active styles and versions for allowed companies.                                |
-| `documents:read`  | List/read documents and versions; receive authorized private PDF references for companies. |
-| `documents:write` | Create documents and immutable document versions with required explicit input format.      |
+| Scope             | Permitted operations                                                      |
+| ----------------- | ------------------------------------------------------------------------- |
+| `companies:read`  | List/read only companies in the credential company allow-list.            |
+| `styles:read`     | List/read active styles and versions for allowed companies.               |
+| `documents:read`  | List/read documents and Git commits for allowed companies.                |
+| `documents:write` | Create, update, and revert documents with required explicit input format. |
 
 A request must pass all checks: credential exists, hash matches, not revoked/expired, action is present, company is allow-listed, target resolves inside the credential workspace, and rate limit permits it. Style mutation is not exposed over MCP in the MVP.
 
@@ -54,4 +54,4 @@ The transport constructs this context after authentication. Domain services enfo
 
 ## Audit events
 
-Audit owner/member changes, company/style changes, credential lifecycle, document creation/versioning/deletion, submitted-input/PDF access, login security events, and administrative data purge. Never include passwords, tokens, document bodies, signed URLs, or reset links.
+Audit owner/member changes, company/style changes, credential lifecycle, document creation/update/revert, commit/PDF access, login security events, and administrative operations. Never include passwords, tokens, document bodies, commit source, signed URLs, or reset links.

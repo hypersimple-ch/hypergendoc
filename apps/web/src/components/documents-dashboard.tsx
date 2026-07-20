@@ -1,18 +1,18 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import type { Document, DocumentVersion } from "@hypergendoc/contracts";
+import type { Document, DocumentCommit } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
-import { Empty, LoadState, useLoaded } from "./dashboard-state";
+import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
 import { Button, FormField, Input, Status, Table } from "./primitives";
 
-const formatLabel = (format: DocumentVersion["format"]) =>
+const formatLabel = (format: DocumentCommit["format"]) =>
   format === "markdown" ? "Markdown" : "HTML";
+const shortSha = (commitSha: string) => commitSha.slice(0, 8);
 
 export function DocumentsDashboard() {
   const data = useLoaded(dashboardApi.documents);
   const companies = useLoaded(dashboardApi.companies);
   const [company, setCompany] = useState("");
-  const [status, setStatus] = useState("");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Document>();
   const visible = useMemo(
@@ -24,42 +24,15 @@ export function DocumentsDashboard() {
       ) ?? [],
     [data.value, company, query],
   );
-  const visibleIds = useMemo(
-    () => visible.map((d) => d.id).join(","),
-    [visible],
-  );
-  const currentVersions = useLoaded(
-    () =>
-      Promise.all(
-        visible.map(async (document) => {
-          const detail = await dashboardApi.document(document.id);
-          return {
-            document,
-            version: detail.versions.find(
-              (version) => version.id === document.currentVersionId,
-            ),
-          };
-        }),
-      ),
-    [visibleIds],
-  );
-  const filtered = useMemo(
-    () =>
-      currentVersions.value?.filter(
-        ({ version }) => !status || version?.status === status,
-      ) ?? [],
-    [currentVersions.value, status],
-  );
   return (
     <>
       <section className="page-heading">
         <div>
           <p className="eyebrow">Documents</p>
-          <h1>Immutable render history.</h1>
+          <h1>Immutable commit history.</h1>
           <p>
-            Documents are created by authorized agents. This dashboard is
-            read-only: inspect private artifacts and reproducible metadata
-            without editing content.
+            Documents are created by authorized agents. Inspect their source and
+            commit metadata, or revert a prior commit as a new revision.
           </p>
         </div>
       </section>
@@ -85,51 +58,25 @@ export function DocumentsDashboard() {
             ))}
           </select>
         </FormField>
-        <FormField label="Render status">
-          <select
-            className="input"
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-          >
-            <option value="">All statuses</option>
-            <option>pending</option>
-            <option>ready</option>
-            <option>failed</option>
-          </select>
-        </FormField>
       </section>
       <section className="panel dashboard-panel">
         <LoadState {...data} />
         {data.value &&
-          (visible.length === 0 ? (
-            <NoMatchingDocuments />
+          (visible.length ? (
+            <Table
+              caption="Documents"
+              columns={["Document", "Company", "Updated", "Open"]}
+            >
+              {visible.map((document) => (
+                <DocumentRow
+                  key={document.id}
+                  document={document}
+                  onOpen={() => setSelected(document)}
+                />
+              ))}
+            </Table>
           ) : (
-            <>
-              <LoadState {...currentVersions} />
-              {currentVersions.value &&
-                (filtered.length ? (
-                  <Table
-                    caption="Documents"
-                    columns={[
-                      "Document",
-                      "Company",
-                      "Current version",
-                      "Updated",
-                      "Open",
-                    ]}
-                  >
-                    {filtered.map(({ document }) => (
-                      <DocumentRow
-                        key={document.id}
-                        document={document}
-                        onOpen={() => setSelected(document)}
-                      />
-                    ))}
-                  </Table>
-                ) : (
-                  <NoMatchingDocuments />
-                ))}
-            </>
+            <NoMatchingDocuments />
           ))}
       </section>
       {selected && (
@@ -162,7 +109,6 @@ function DocumentRow({
         <strong>{document.title}</strong>
       </td>
       <td>{document.companyId.slice(0, 8)}…</td>
-      <td>{document.currentVersionId ? "Available" : "Pending"}</td>
       <td>{new Date(document.updatedAt).toLocaleDateString()}</td>
       <td>
         <Button tone="quiet" onClick={onOpen}>
@@ -183,11 +129,51 @@ function DocumentDetail({
     () => dashboardApi.document(document.id),
     [document.id],
   );
-  const [active, setActive] = useState<DocumentVersion>();
-  const [previewError, setPreviewError] = useState(false);
+  const [active, setActive] = useState<DocumentCommit>();
+  const [showPdf, setShowPdf] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ text: string; error: boolean }>();
   useEffect(() => {
-    if (detail.value?.versions.length) setActive(detail.value.versions.at(-1));
+    if (detail.value) setActive(detail.value.current.commit);
   }, [detail.value]);
+  const source = useLoaded(() => {
+    if (!detail.value || !active) return Promise.resolve(undefined);
+    return active.commitSha === detail.value.current.commit.commitSha
+      ? Promise.resolve(detail.value.current)
+      : dashboardApi.documentCommit(document.id, active.commitSha);
+  }, [document.id, detail.value?.current.commit.commitSha, active?.commitSha]);
+  const isCurrent =
+    active?.commitSha === detail.value?.current.commit.commitSha;
+  const activeSource =
+    source.value?.commit.commitSha === active?.commitSha
+      ? source.value
+      : undefined;
+  async function revert() {
+    if (
+      !active ||
+      busy ||
+      !confirm(
+        `Revert to commit ${shortSha(active.commitSha)}? This creates a new commit.`,
+      )
+    )
+      return;
+    setBusy(true);
+    setMessage(undefined);
+    try {
+      const current = await dashboardApi.revertDocument(
+        document.id,
+        active.commitSha,
+      );
+      setActive(current.commit);
+      setShowPdf(false);
+      setMessage({ text: "Reverted as a new commit.", error: false });
+      detail.reload();
+    } catch (error) {
+      setMessage({ text: safeError(error), error: true });
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <section className="panel dashboard-panel">
       <div className="panel-heading">
@@ -201,98 +187,114 @@ function DocumentDetail({
       </div>
       <LoadState {...detail} />
       {detail.value && (
-        <>
-          <div className="history-layout">
-            <div>
-              <h3>Version timeline</h3>
-              <ol className="timeline">
-                {detail.value.versions.map((v) => (
-                  <li key={v.id}>
-                    <button
-                      className={
-                        active?.id === v.id
-                          ? "timeline-button timeline-button--active"
-                          : "timeline-button"
-                      }
-                      onClick={() => {
-                        setActive(v);
-                        setPreviewError(false);
-                      }}
-                    >
-                      Version {v.version}{" "}
-                      <span
-                        className={`badge ${v.status === "ready" ? "" : "badge--muted"}`}
-                      >
-                        {v.status}
-                      </span>
-                      <span className="badge badge--muted">
-                        {formatLabel(v.format)}
-                      </span>
-                      <small>{new Date(v.createdAt).toLocaleString()}</small>
-                    </button>
-                  </li>
-                ))}
-              </ol>
-            </div>
-            {active && (
-              <div>
-                <h3>Private artifact</h3>
-                {active.status === "ready" && !previewError ? (
-                  <iframe
-                    className="pdf-preview"
-                    title={`${document.title} version ${active.version} PDF preview`}
-                    src={`${dashboardApi.pdfUrl(document.id, active.version)}?disposition=inline`}
-                    sandbox="allow-downloads"
-                    onError={() => setPreviewError(true)}
-                  />
-                ) : (
-                  <Status
-                    kind={active.status === "failed" ? "error" : "warning"}
+        <div className="history-layout">
+          <div>
+            <h3>Commit history</h3>
+            <ol className="timeline">
+              {detail.value.commits.map((commit) => (
+                <li key={commit.commitSha}>
+                  <button
+                    className={
+                      active?.commitSha === commit.commitSha
+                        ? "timeline-button timeline-button--active"
+                        : "timeline-button"
+                    }
+                    aria-label={`Commit ${shortSha(commit.commitSha)}`}
+                    onClick={() => {
+                      setActive(commit);
+                      setShowPdf(false);
+                      setMessage(undefined);
+                    }}
                   >
-                    {active.status === "failed"
-                      ? "This render failed. Internal renderer details are not exposed."
-                      : "PDF preview is unavailable. You can still use an authorized download when the artifact is ready."}
-                  </Status>
-                )}
-                <div className="row-actions">
-                  <a
-                    className="button button--quiet"
-                    href={dashboardApi.pdfUrl(document.id, active.version)}
-                    download
-                  >
-                    Download PDF
-                  </a>
-                  <a
-                    className="button button--quiet"
-                    href={dashboardApi.inputUrl(document.id, active.version)}
-                    download
-                  >
-                    Download input
-                  </a>
-                </div>
-                <h3>Render metadata</h3>
-                <dl className="metadata">
-                  <dt>Status</dt>
-                  <dd>{active.status}</dd>
-                  <dt>Format</dt>
-                  <dd>{formatLabel(active.format)}</dd>
-                  <dt>Style version</dt>
-                  <dd>{active.styleVersionId}</dd>
-                  <dt>Input hash</dt>
-                  <dd>{active.inputHash}</dd>
-                  <dt>Source hash</dt>
-                  <dd>{active.sourceHash ?? "Not available"}</dd>
-                  <dt>Output hash</dt>
-                  <dd>{active.outputHash ?? "Not available"}</dd>
-                  <dt>Renderer</dt>
-                  <dd>{active.rendererVersion ?? "Not available"}</dd>
-                  <dt>Created by</dt>
-                  <dd>{active.createdByType}</dd>
-                </dl>
-              </div>
-            )}
+                    <strong>{shortSha(commit.commitSha)}</strong>
+                    <span className="badge badge--muted">
+                      {formatLabel(commit.format)}
+                    </span>
+                    <small>{new Date(commit.createdAt).toLocaleString()}</small>
+                  </button>
+                </li>
+              ))}
+            </ol>
           </div>
-        </>
+          {active && (
+            <div>
+              <h3>{isCurrent ? "Current source" : "Historical source"}</h3>
+              <LoadState {...source} />
+              {activeSource && (
+                <>
+                  <pre className="document-source">
+                    {activeSource.snapshot.body}
+                  </pre>
+                  <div className="row-actions">
+                    <a
+                      className="button button--quiet"
+                      href={dashboardApi.sourceUrl(
+                        document.id,
+                        active.commitSha,
+                      )}
+                      download
+                    >
+                      Download source
+                    </a>
+                    {!isCurrent && (
+                      <Button
+                        tone="quiet"
+                        disabled={busy}
+                        onClick={() => void revert()}
+                      >
+                        Revert as new commit
+                      </Button>
+                    )}
+                    {isCurrent && (
+                      <>
+                        <Button tone="quiet" onClick={() => setShowPdf(true)}>
+                          Preview PDF
+                        </Button>
+                        <a
+                          className="button button--quiet"
+                          href={dashboardApi.pdfUrl(document.id)}
+                          download
+                        >
+                          Download PDF
+                        </a>
+                      </>
+                    )}
+                  </div>
+                  {isCurrent && showPdf && (
+                    <iframe
+                      className="pdf-preview"
+                      title={`${document.title} current PDF preview`}
+                      src={`${dashboardApi.pdfUrl(document.id)}?disposition=inline`}
+                      sandbox="allow-downloads"
+                    />
+                  )}
+                </>
+              )}
+              {message && (
+                <Status kind={message.error ? "error" : "success"}>
+                  {message.text}
+                </Status>
+              )}
+              <h3>Commit metadata</h3>
+              <dl className="metadata">
+                <dt>Commit</dt>
+                <dd>{active.commitSha}</dd>
+                <dt>Parent commit</dt>
+                <dd>{active.parentCommitSha ?? "Initial commit"}</dd>
+                <dt>Format</dt>
+                <dd>{formatLabel(active.format)}</dd>
+                <dt>Style version</dt>
+                <dd>{active.styleVersionId}</dd>
+                <dt>Created by</dt>
+                <dd>
+                  {active.createdByType} {active.createdById}
+                </dd>
+                <dt>Created</dt>
+                <dd>{new Date(active.createdAt).toLocaleString()}</dd>
+              </dl>
+            </div>
+          )}
+        </div>
       )}
     </section>
   );

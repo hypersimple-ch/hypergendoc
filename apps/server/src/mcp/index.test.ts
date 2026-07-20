@@ -23,15 +23,17 @@ const services: DomainServices = {
   listStyles: vi.fn(() => Promise.resolve({ items: [] })),
   listDocuments: vi.fn(() => Promise.resolve({ items: [] })),
   getDocument: vi.fn(() => Promise.reject(new AppError("not_found", 404))),
-  getDocumentVersion: vi.fn(() =>
-    Promise.reject(new AppError("not_found", 404)),
-  ),
   createDocument: vi.fn(() =>
     Promise.reject(new AppError("render_failed", 502)),
   ),
-  createDocumentVersion: vi.fn(() =>
+  updateDocument: vi.fn(() =>
     Promise.reject(new AppError("render_failed", 502)),
   ),
+  listDocumentCommits: vi.fn(() => Promise.resolve({ items: [] })),
+  readDocumentCommit: vi.fn(() =>
+    Promise.reject(new AppError("not_found", 404)),
+  ),
+  revertDocument: vi.fn(() => Promise.reject(new AppError("not_found", 404))),
 };
 
 function request(method: string, params: unknown, id = 1) {
@@ -116,7 +118,13 @@ describe("MCP Streamable HTTP adapter", () => {
     const listed = await post(app, request("tools/list", {}));
     expect(listed.statusCode).toBe(200);
     expect(mcpJson(listed).result.tools.map((tool) => tool.name)).toEqual(
-      expect.arrayContaining(["list_companies", "create_document_version"]),
+      expect.arrayContaining([
+        "list_companies",
+        "update_document",
+        "list_document_commits",
+        "read_document_commit",
+        "revert_document",
+      ]),
     );
     const called = await post(
       app,
@@ -168,7 +176,7 @@ describe("MCP Streamable HTTP adapter", () => {
     const renderFailure = await post(
       app,
       request("tools/call", {
-        name: "create_document_version",
+        name: "update_document",
         arguments: {
           documentId: "44444444-4444-4444-8444-444444444444",
           format: "markdown",

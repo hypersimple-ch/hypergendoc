@@ -2,7 +2,10 @@ import type {
   Company,
   CreateCompanyInput,
   Document,
-  DocumentVersion,
+  DocumentCommit,
+  DocumentCurrentSource,
+  DocumentDetail as ContractDocumentDetail,
+  DocumentSnapshot,
   McpAction,
   McpCredential,
   Style,
@@ -40,10 +43,10 @@ export type WorkspaceAuditPage = {
 export type CredentialCreation = { credential: McpCredential; token: string };
 export type StyleDetail = { style: Style; versions: StyleVersion[] };
 export type StyleCreation = { style: Style; version: StyleVersion };
-export type DocumentDetail = {
-  document: Document;
-  versions: DocumentVersion[];
-};
+export type DocumentDetail = ContractDocumentDetail;
+export type DocumentHistoryDetail = DocumentDetail;
+export type DocumentCommitSource = DocumentCurrentSource;
+export type { DocumentCommit, DocumentSnapshot };
 
 type Collection<T> = { items?: T[]; data?: T[] } | T[];
 const items = <T>(value: Collection<T>): T[] =>
@@ -178,10 +181,19 @@ export const dashboardApi = {
     items<Document>(await api<Collection<Document>>("/api/documents")),
   document: (id: string): Promise<DocumentDetail> =>
     api<DocumentDetail>(`/api/documents/${id}`),
-  documentVersion: (id: string, version: number) =>
-    api<DocumentVersion>(`/api/documents/${id}/versions/${version}`),
-  pdfUrl: (id: string, version: number) =>
-    `/api/documents/${id}/versions/${version}/pdf`,
-  inputUrl: (id: string, version: number) =>
-    `/api/documents/${id}/versions/${version}/input`,
+  documentCommits: (id: string) =>
+    api<DocumentCommit[]>(`/api/documents/${id}/commits`),
+  documentCommit: (
+    id: string,
+    commitSha: string,
+  ): Promise<DocumentCommitSource> =>
+    api<DocumentCommitSource>(`/api/documents/${id}/commits/${commitSha}`),
+  sourceUrl: (id: string, commitSha: string) =>
+    `/api/documents/${id}/commits/${commitSha}/source`,
+  revertDocument: (id: string, commitSha: string) =>
+    api<DocumentCommitSource>(`/api/documents/${id}/revert`, {
+      method: "POST",
+      body: { commitSha },
+    }),
+  pdfUrl: (id: string) => `/api/documents/${id}/pdf`,
 };

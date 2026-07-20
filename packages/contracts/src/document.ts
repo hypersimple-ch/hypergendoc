@@ -4,6 +4,9 @@ import { TimestampSchema, UuidSchema } from "./common.js";
 const utf8Bytes = (value: string) => new TextEncoder().encode(value).byteLength;
 
 export const DocumentFormatSchema = z.enum(["markdown", "html"]);
+export const CommitShaSchema = z
+  .string()
+  .regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/);
 
 export const DocumentBodySchema = z
   .string()
@@ -33,8 +36,6 @@ export const DocumentMetadataSchema = z
     "At most 32 metadata fields are allowed",
   );
 
-export const DocumentStatusSchema = z.enum(["pending", "ready", "failed"]);
-
 export const CreateDocumentInputSchema = z
   .object({
     companyId: UuidSchema,
@@ -46,11 +47,17 @@ export const CreateDocumentInputSchema = z
   })
   .strict();
 
-export const CreateDocumentVersionInputSchema = z
+export const UpdateDocumentInputSchema = z
   .object({
+    styleVersionId: UuidSchema.optional(),
     format: DocumentFormatSchema,
     body: DocumentBodySchema,
-    styleVersionId: UuidSchema.optional(),
+  })
+  .strict();
+
+export const RevertDocumentInputSchema = z
+  .object({
+    commitSha: CommitShaSchema,
   })
   .strict();
 
@@ -59,41 +66,56 @@ export const DocumentSchema = z
     id: UuidSchema,
     companyId: UuidSchema,
     title: z.string().min(1).max(200),
-    currentVersionId: UuidSchema.nullable(),
     createdAt: TimestampSchema,
     updatedAt: TimestampSchema,
   })
   .strict();
 
-export const DocumentVersionSchema = z
+export const DocumentCommitSchema = z
   .object({
-    id: UuidSchema,
     documentId: UuidSchema,
-    version: z.number().int().positive(),
+    commitSha: CommitShaSchema,
+    parentCommitSha: CommitShaSchema.nullable(),
     styleVersionId: UuidSchema,
     format: DocumentFormatSchema,
-    body: DocumentBodySchema,
-    status: DocumentStatusSchema,
-    inputHash: z.string().regex(/^[a-f0-9]{64}$/),
-    sourceHash: z
-      .string()
-      .regex(/^[a-f0-9]{64}$/)
-      .nullable(),
-    outputHash: z
-      .string()
-      .regex(/^[a-f0-9]{64}$/)
-      .nullable(),
-    rendererVersion: z.string().min(1).max(128).nullable(),
     createdByType: z.enum(["user", "credential"]),
     createdById: UuidSchema,
     createdAt: TimestampSchema,
   })
   .strict();
 
+export const DocumentSnapshotSchema = z
+  .object({
+    documentId: UuidSchema,
+    commitSha: CommitShaSchema,
+    styleVersionId: UuidSchema,
+    format: DocumentFormatSchema,
+    body: DocumentBodySchema,
+  })
+  .strict();
+
+export const DocumentCurrentSourceSchema = z
+  .object({
+    commit: DocumentCommitSchema,
+    snapshot: DocumentSnapshotSchema,
+  })
+  .strict();
+
+export const DocumentDetailSchema = z
+  .object({
+    document: DocumentSchema,
+    current: DocumentCurrentSourceSchema,
+    commits: z.array(DocumentCommitSchema),
+  })
+  .strict();
+
 export type DocumentFormat = z.infer<typeof DocumentFormatSchema>;
+export type CommitSha = z.infer<typeof CommitShaSchema>;
 export type CreateDocumentInput = z.infer<typeof CreateDocumentInputSchema>;
-export type CreateDocumentVersionInput = z.infer<
-  typeof CreateDocumentVersionInputSchema
->;
+export type UpdateDocumentInput = z.infer<typeof UpdateDocumentInputSchema>;
+export type RevertDocumentInput = z.infer<typeof RevertDocumentInputSchema>;
 export type Document = z.infer<typeof DocumentSchema>;
-export type DocumentVersion = z.infer<typeof DocumentVersionSchema>;
+export type DocumentCommit = z.infer<typeof DocumentCommitSchema>;
+export type DocumentSnapshot = z.infer<typeof DocumentSnapshotSchema>;
+export type DocumentCurrentSource = z.infer<typeof DocumentCurrentSourceSchema>;
+export type DocumentDetail = z.infer<typeof DocumentDetailSchema>;

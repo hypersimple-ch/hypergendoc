@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { connect } from "node:net";
 import { limits } from "@hypergendoc/config";
-import type { DocumentVersion, StyleDefinition } from "@hypergendoc/contracts";
+import type { DocumentFormat, StyleDefinition } from "@hypergendoc/contracts";
 import { AppError } from "../../platform/errors.js";
 
 const protocol = "hypergendoc-render-v2" as const;
@@ -13,7 +13,7 @@ const sha256 = (value: Uint8Array) =>
 const hashPattern = /^[a-f0-9]{64}$/;
 
 export interface RenderRequest {
-  readonly format: DocumentVersion["format"];
+  readonly format: DocumentFormat;
   readonly body: string;
   readonly style: StyleDefinition;
 }
