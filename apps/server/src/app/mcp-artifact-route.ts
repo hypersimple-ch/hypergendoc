@@ -35,7 +35,7 @@ export function registerMcpArtifactRoute(
       if (
         !Number.isSafeInteger(version) ||
         version < 1 ||
-        (params.kind !== "source" && params.kind !== "pdf")
+        params.kind !== "pdf"
       )
         throw new AppError("not_found", 404);
       const artifact = await dependencies.documents.artifact(

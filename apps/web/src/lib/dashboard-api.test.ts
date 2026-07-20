@@ -151,8 +151,8 @@ describe("dashboard contract adapters", () => {
     expect(dashboardApi.pdfUrl("document", 2)).toBe(
       "/api/documents/document/versions/2/pdf",
     );
-    expect(dashboardApi.sourceUrl("document", 2)).toBe(
-      "/api/documents/document/versions/2/source",
+    expect(dashboardApi.inputUrl("document", 2)).toBe(
+      "/api/documents/document/versions/2/input",
     );
   });
   it("keeps document history as contract versions rather than editable browser content", async () => {
@@ -162,6 +162,7 @@ describe("dashboard contract adapters", () => {
         documentId: "document",
         version: 2,
         styleVersionId: "style-version",
+        format: "markdown",
         body: "Read only",
         status: "ready",
         inputHash: "a".repeat(64),

@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 const result = spawnSync(
   "docker",
@@ -40,7 +41,37 @@ if (
   failures.push("renderer must not mount a container-engine socket");
 }
 if (renderer?.build?.dockerfile !== "apps/renderer/Dockerfile") {
-  failures.push("renderer must use its Tectonic-enabled Dockerfile");
+  failures.push("renderer must use its Chromium/Playwright Dockerfile");
+} else {
+  const dockerfile = readFileSync("apps/renderer/Dockerfile", "utf8");
+  if (!dockerfile.includes("mcr.microsoft.com/playwright:v1.61.0-noble")) {
+    failures.push(
+      "renderer Dockerfile must use the pinned Chromium/Playwright runtime",
+    );
+  }
+}
+if (
+  renderer?.read_only !== true ||
+  renderer?.user !== "10001:10001" ||
+  !renderer?.cap_drop?.includes("ALL") ||
+  renderer?.cap_add?.length !== 1 ||
+  !renderer?.cap_add?.includes("SYS_CHROOT") ||
+  !renderer?.security_opt?.includes("no-new-privileges:true") ||
+  !renderer?.volumes?.some((volume) => volume.target === "/run/hypergendoc")
+) {
+  failures.push(
+    "renderer must retain non-root read-only socket-only isolation with only SYS_CHROOT restored for the Chromium sandbox",
+  );
+}
+if (
+  !renderer?.security_opt?.some((option) =>
+    String(option).includes("chromium-seccomp.json"),
+  ) ||
+  !renderer?.tmpfs?.some((mount) => String(mount).startsWith("/dev/shm:"))
+) {
+  failures.push(
+    "renderer must retain Chromium seccomp and shared-memory isolation",
+  );
 }
 if (
   renderer?.depends_on?.["renderer-socket-init"]?.condition !==

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   CreateDocumentInputSchema,
   CreateMcpCredentialInputSchema,
+  CreateDocumentToolInputSchema,
+  CreateDocumentVersionToolInputSchema,
   ErrorEnvelopeSchema,
   ListStylesToolInputSchema,
   RegisterInputSchema,
@@ -64,10 +66,36 @@ describe("shared contracts", () => {
         companyId: id,
         styleId: id,
         title: "Website redesign proposal",
-        body: "\\section{Overview}\nA focused proposal.",
+        format: "markdown",
+        body: "# Overview\nA focused proposal.",
         metadata: { reference: "P-001" },
       }),
     ).toMatchObject({ companyId: id, styleId: id });
+  });
+
+  it("makes document format explicit in MCP create schemas", () => {
+    expect(
+      CreateDocumentToolInputSchema.parse({
+        companyId: id,
+        styleId: id,
+        title: "MCP document",
+        format: "markdown",
+        body: "# Exact",
+      }),
+    ).toMatchObject({ format: "markdown", body: "# Exact" });
+    expect(
+      CreateDocumentVersionToolInputSchema.parse({
+        documentId: id,
+        format: "html",
+        body: "<p>Exact</p>",
+      }),
+    ).toMatchObject({ format: "html", body: "<p>Exact</p>" });
+    expect(() =>
+      CreateDocumentVersionToolInputSchema.parse({
+        documentId: id,
+        body: "# Missing",
+      }),
+    ).toThrow();
   });
 
   it("rejects unknown fields and malformed identifiers", () => {
@@ -105,7 +133,38 @@ describe("shared contracts", () => {
         companyId: id,
         styleId: id,
         title: "Too large",
+        format: "html",
         body: "é".repeat(131_073),
+      }),
+    ).toThrow();
+  });
+
+  it("requires a document format and preserves exact valid bodies", () => {
+    const body = "  <p>Exact body</p>\n";
+    expect(
+      CreateDocumentInputSchema.parse({
+        companyId: id,
+        styleId: id,
+        title: "Exact input",
+        format: "html",
+        body,
+      }).body,
+    ).toBe(body);
+    expect(() =>
+      CreateDocumentInputSchema.parse({
+        companyId: id,
+        styleId: id,
+        title: "Missing format",
+        body,
+      }),
+    ).toThrow();
+    expect(() =>
+      CreateDocumentInputSchema.parse({
+        companyId: id,
+        styleId: id,
+        title: "Unsafe body",
+        format: "markdown",
+        body: "text\u0000",
       }),
     ).toThrow();
   });

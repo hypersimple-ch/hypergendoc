@@ -23,8 +23,8 @@ vi.mock("../lib/dashboard-api", () => ({
     documents,
     pdfUrl: (id: string, version: number) =>
       `/api/documents/${id}/versions/${version}/pdf`,
-    sourceUrl: (id: string, version: number) =>
-      `/api/documents/${id}/versions/${version}/source`,
+    inputUrl: (id: string, version: number) =>
+      `/api/documents/${id}/versions/${version}/input`,
   },
 }));
 
@@ -46,11 +46,13 @@ const version = (
   id: string,
   number: number,
   status: DocumentVersion["status"],
+  format: DocumentVersion["format"] = "markdown",
 ): DocumentVersion => ({
   id,
   documentId,
   version: number,
   styleVersionId: "55555555-5555-4555-8555-555555555555",
+  format,
   body: "Read only",
   status,
   inputHash: "a".repeat(64),
@@ -130,5 +132,25 @@ describe("DocumentsDashboard", () => {
       "href",
       `/api/documents/${documentId}/versions/2/pdf`,
     );
+    expect(
+      screen.getByRole("link", { name: "Download input" }),
+    ).toHaveAttribute("href", `/api/documents/${documentId}/versions/2/input`);
+    expect(
+      screen.queryByRole("link", { name: /source/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the immutable input format in history and active version metadata", async () => {
+    mockDashboard([
+      version(versionId, 1, "ready", "markdown"),
+      version(nextVersionId, 2, "ready", "html"),
+    ]);
+    render(<DocumentsDashboard />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "View history" }),
+    );
+    expect(await screen.findByText("Markdown")).toBeVisible();
+    await waitFor(() => expect(screen.getAllByText("HTML")).toHaveLength(2));
   });
 });

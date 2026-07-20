@@ -29,12 +29,13 @@ All `/api` routes require a secure human session except registration/verificatio
 - `GET /api/styles/:styleId`; `POST /api/styles/:styleId/versions`; `POST /api/styles/:styleId/activate`
 - `POST /api/styles/:styleId/preview`
 - `GET/POST /api/mcp-credentials`; `PATCH/DELETE /api/mcp-credentials/:credentialId` (owner only)
-- `GET /api/documents`; `GET /api/documents/:documentId`
-- `GET /api/documents/:documentId/versions/:version`
-- authorized source/PDF download routes
+- `GET/POST /api/documents`; `GET /api/documents/:documentId`
+- `POST /api/documents/:documentId/versions`; `GET /api/documents/:documentId/versions/:version`
+- `GET /api/documents/:documentId/versions/:version/input` downloads the exact immutable submitted body. It responds with `text/plain; charset=utf-8`, `Cache-Control: private, no-store`, and an attachment filename ending in `.md` for Markdown or `.html` for HTML.
+- `GET /api/documents/:documentId/versions/:version/pdf` is the authorized private PDF download route; `?disposition=inline` is supported only for this PDF route.
 - owner-only audit and deletion routes
 
-Mutation routes use CSRF protection where cookie authentication is accepted. Uploads use explicit content/size limits.
+There is no document-render-evidence download route. The input route is the only document-body download surface. Mutation routes use CSRF protection where cookie authentication is accepted. Uploads use explicit content/size limits.
 
 ## MCP transport
 
@@ -46,21 +47,27 @@ Expose stateless standard MCP Streamable HTTP at `/mcp` over HTTPS. Require `Aut
 - `list_styles({ companyId, cursor?, limit? })` — requires `styles:read` and company scope.
 - `list_documents({ companyId, cursor?, limit? })` — requires `documents:read` and company scope.
 - `get_document({ documentId })` — requires `documents:read` and target company scope.
-- `get_document_version({ documentId, version })` — same read checks; returns metadata, body/source according to contract, and an authorized download reference.
-- `create_document({ companyId, styleId, title, body, metadata? })` — requires `documents:write`; resolves the active exact style version.
-- `create_document_version({ documentId, body, styleVersionId? })` — requires `documents:write`; inherits prior exact style version when omitted.
+- `get_document_version({ documentId, version })` — same read checks; returns version metadata and an authorized private PDF download reference.
+- `create_document({ companyId, styleId, title, format, body, metadata? })` — requires `documents:write`; `format` is required and is exactly `"markdown"` or `"html"`; resolves the active exact style version.
+- `create_document_version({ documentId, format, body, styleVersionId? })` — requires `documents:write`; `format` is required and is exactly `"markdown"` or `"html"`; inherits the prior exact style version when omitted.
 
-Tool output includes structured content and a concise text representation. No style mutation tool exists in the MVP.
+Every immutable version records the original exact submitted `body` and required `format`; format is never inferred. The identity hash covers both values. Tool output includes structured content and a concise text representation. No style mutation tool exists in the MVP.
+
+## Input formats
+
+Markdown is submitted as plain UTF-8 text. HTML is submitted as a fragment, not a complete document: its sanitized semantic fragment is rendered, while the exact submitted HTML remains the immutable input. Empty sanitized input is rejected. The service does not accept a user CSS or style layer.
+
+The sanitizer conservatively permits semantic headings, paragraphs, emphasis, lists, blockquotes, code/preformatted blocks, links restricted to safe protocols, and tables. It removes scripts, styles, event handlers, forms, iframes, objects, embeds, SVG, images, arbitrary attributes/classes/IDs, inline CSS, protocol-relative URLs, file/local/unsafe URLs, and external resources.
 
 ## Limits
 
 - Body: 256 KiB UTF-8 after request decoding.
 - Logo upload: 10 MiB and validated image allow-list.
-- Rendered artifact: 25 MiB.
+- Rendered PDF: 25 MiB.
 - Render wall clock: 30 seconds.
+- Rendered document: 100 pages.
 - Pagination: default 50, maximum 100.
-- Additional parser node/depth/table/page, session, request, and key rate limits are configurable but cannot be disabled in production.
 
 ## Compatibility
 
-Contract schemas carry an API version. Additive response changes require optional fields; breaking changes require a versioned route/tool contract. Schema tests must decode documented examples and reject malformed, oversized, unknown-field, and cross-entity identifier shapes.
+Contract schemas carry an API version. Additive response changes require optional fields; breaking changes require a versioned route/tool contract. Schema tests must decode documented examples and reject malformed, oversized, unknown-field, missing-format, and cross-entity identifier shapes.

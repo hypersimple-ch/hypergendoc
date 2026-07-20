@@ -3,12 +3,27 @@ import { TimestampSchema, UuidSchema } from "./common.js";
 
 const utf8Bytes = (value: string) => new TextEncoder().encode(value).byteLength;
 
-export const LatexBodySchema = z
+export const DocumentFormatSchema = z.enum(["markdown", "html"]);
+
+export const DocumentBodySchema = z
   .string()
   .min(1)
   .refine(
     (value) => utf8Bytes(value) <= 256 * 1024,
     "Body exceeds 256 KiB UTF-8",
+  )
+  .refine(
+    (value) =>
+      ![...value].some((char) => {
+        const codePoint = char.codePointAt(0)!;
+        return (
+          codePoint === 0 ||
+          codePoint === 0xfffd ||
+          (codePoint < 0x20 && ![0x09, 0x0a, 0x0d].includes(codePoint)) ||
+          codePoint === 0x7f
+        );
+      }),
+    "Body contains unsafe control characters",
   );
 
 export const DocumentMetadataSchema = z
@@ -25,14 +40,16 @@ export const CreateDocumentInputSchema = z
     companyId: UuidSchema,
     styleId: UuidSchema,
     title: z.string().trim().min(1).max(200),
-    body: LatexBodySchema,
+    format: DocumentFormatSchema,
+    body: DocumentBodySchema,
     metadata: DocumentMetadataSchema.optional(),
   })
   .strict();
 
 export const CreateDocumentVersionInputSchema = z
   .object({
-    body: LatexBodySchema,
+    format: DocumentFormatSchema,
+    body: DocumentBodySchema,
     styleVersionId: UuidSchema.optional(),
   })
   .strict();
@@ -54,7 +71,8 @@ export const DocumentVersionSchema = z
     documentId: UuidSchema,
     version: z.number().int().positive(),
     styleVersionId: UuidSchema,
-    body: LatexBodySchema,
+    format: DocumentFormatSchema,
+    body: DocumentBodySchema,
     status: DocumentStatusSchema,
     inputHash: z.string().regex(/^[a-f0-9]{64}$/),
     sourceHash: z
@@ -72,6 +90,10 @@ export const DocumentVersionSchema = z
   })
   .strict();
 
+export type DocumentFormat = z.infer<typeof DocumentFormatSchema>;
 export type CreateDocumentInput = z.infer<typeof CreateDocumentInputSchema>;
+export type CreateDocumentVersionInput = z.infer<
+  typeof CreateDocumentVersionInputSchema
+>;
 export type Document = z.infer<typeof DocumentSchema>;
 export type DocumentVersion = z.infer<typeof DocumentVersionSchema>;

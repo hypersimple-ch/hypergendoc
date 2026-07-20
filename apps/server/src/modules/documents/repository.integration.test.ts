@@ -97,7 +97,8 @@ integration("document repository PostgreSQL lifecycle", () => {
           documentId: style.id,
           version: 1,
           styleVersionId,
-          normalizedBody: "body",
+          format: "markdown",
+          body: "body",
           inputHash: hash("body"),
           createdByType: "user",
           createdById: userId,
@@ -127,7 +128,7 @@ integration("document repository PostgreSQL lifecycle", () => {
             key: `source-${randomUUID()}`,
             sha256: sourceHash,
             bytes: 6,
-            contentType: "application/x-tex",
+            contentType: "text/html; charset=utf-8",
           },
         });
         const pdf = await tx.insertStoredObject({
@@ -255,15 +256,16 @@ integration("document repository PostgreSQL lifecycle", () => {
         documentId: cascadeDocumentId,
         version: 1,
         styleVersionId: cascadeStyleVersionId,
-        normalizedBody: "body",
-        normalizedInputHash: hash("purge-cascade"),
+        format: "markdown",
+        body: "body",
+        inputHash: hash("purge-cascade"),
         createdByActorType: "user",
         createdByActorId: userId,
       });
       await db.insert(renderRecords).values({
         workspaceId: cascadeWorkspaceId,
         documentVersionId: cascadeDocumentVersionId,
-        normalizedInputHash: hash("purge-cascade"),
+        inputHash: hash("purge-cascade"),
       });
       await db.insert(auditEvents).values({
         workspaceId: cascadeWorkspaceId,

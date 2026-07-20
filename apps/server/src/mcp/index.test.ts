@@ -171,6 +171,7 @@ describe("MCP Streamable HTTP adapter", () => {
         name: "create_document_version",
         arguments: {
           documentId: "44444444-4444-4444-8444-444444444444",
+          format: "markdown",
           body: "Rendered body",
         },
       }),

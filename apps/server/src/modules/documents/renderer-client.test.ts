@@ -41,7 +41,7 @@ describe("Unix renderer protocol", () => {
     const pdf = Buffer.from("%PDF-1.7\n");
     const path = await server(({ requestId }, socket) => {
       const response = JSON.stringify({
-        protocol: "hypergendoc-render-v1",
+        protocol: "hypergendoc-render-v2",
         requestId,
         ok: true,
         sourceHash: hash("source"),
@@ -52,6 +52,7 @@ describe("Unix renderer protocol", () => {
       socket.end(`${response.slice(15)}\n`);
     });
     const result = await createUnixSocketRenderer(path, 100).render({
+      format: "markdown",
       body: "body",
       style: definition,
     });
@@ -61,11 +62,12 @@ describe("Unix renderer protocol", () => {
   it("rejects oversized or multi-frame responses", async () => {
     const path = await server(({ requestId }, socket) => {
       socket.end(
-        `${JSON.stringify({ protocol: "hypergendoc-render-v1", requestId, ok: false })}\nextra`,
+        `${JSON.stringify({ protocol: "hypergendoc-render-v2", requestId, ok: false })}\nextra`,
       );
     });
     await expect(
       createUnixSocketRenderer(path, 100).render({
+        format: "html",
         body: "body",
         style: definition,
       }),
@@ -76,6 +78,7 @@ describe("Unix renderer protocol", () => {
     const path = await server(() => undefined);
     await expect(
       createUnixSocketRenderer(path, 10).render({
+        format: "markdown",
         body: "body",
         style: definition,
       }),

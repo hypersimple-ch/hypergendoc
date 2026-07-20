@@ -29,9 +29,10 @@ const version = (
   documentId: row.documentId,
   version: row.version,
   styleVersionId: row.styleVersionId,
-  body: row.normalizedBody,
+  format: row.format,
+  body: row.body,
   status: row.status,
-  inputHash: row.normalizedInputHash,
+  inputHash: row.inputHash,
   sourceHash: row.sourceHash,
   outputHash: row.outputHash,
   rendererVersion: row.rendererVersion,
@@ -209,8 +210,9 @@ function operations(db: Db): Omit<DocumentRepository, "transaction"> {
           documentId: input.documentId,
           version: input.version,
           styleVersionId: input.styleVersionId,
-          normalizedBody: input.normalizedBody,
-          normalizedInputHash: input.inputHash,
+          format: input.format,
+          body: input.body,
+          inputHash: input.inputHash,
           createdByActorType: input.createdByType,
           createdByActorId: input.createdById,
         })
@@ -222,7 +224,7 @@ function operations(db: Db): Omit<DocumentRepository, "transaction"> {
       await db.insert(renderRecords).values({
         workspaceId: input.workspaceId,
         documentVersionId: input.documentVersionId,
-        normalizedInputHash: input.inputHash,
+        inputHash: input.inputHash,
         startedAt: new Date(),
       });
     },
@@ -334,10 +336,7 @@ function operations(db: Db): Omit<DocumentRepository, "transaction"> {
         );
     },
     async findArtifact(workspaceId, documentId, number, kind) {
-      const objectId =
-        kind === "source"
-          ? documentVersions.sourceObjectId
-          : documentVersions.pdfObjectId;
+      const objectId = documentVersions.pdfObjectId;
       const [row] = await db
         .select({
           objectKey: storedObjects.objectKey,

@@ -31,7 +31,11 @@ The production topology permits internal HTTP only for the isolated Compose serv
 
 Monitor Dokploy Traefik, web, server, PostgreSQL, Garage, migration jobs, and renderer availability. The server liveness endpoint is `/health/live`; Garage's internal admin health endpoint is `GET http://object-store:3903/health`; the local development proxy remains `http://localhost:8080`. Alert on server/renderer failures, render timeouts/rejections, dependency-unavailable errors, elevated authentication/MCP failures, rate limiting, storage capacity, backup failure, and restore-drill failure. Do not publish the Garage S3, RPC, or admin interfaces.
 
-Review owner audit events for membership, company/style changes, credential lifecycle, document creation/versioning/deletion, artifact access, login security events, and purge actions. Logs must retain request ID, actor/credential ID, workspace ID, event, status, duration, and safe error code—but not credentials, bodies, source, signed URLs, filenames, or compiler transcripts.
+Review owner audit events for membership, company/style changes, credential lifecycle, document creation/versioning/deletion, submitted-input/PDF access, login security events, and purge actions. Logs must retain request ID, actor/credential ID, workspace ID, event, status, duration, and safe error code—but not credentials, bodies, private render evidence, signed URLs, filenames, or renderer transcripts.
+
+## Replacement deployment cleanup
+
+The approved replacement cleanup may destructively purge pre-replacement document history and render metadata after a reviewed, tenant-scoped plan and recorded approval. Run the guarded purge procedure, reconcile database results, and retain audit evidence. SQL deletion removes database metadata only: it cannot remove old Garage object bytes. Operators must separately identify and delete those stale object bytes during deployment cleanup, then record the object reconciliation. Do not delete raw objects ad hoc, and account for encrypted backup retention.
 
 ## Secrets, mail, and storage rotation
 
@@ -54,7 +58,7 @@ The future HA path is three Garage nodes across three zones with `replication_fa
 
 ## Renderer incident
 
-If rendering times out, rejects unexpectedly, leaks diagnostics, or isolation is suspect: stop accepting affected render work, preserve only non-sensitive request IDs and image versions, and do not collect bodies, tokens, or raw compiler output in general logs. Verify `network_mode: none`, read-only root, non-root user, dropped capabilities, resource limits, and the sole Unix-socket volume. Restore the archived renderer E2E suite only under an approved incident plan. Do not weaken parser or container controls to restore service.
+If rendering times out, rejects unexpectedly, leaks diagnostics, or isolation is suspect: stop accepting affected render work, preserve only non-sensitive request IDs and image versions, and do not collect bodies, tokens, or renderer transcripts in general logs. Verify the pinned version-matched Playwright Chromium renderer, `network_mode: none`, aborted browser requests, one active and at most one queued job, forced browser-server cleanup per job, read-only root, non-root user, all capabilities dropped except the narrowly required `SYS_CHROOT`, `no-new-privileges`, seccomp containment, resource limits, and the sole Unix-socket volume. Restore the archived renderer E2E suite only under an approved incident plan. Do not weaken sanitizer or container controls to restore service.
 
 ## Upgrades and rollback
 

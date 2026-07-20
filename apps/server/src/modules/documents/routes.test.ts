@@ -14,12 +14,13 @@ const actor: ActorContext = {
   requestId: "request-1",
 };
 const artifact = vi.fn();
+const input = vi.fn();
 
 function appFor() {
   const app = Fastify();
   registerSafeErrorHandler(app);
   registerDocumentRoutes(app, {
-    service: { artifact } as unknown as DocumentService,
+    service: { artifact, input } as unknown as DocumentService,
     actorFor: () => actor,
   });
   return app;
@@ -66,6 +67,42 @@ describe("document artifact routes", () => {
       'attachment; filename="document-2.pdf"',
     );
     expect(response.headers["cache-control"]).toBe("private, no-store");
+    await app.close();
+  });
+
+  it("returns exact immutable input as a sanitized attachment and never uses an artifact", async () => {
+    input.mockResolvedValue({
+      body: "# Exact\n",
+      format: "markdown",
+      title: "Unsafe / title",
+    });
+    const app = appFor();
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/documents/document/versions/2/input",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toBe("# Exact\n");
+    expect(response.headers["content-type"]).toContain(
+      "text/plain; charset=utf-8",
+    );
+    expect(response.headers["content-disposition"]).toBe(
+      'attachment; filename="Unsafe-title.md"',
+    );
+    expect(input).toHaveBeenCalledWith(actor, "document", 2);
+    expect(artifact).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("keeps the removed source artifact route unavailable", async () => {
+    const app = appFor();
+    const removedKind = "source";
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/documents/document/versions/2/${removedKind}`,
+    });
+    expect(response.statusCode).toBe(404);
+    expect(artifact).not.toHaveBeenCalled();
     await app.close();
   });
 

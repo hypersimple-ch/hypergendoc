@@ -31,6 +31,7 @@ export const renderStatus = pgEnum("render_status", [
   "ready",
   "failed",
 ]);
+export const documentFormat = pgEnum("document_format", ["markdown", "html"]);
 export const deletionStatus = pgEnum("deletion_status", [
   "pending",
   "running",
@@ -335,8 +336,9 @@ export const documentVersions = pgTable(
     styleVersionId: uuid("style_version_id")
       .notNull()
       .references(() => styleVersions.id, { onDelete: "restrict" }),
-    normalizedBody: text("normalized_body").notNull(),
-    normalizedInputHash: text("normalized_input_hash").notNull(),
+    format: documentFormat("format").notNull(),
+    body: text("body").notNull(),
+    inputHash: text("input_hash").notNull(),
     sourceHash: text("source_hash"),
     outputHash: text("output_hash"),
     sourceObjectId: uuid("source_object_id").references(
@@ -388,7 +390,7 @@ export const documentVersions = pgTable(
     check("document_version_positive", sql`${table.version} > 0`),
     check(
       "document_version_hash_hex",
-      sql`${table.normalizedInputHash} ~ '^[0-9a-f]{64}$' AND (${table.sourceHash} IS NULL OR ${table.sourceHash} ~ '^[0-9a-f]{64}$') AND (${table.outputHash} IS NULL OR ${table.outputHash} ~ '^[0-9a-f]{64}$')`,
+      sql`${table.inputHash} ~ '^[0-9a-f]{64}$' AND (${table.sourceHash} IS NULL OR ${table.sourceHash} ~ '^[0-9a-f]{64}$') AND (${table.outputHash} IS NULL OR ${table.outputHash} ~ '^[0-9a-f]{64}$')`,
     ),
     check(
       "document_version_lifecycle_fields",
@@ -413,7 +415,7 @@ export const renderRecords = pgTable(
       .references(() => documentVersions.id, { onDelete: "cascade" }),
     status: renderStatus("status").notNull().default("pending"),
     rendererVersion: text("renderer_version"),
-    normalizedInputHash: text("normalized_input_hash").notNull(),
+    inputHash: text("input_hash").notNull(),
     sourceHash: text("source_hash"),
     outputHash: text("output_hash"),
     startedAt: timestamp("started_at", { withTimezone: true }),
@@ -431,7 +433,7 @@ export const renderRecords = pgTable(
     index("render_record_workspace_idx").on(table.workspaceId),
     check(
       "render_record_hash_hex",
-      sql`${table.normalizedInputHash} ~ '^[0-9a-f]{64}$' AND (${table.sourceHash} IS NULL OR ${table.sourceHash} ~ '^[0-9a-f]{64}$') AND (${table.outputHash} IS NULL OR ${table.outputHash} ~ '^[0-9a-f]{64}$')`,
+      sql`${table.inputHash} ~ '^[0-9a-f]{64}$' AND (${table.sourceHash} IS NULL OR ${table.sourceHash} ~ '^[0-9a-f]{64}$') AND (${table.outputHash} IS NULL OR ${table.outputHash} ~ '^[0-9a-f]{64}$')`,
     ),
     check(
       "render_record_lifecycle_fields",

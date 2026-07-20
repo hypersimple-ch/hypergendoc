@@ -28,7 +28,7 @@ import {
   createDocumentRenderer,
   createDocumentRepository,
   createDocumentService,
-  createLatexDocumentSourceBuilder,
+  createHtmlDocumentSourceBuilder,
   registerDocumentRoutes,
 } from "../modules/documents/index.js";
 import {
@@ -161,6 +161,7 @@ export async function createApplication(
     renderer: {
       async renderPreview(input) {
         const result = await renderer.render({
+          format: "markdown",
           body: "Preview",
           style: input.definition,
         });
@@ -185,7 +186,7 @@ export async function createApplication(
   const documents = createDocumentService({
     repository: createDocumentRepository(db),
     renderer,
-    sourceBuilder: createLatexDocumentSourceBuilder(),
+    sourceBuilder: createHtmlDocumentSourceBuilder(),
     objects,
     audit,
   });
@@ -447,8 +448,12 @@ export async function createApplication(
         { type: "agent", ...actor },
         input.documentId,
         input.styleVersionId
-          ? { body: input.body, styleVersionId: input.styleVersionId }
-          : { body: input.body },
+          ? {
+              format: input.format,
+              body: input.body,
+              styleVersionId: input.styleVersionId,
+            }
+          : { format: input.format, body: input.body },
       ),
   };
   await app.register(

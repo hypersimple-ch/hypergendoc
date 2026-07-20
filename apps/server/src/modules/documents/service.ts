@@ -7,6 +7,11 @@ import {
   type DocumentVersion,
   type StyleDefinition,
 } from "@hypergendoc/contracts";
+import {
+  DocumentInputError,
+  inputHash as documentInputHash,
+  sourceHash as resolvedSourceHash,
+} from "@hypergendoc/document";
 import type { ActorContext } from "../../platform/context.js";
 import { auditActor } from "../../platform/audit.js";
 import { AppError } from "../../platform/errors.js";
@@ -125,6 +130,7 @@ export class DocumentService {
             );
         if (!selected) throw new AppError("not_found", 404);
         const source = this.resolveSource(
+          parsed.data.format,
           parsed.data.body,
           selected.definition,
         );
@@ -133,8 +139,9 @@ export class DocumentService {
           documentId,
           version: previous.version + 1,
           styleVersionId: selected.id,
-          normalizedBody: source.normalizedBody,
-          inputHash: hash(source.normalizedBody),
+          format: parsed.data.format,
+          body: source.body,
+          inputHash: documentInputHash(parsed.data.format, source.body),
           createdByType: actorType(actor),
           createdById: actorId(actor),
         });
@@ -223,7 +230,7 @@ export class DocumentService {
     actor: ActorContext | undefined,
     documentId: string,
     version: number,
-    kind: "source" | "pdf",
+    kind: "pdf",
   ): Promise<Readonly<{ bytes: Uint8Array; contentType: string }>> {
     const document = await this.get(actor, documentId);
     const artifact = await this.deps.repository.findArtifact(
@@ -239,11 +246,25 @@ export class DocumentService {
       authorize: () => Promise.resolve(true),
     });
     await this.audit(actor!, `document.${kind}.access`, documentId, "success");
-    return {
-      bytes: object.bytes,
-      contentType:
-        kind === "pdf" ? "application/pdf" : "text/plain; charset=utf-8",
-    };
+    return { bytes: object.bytes, contentType: "application/pdf" };
+  }
+
+  async input(
+    actor: ActorContext | undefined,
+    documentId: string,
+    version: number,
+  ): Promise<
+    Readonly<{ body: string; format: DocumentVersion["format"]; title: string }>
+  > {
+    const document = await this.get(actor, documentId);
+    const result = await this.deps.repository.findVersion(
+      actor!.workspaceId,
+      document.id,
+      version,
+    );
+    if (!result) throw new AppError("not_found", 404);
+    await this.audit(actor!, "document.input.access", documentId, "success");
+    return { body: result.body, format: result.format, title: document.title };
   }
 
   private async createPending(actor: ActorContext, input: CreateDocumentInput) {
@@ -256,7 +277,11 @@ export class DocumentService {
         input.styleId,
       );
       if (!style?.activeVersionId) throw new AppError("not_found", 404);
-      const source = this.resolveSource(input.body, style.definition);
+      const source = this.resolveSource(
+        input.format,
+        input.body,
+        style.definition,
+      );
       const document = await repository.insertDocument({
         workspaceId: actor.workspaceId,
         companyId: input.companyId,
@@ -267,8 +292,9 @@ export class DocumentService {
         documentId: document.id,
         version: 1,
         styleVersionId: style.activeVersionId,
-        normalizedBody: source.normalizedBody,
-        inputHash: hash(source.normalizedBody),
+        format: input.format,
+        body: source.body,
+        inputHash: documentInputHash(input.format, source.body),
         createdByType: actorType(actor),
         createdById: actorId(actor),
       });
@@ -282,15 +308,17 @@ export class DocumentService {
   }
 
   private resolveSource(
+    format: DocumentVersion["format"],
     body: string,
     style: StyleDefinition,
   ): ResolvedDocumentSource {
     try {
-      const source = this.deps.sourceBuilder.resolve(body, style);
-      if (!source.normalizedBody || !source.source)
+      const source = this.deps.sourceBuilder.resolve(format, body, style);
+      if (source.body !== body || !source.source)
         throw new Error("invalid source");
       return source;
     } catch (error) {
+      if (error instanceof DocumentInputError) throw invalid();
       if (error instanceof AppError) throw error;
       throw new AppError("render_rejected", 422);
     }
@@ -306,10 +334,11 @@ export class DocumentService {
     let sourceObject: StoredObject | undefined;
     let pdfObject: StoredObject | undefined;
     let result: RenderResult | undefined;
-    const sourceHash = hash(source.source);
+    const sourceHash = resolvedSourceHash(source.source);
     try {
       result = await this.deps.renderer.render({
-        body: source.normalizedBody,
+        format: version.format,
+        body: source.body,
         style,
       });
       if (
@@ -321,7 +350,7 @@ export class DocumentService {
         throw new Error(safeDiagnostic(result));
       sourceObject = await this.deps.objects.putPrivate({
         bytes: Buffer.from(source.source),
-        contentType: "application/x-tex",
+        contentType: "text/html; charset=utf-8",
         metadata: { "document-version": version.id },
       });
       if (sourceObject.sha256 !== sourceHash) throw new Error("render_failed");

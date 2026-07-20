@@ -43,6 +43,32 @@ export function registerDocumentRoutes(
     return deps.service.getVersion(actor(request), params.documentId, version);
   });
   app.get(
+    "/api/documents/:documentId/versions/:version/input",
+    async (request, reply) => {
+      const params = request.params as { documentId: string; version: string };
+      const version = Number(params.version);
+      if (!Number.isSafeInteger(version) || version < 1)
+        throw new AppError("not_found", 404);
+      const input = await deps.service.input(
+        actor(request),
+        params.documentId,
+        version,
+      );
+      const title =
+        input.title.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") ||
+        "document";
+      const extension = input.format === "markdown" ? "md" : "html";
+      return reply
+        .header("Content-Type", "text/plain; charset=utf-8")
+        .header("Cache-Control", "private, no-store")
+        .header(
+          "Content-Disposition",
+          `attachment; filename="${title}.${extension}"`,
+        )
+        .send(input.body);
+    },
+  );
+  app.get(
     "/api/documents/:documentId/versions/:version/:kind",
     async (request, reply) => {
       const params = request.params as {
@@ -50,8 +76,7 @@ export function registerDocumentRoutes(
         version: string;
         kind: string;
       };
-      if (params.kind !== "source" && params.kind !== "pdf")
-        throw new AppError("not_found", 404);
+      if (params.kind !== "pdf") throw new AppError("not_found", 404);
       const query = request.query as { disposition?: string };
       if (
         query.disposition !== undefined &&
@@ -67,7 +92,7 @@ export function registerDocumentRoutes(
         version,
         params.kind,
       );
-      const extension = params.kind === "pdf" ? "pdf" : "tex";
+      const extension = "pdf";
       const disposition =
         query.disposition === "inline" ? "inline" : "attachment";
       return reply

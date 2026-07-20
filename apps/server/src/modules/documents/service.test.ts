@@ -63,6 +63,7 @@ function fixture(
   const stored: { id: string; object: StoredObject }[] = [];
   const deleted: string[] = [];
   const accessed: string[] = [];
+  const audit = vi.fn(async () => undefined);
   let sequence = 10;
   const source = (body: string, style: StyleDefinition) =>
     `source:${style.bodyFont}:${body.trim()}`;
@@ -140,7 +141,8 @@ function fixture(
         documentId: input.documentId,
         version: input.version,
         styleVersionId: input.styleVersionId,
-        body: input.normalizedBody,
+        format: input.format,
+        body: input.body,
         status: "pending",
         inputHash: input.inputHash,
         sourceHash: null,
@@ -184,15 +186,11 @@ function fixture(
           rendererVersion: input.rendererVersion,
         });
     },
-    findArtifact: async (_workspace, documentId, number, kind) => {
+    findArtifact: async (_workspace, documentId, number) => {
       const row = versions.find(
         (item) => item.documentId === documentId && item.version === number,
       );
-      const storedRow = stored.find(
-        (item) =>
-          item.id ===
-          (kind === "source" ? row?.sourceObjectId : row?.pdfObjectId),
-      );
+      const storedRow = stored.find((item) => item.id === row?.pdfObjectId);
       return storedRow
         ? { objectKey: storedRow.object.key, companyId: ids.company }
         : undefined;
@@ -220,17 +218,20 @@ function fixture(
       objects,
       renderer,
       sourceBuilder: {
-        resolve: (body, style) => ({
-          normalizedBody: body.trim(),
-          source: source(body.trim(), style),
+        resolve: (_format, body, style) => ({
+          body,
+          source: source(body, style),
         }),
       },
+      audit: { write: audit },
     }),
     documents,
     versions,
     deleted,
     accessed,
     renderer,
+    stored,
+    audit,
   };
 }
 
@@ -238,6 +239,7 @@ const input = {
   companyId: ids.company,
   styleId: ids.style,
   title: "Document",
+  format: "markdown" as const,
   body: " hello ",
 };
 
@@ -246,11 +248,15 @@ describe("DocumentService", () => {
     const test = fixture();
     const created = await test.service.create(human, input);
     expect(created.version).toMatchObject({
+      format: "markdown",
+      body: " hello ",
+      inputHash: hash(JSON.stringify(["markdown", " hello "])),
       status: "ready",
       sourceObjectId: expect.any(String),
       pdfObjectId: expect.any(String),
       rendererVersion: "renderer-1",
     });
+    expect(test.stored[0]?.object.contentType).toBe("text/html; charset=utf-8");
     await expect(
       test.service.create(agent([], [ids.company]), input),
     ).rejects.toMatchObject({ code: "not_found" });
@@ -264,6 +270,7 @@ describe("DocumentService", () => {
     const created = await test.service.create(human, input);
     test.versions[0]!.styleVersionId = ids.oldStyleVersion;
     await test.service.createVersion(human, created.document.id, {
+      format: "markdown",
       body: "revision",
     });
     expect(test.renderer.render.mock.calls.at(-1)?.[0].style).toEqual(
@@ -271,17 +278,21 @@ describe("DocumentService", () => {
     );
     await expect(
       test.service.createVersion(human, created.document.id, {
+        format: "markdown",
         body: "revision",
         styleVersionId: ids.oldStyleVersion,
       }),
     ).rejects.toMatchObject({ code: "not_found" });
     await test.service.createVersion(human, created.document.id, {
+      format: "html",
       body: "revision",
       styleVersionId: ids.activeStyleVersion,
     });
-    expect(test.renderer.render.mock.calls.at(-1)?.[0].style).toEqual(
-      definition,
-    );
+    expect(test.renderer.render.mock.calls.at(-1)?.[0]).toMatchObject({
+      format: "html",
+      body: "revision",
+      style: definition,
+    });
   });
 
   it("fails on renderer hash mismatch and never advances the current pointer", async () => {
@@ -315,17 +326,15 @@ describe("DocumentService", () => {
     expect(created.document.currentVersionId).toBeNull();
   });
 
-  it("authorizes private source/PDF access and hides cross-tenant documents", async () => {
+  it("authorizes private PDF access and hides cross-tenant documents", async () => {
     const test = fixture();
     const created = await test.service.create(human, input);
     await expect(
-      test.service.artifact(
-        agent(["documents:read"]),
-        created.document.id,
-        1,
-        "source",
-      ),
-    ).resolves.toMatchObject({ contentType: "text/plain; charset=utf-8" });
+      test.service.input(agent(["documents:read"]), created.document.id, 1),
+    ).resolves.toMatchObject({ body: " hello ", format: "markdown" });
+    expect(test.audit).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "document.input.access" }),
+    );
     await expect(
       test.service.artifact(
         agent(["documents:read"], []),

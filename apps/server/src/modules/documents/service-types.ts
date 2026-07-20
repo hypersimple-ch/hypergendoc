@@ -8,14 +8,19 @@ import type { ObjectStore, StoredObject } from "../../platform/object-store.js";
 import type { Renderer } from "./renderer-client.js";
 
 export interface ResolvedDocumentSource {
-  readonly normalizedBody: string;
-  /** Complete server-owned TeX source, not user input. */
+  /** Exact user input, never normalized. */
+  readonly body: string;
+  /** Complete server-owned resolved HTML, not user input. */
   readonly source: string;
 }
 
 /** Kept injectable because source generation and renderer must use the same pinned wrapper. */
 export interface DocumentSourceBuilder {
-  resolve(body: string, style: StyleDefinition): ResolvedDocumentSource;
+  resolve(
+    format: DocumentVersion["format"],
+    body: string,
+    style: StyleDefinition,
+  ): ResolvedDocumentSource;
 }
 
 export interface StoredObjectRow {
@@ -90,7 +95,8 @@ export interface DocumentRepository {
       documentId: string;
       version: number;
       styleVersionId: string;
-      normalizedBody: string;
+      format: DocumentVersion["format"];
+      body: string;
       inputHash: string;
       createdByType: "user" | "credential";
       createdById: string;
@@ -136,7 +142,7 @@ export interface DocumentRepository {
     workspaceId: string,
     documentId: string,
     version: number,
-    kind: "source" | "pdf",
+    kind: "pdf",
   ): Promise<{ objectKey: string; companyId: string } | undefined>;
 }
 

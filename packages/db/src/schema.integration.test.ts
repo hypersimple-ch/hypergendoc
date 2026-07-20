@@ -86,7 +86,7 @@ integration(
         version: number,
       ) => {
         await client.query(
-          "INSERT INTO document_versions (id, workspace_id, document_id, version, style_version_id, normalized_body, normalized_input_hash, created_by_actor_type, created_by_actor_id) VALUES ($1, $2, $3, $4, $5, 'normalized body', $6, 'user', $7)",
+          "INSERT INTO document_versions (id, workspace_id, document_id, version, style_version_id, format, body, input_hash, created_by_actor_type, created_by_actor_id) VALUES ($1, $2, $3, $4, $5, 'markdown', 'exact body', $6, 'user', $7)",
           [id, workspace, documentId, version, styleVersion, inputHash, user],
         );
       };
@@ -150,10 +150,37 @@ integration(
         await insertPending(readyVersion, document, 1);
         await insertPending(failedVersion, document, 2);
         await insertPending(siblingVersion, siblingDocument, 1);
+        const insertedVersion = await client.query(
+          "SELECT format, body, input_hash FROM document_versions WHERE id = $1",
+          [readyVersion],
+        );
+        expect(insertedVersion.rows[0]).toEqual({
+          format: "markdown",
+          body: "exact body",
+          input_hash: inputHash,
+        });
 
         await reject(() =>
           client.query(
-            "UPDATE document_versions SET id = $1, version = 99, normalized_body = 'rewritten' WHERE id = $2",
+            "UPDATE document_versions SET format = 'html' WHERE id = $1",
+            [readyVersion],
+          ),
+        );
+        await reject(() =>
+          client.query(
+            "UPDATE document_versions SET body = 'rewritten' WHERE id = $1",
+            [readyVersion],
+          ),
+        );
+        await reject(() =>
+          client.query(
+            "UPDATE document_versions SET input_hash = $1 WHERE id = $2",
+            ["d".repeat(64), readyVersion],
+          ),
+        );
+        await reject(() =>
+          client.query(
+            "UPDATE document_versions SET style_version_id = $1 WHERE id = $2",
             [randomUUID(), readyVersion],
           ),
         );
@@ -199,6 +226,12 @@ integration(
         );
         await reject(() =>
           client.query(
+            "UPDATE document_versions SET source_hash = $1 WHERE id = $2",
+            ["d".repeat(64), readyVersion],
+          ),
+        );
+        await reject(() =>
+          client.query(
             "UPDATE document_versions SET status = 'failed', renderer_version = 'renderer@2', safe_diagnostics = '{\"error\":true}'::jsonb WHERE id = $1",
             [readyVersion],
           ),
@@ -216,11 +249,11 @@ integration(
         );
 
         await client.query(
-          "INSERT INTO render_records (workspace_id, document_version_id, status, renderer_version, normalized_input_hash, source_hash, output_hash) VALUES ($1, $2, 'ready', 'renderer@1', $3, $4, $5)",
+          "INSERT INTO render_records (workspace_id, document_version_id, status, renderer_version, input_hash, source_hash, output_hash) VALUES ($1, $2, 'ready', 'renderer@1', $3, $4, $5)",
           [workspace, readyVersion, inputHash, sourceHash, outputHash],
         );
         await client.query(
-          "INSERT INTO render_records (workspace_id, document_version_id, status, renderer_version, normalized_input_hash, safe_diagnostics) VALUES ($1, $2, 'failed', 'renderer@1', $3, '{\"reason\":\"safe\"}'::jsonb)",
+          "INSERT INTO render_records (workspace_id, document_version_id, status, renderer_version, input_hash, safe_diagnostics) VALUES ($1, $2, 'failed', 'renderer@1', $3, '{\"reason\":\"safe\"}'::jsonb)",
           [workspace, failedVersion, inputHash],
         );
         await reject(() =>
@@ -330,7 +363,7 @@ integration(
           [document, workspace, company],
         );
         await client.query(
-          "INSERT INTO document_versions (id, workspace_id, document_id, version, style_version_id, normalized_body, normalized_input_hash, created_by_actor_type, created_by_actor_id) VALUES ($1, $2, $3, 1, $4, 'normalized body', $5, 'user', $6)",
+          "INSERT INTO document_versions (id, workspace_id, document_id, version, style_version_id, format, body, input_hash, created_by_actor_type, created_by_actor_id) VALUES ($1, $2, $3, 1, $4, 'html', '<p>exact body</p>', $5, 'user', $6)",
           [
             documentVersion,
             workspace,
@@ -341,7 +374,7 @@ integration(
           ],
         );
         await client.query(
-          "INSERT INTO render_records (id, workspace_id, document_version_id, status, normalized_input_hash) VALUES ($1, $2, $3, 'pending', $4)",
+          "INSERT INTO render_records (id, workspace_id, document_version_id, status, input_hash) VALUES ($1, $2, $3, 'pending', $4)",
           [renderRecord, workspace, documentVersion, "a".repeat(64)],
         );
         await client.query(

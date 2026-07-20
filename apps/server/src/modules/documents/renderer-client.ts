@@ -1,13 +1,19 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { connect } from "node:net";
 import { limits } from "@hypergendoc/config";
-import type { StyleDefinition } from "@hypergendoc/contracts";
+import type { DocumentVersion, StyleDefinition } from "@hypergendoc/contracts";
 import { AppError } from "../../platform/errors.js";
 
-const protocol = "hypergendoc-render-v1" as const;
-const maxFrameBytes = limits.latexBodyBytes + 16 * 1024;
+const protocol = "hypergendoc-render-v2" as const;
+const maxRequestFrameBytes = limits.documentBodyBytes + 16 * 1024;
+const maxResponseFrameBytes =
+  Math.ceil(limits.renderedArtifactBytes / 3) * 4 + 16 * 1024;
+const sha256 = (value: Uint8Array) =>
+  createHash("sha256").update(value).digest("hex");
+const hashPattern = /^[a-f0-9]{64}$/;
 
 export interface RenderRequest {
+  readonly format: DocumentVersion["format"];
   readonly body: string;
   readonly style: StyleDefinition;
 }
@@ -50,14 +56,14 @@ function renderError(error: WireResponse["error"]): RenderResult["error"] {
 export function createUnixSocketRenderer(
   socketPath: string,
   timeoutMs = limits.renderTimeoutMs + 5_000,
-  rendererVersion = "hypergendoc-render-v1",
+  rendererVersion = "hypergendoc-render-v2",
 ): Renderer {
   return {
     render(request) {
       return new Promise<RenderResult>((resolve) => {
         const requestId = randomUUID();
         const frame = `${JSON.stringify({ protocol, requestId, ...request })}\n`;
-        if (Buffer.byteLength(frame, "utf8") > maxFrameBytes)
+        if (Buffer.byteLength(frame, "utf8") > maxRequestFrameBytes)
           return resolve({
             ok: false,
             error: "render_rejected",
@@ -96,7 +102,7 @@ export function createUnixSocketRenderer(
           if (
             Buffer.byteLength(response, "utf8") +
               Buffer.byteLength(chunk, "utf8") >
-            maxFrameBytes
+            maxResponseFrameBytes
           )
             return finish({
               ok: false,
@@ -134,7 +140,15 @@ export function createUnixSocketRenderer(
                 error: renderError(parsed.error) ?? "render_failed",
                 rendererVersion,
               });
-            if (!parsed.sourceHash || !parsed.pdfHash || !parsed.pdfBase64)
+            if (
+              typeof parsed.sourceHash !== "string" ||
+              typeof parsed.pdfHash !== "string" ||
+              typeof parsed.pdfBase64 !== "string" ||
+              !hashPattern.test(parsed.sourceHash) ||
+              !hashPattern.test(parsed.pdfHash) ||
+              !/^[A-Za-z0-9+/]*={0,2}$/.test(parsed.pdfBase64) ||
+              parsed.pdfBase64.length % 4 !== 0
+            )
               return finish({
                 ok: false,
                 error: "render_failed",
@@ -144,7 +158,9 @@ export function createUnixSocketRenderer(
             if (
               !pdf.byteLength ||
               pdf.byteLength > limits.renderedArtifactBytes ||
-              !pdf.subarray(0, 5).equals(Buffer.from("%PDF-"))
+              !pdf.subarray(0, 5).equals(Buffer.from("%PDF-")) ||
+              pdf.toString("base64") !== parsed.pdfBase64 ||
+              sha256(pdf) !== parsed.pdfHash
             )
               return finish({
                 ok: false,

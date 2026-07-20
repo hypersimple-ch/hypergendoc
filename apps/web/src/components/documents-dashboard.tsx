@@ -4,6 +4,10 @@ import type { Document, DocumentVersion } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
 import { Empty, LoadState, useLoaded } from "./dashboard-state";
 import { Button, FormField, Input, Status, Table } from "./primitives";
+
+const formatLabel = (format: DocumentVersion["format"]) =>
+  format === "markdown" ? "Markdown" : "HTML";
+
 export function DocumentsDashboard() {
   const data = useLoaded(dashboardApi.documents);
   const companies = useLoaded(dashboardApi.companies);
@@ -221,6 +225,9 @@ function DocumentDetail({
                       >
                         {v.status}
                       </span>
+                      <span className="badge badge--muted">
+                        {formatLabel(v.format)}
+                      </span>
                       <small>{new Date(v.createdAt).toLocaleString()}</small>
                     </button>
                   </li>
@@ -257,16 +264,18 @@ function DocumentDetail({
                   </a>
                   <a
                     className="button button--quiet"
-                    href={dashboardApi.sourceUrl(document.id, active.version)}
+                    href={dashboardApi.inputUrl(document.id, active.version)}
                     download
                   >
-                    Download LaTeX source
+                    Download input
                   </a>
                 </div>
                 <h3>Render metadata</h3>
                 <dl className="metadata">
                   <dt>Status</dt>
                   <dd>{active.status}</dd>
+                  <dt>Format</dt>
+                  <dd>{formatLabel(active.format)}</dd>
                   <dt>Style version</dt>
                   <dd>{active.styleVersionId}</dd>
                   <dt>Input hash</dt>

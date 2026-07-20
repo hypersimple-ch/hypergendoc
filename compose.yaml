@@ -140,12 +140,16 @@ services:
     read_only: true
     user: "10001:10001"
     cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    pids_limit: 64
+    cap_add: [SYS_CHROOT]
+    security_opt:
+      [no-new-privileges:true, seccomp:./apps/renderer/chromium-seccomp.json]
+    pids_limit: 128
     mem_limit: 512m
     cpus: 1.0
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=128m,uid=10001,gid=10001
+      - /home/renderer:rw,noexec,nosuid,size=32m,uid=10001,gid=10001
+      - /dev/shm:rw,nosuid,nodev,size=64m
     volumes:
       - renderer-socket:/run/hypergendoc
     depends_on:

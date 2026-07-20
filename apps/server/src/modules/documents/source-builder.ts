@@ -1,20 +1,25 @@
-import { normalizeLatexBody, wrapLatexDocument } from "@hypergendoc/latex";
-import type { StyleDefinition } from "@hypergendoc/contracts";
+import {
+  renderDocumentHtml,
+  validateDocumentInput,
+} from "@hypergendoc/document";
+import type { DocumentFormat, StyleDefinition } from "@hypergendoc/contracts";
 import type {
   DocumentSourceBuilder,
   ResolvedDocumentSource,
 } from "./service.js";
 
-/** Canonical server-owned wrapper shared by persistence hashing and rendering. */
-export function createLatexDocumentSourceBuilder(): DocumentSourceBuilder {
+/** Canonical server-owned resolved HTML shared by evidence hashing and rendering. */
+export function createHtmlDocumentSourceBuilder(): DocumentSourceBuilder {
   return {
-    resolve(body: string, style: StyleDefinition): ResolvedDocumentSource {
-      const normalizedBody = normalizeLatexBody(body);
-      // wrapLatexDocument validates/canonicalizes too; pass canonical input so the
-      // bytes persisted for evidence are precisely the bytes rendered.
+    resolve(
+      format: DocumentFormat,
+      body: string,
+      style: StyleDefinition,
+    ): ResolvedDocumentSource {
+      const exactBody = validateDocumentInput(format, body);
       return {
-        normalizedBody,
-        source: wrapLatexDocument(normalizedBody, style),
+        body: exactBody,
+        source: renderDocumentHtml(exactBody, format, style),
       };
     },
   };

@@ -182,6 +182,6 @@ export const dashboardApi = {
     api<DocumentVersion>(`/api/documents/${id}/versions/${version}`),
   pdfUrl: (id: string, version: number) =>
     `/api/documents/${id}/versions/${version}/pdf`,
-  sourceUrl: (id: string, version: number) =>
-    `/api/documents/${id}/versions/${version}/source`,
+  inputUrl: (id: string, version: number) =>
+    `/api/documents/${id}/versions/${version}/input`,
 };
