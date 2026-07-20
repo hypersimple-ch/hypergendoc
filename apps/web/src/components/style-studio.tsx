@@ -67,8 +67,14 @@ export function StyleStudio({
     try {
       const result = await dashboardApi.previewStyle(style.id, definition);
       if (result.url && previewWindow) {
+        const response = await fetch(result.url);
+        const pdfUrl = URL.createObjectURL(
+          new Blob([await response.arrayBuffer()], {
+            type: "application/pdf",
+          }),
+        );
         previewWindow.opener = null;
-        previewWindow.location.href = result.url;
+        previewWindow.location.replace(pdfUrl);
       } else {
         previewWindow?.close();
         setMessage({
@@ -141,7 +147,7 @@ export function StyleStudio({
                 disabled={busy}
                 onClick={() => void preview()}
               >
-                Constrained PDF preview
+                Open generated PDF
               </Button>
             </div>
             <div aria-live="polite">

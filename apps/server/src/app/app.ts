@@ -46,6 +46,7 @@ import {
   createStyleRoutes,
   createStyleService,
 } from "../modules/styles/index.js";
+import { STYLE_PREVIEW_DOCUMENT } from "../modules/styles/preview-document.js";
 import {
   createWorkspaceReadRepository,
   createWorkspaceRepository,
@@ -147,8 +148,7 @@ export async function createApplication(
     renderer: {
       async renderPreview(input) {
         const result = await renderer.render({
-          format: "markdown",
-          body: "Preview",
+          ...STYLE_PREVIEW_DOCUMENT,
           style: input.definition,
         });
         if (!result.ok || !result.pdfHash)
@@ -161,8 +161,8 @@ export async function createApplication(
           result.pdf.byteLength > environment.limits.renderedArtifactBytes
         )
           throw new AppError("render_failed", 422);
-        // This ephemeral data URL is not persisted and is safe for a sandboxed,
-        // read-only dashboard iframe. The renderer accepts structured styles only.
+        // This ephemeral response is decoded to a Blob by the dashboard and is
+        // never persisted. The renderer accepts structured styles only.
         return {
           url: `data:application/pdf;base64,${Buffer.from(result.pdf).toString("base64")}`,
         };

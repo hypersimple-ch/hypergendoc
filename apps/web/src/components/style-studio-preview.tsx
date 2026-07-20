@@ -58,8 +58,8 @@ export function StyleStudioPreview({
           <h3>Sample document</h3>
         </div>
         <small>
-          Approximate browser preview — use PDF preview for the exact server
-          render.
+          Approximate browser preview — open the generated PDF for the exact
+          server render.
         </small>
       </div>
       <div className="style-preview-frame">

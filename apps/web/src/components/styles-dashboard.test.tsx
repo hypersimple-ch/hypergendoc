@@ -414,7 +414,7 @@ describe("StylesDashboard", () => {
     expect(rightMargin).toHaveValue(15);
   });
 
-  it("saves immutable active and inactive versions, reloads active history, and previews through a pre-opened window", async () => {
+  it("saves versions and opens exact PDFs safely", async () => {
     await openEditor();
     const freshStyle = { ...styleB, activeVersionId: "version-active" };
     createStyleVersion
@@ -462,21 +462,42 @@ describe("StylesDashboard", () => {
     );
     await waitFor(() => expect(style).toHaveBeenCalledTimes(3));
 
-    const popup = { location: { href: "" }, close: vi.fn() };
+    const replace = vi.fn();
+    const popup = { location: { replace }, opener: window, close: vi.fn() };
+    const open = vi
+      .spyOn(window, "open")
+      .mockReturnValue(popup as unknown as Window);
+    const createObjectURL = vi
+      .spyOn(URL, "createObjectURL")
+      .mockReturnValue("blob:http://localhost/style-preview");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(new Uint8Array([1, 2, 3])),
+    );
+    previewStyle.mockResolvedValueOnce({
+      url: "data:application/pdf;base64,AA==",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open generated PDF" }));
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith(
+        "blob:http://localhost/style-preview",
+      ),
+    );
+    expect(previewStyle).toHaveBeenCalledWith(styleB.id, definition);
+    expect(createObjectURL).toHaveBeenCalledOnce();
+    const previewBlob = createObjectURL.mock.calls[0]?.[0];
+    expect(previewBlob).toBeInstanceOf(Blob);
+    expect((previewBlob as Blob).type).toBe("application/pdf");
+    expect(popup.opener).toBeNull();
+
+    const failedPopup = { close: vi.fn() };
     let rejectPreview!: (reason: Error) => void;
-    vi.spyOn(window, "open").mockReturnValue(popup as unknown as Window);
+    open.mockReturnValue(failedPopup as unknown as Window);
     previewStyle.mockImplementationOnce(
       () => new Promise((_, reject) => (rejectPreview = reject)),
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Constrained PDF preview" }),
-    );
-    await waitFor(() =>
-      expect(previewStyle).toHaveBeenCalledWith(styleB.id, definition),
-    );
-    expect(window.open).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Open generated PDF" }));
     rejectPreview(new Error("Preview unavailable"));
-    await waitFor(() => expect(popup.close).toHaveBeenCalled());
+    await waitFor(() => expect(failedPopup.close).toHaveBeenCalled());
     expect(
       await screen.findByText("We could not load this page. Please try again."),
     ).toBeVisible();
