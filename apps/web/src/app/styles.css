@@ -1135,13 +1135,16 @@ legend {
   border: 1px solid #c8c0b1;
   background: #f2ede3;
 }
-.segmented-control legend {
-  width: 100%;
-  margin-bottom: 0.45rem;
-  padding: 0;
+.segmented-control--titled {
+  padding-top: 0.5rem;
+}
+.segmented-control__title {
+  grid-column: 1 / -1;
+  padding: 0 0.2rem 0.25rem;
   color: #3f4a45;
   font-size: 0.8rem;
   font-weight: 700;
+  line-height: 1.3;
 }
 .segmented-control label {
   position: relative;
@@ -1187,9 +1190,16 @@ legend {
   min-height: 2.75rem;
   accent-color: var(--studio-forest);
 }
-.range-control output,
-.range-control input[type="number"] {
-  width: 4.4rem;
+.number-field {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 500;
+}
+.style-controls .number-field input[type="number"] {
+  width: 5.25rem;
+  min-width: 0;
   min-height: 2.5rem;
   padding: 0.45rem;
   border: 1px solid #aeb4ac;
@@ -1204,8 +1214,11 @@ legend {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.65rem;
 }
-.margin-grid input[type="number"] {
-  min-width: 0;
+.margin-grid .number-field {
+  justify-content: flex-start;
+}
+.margin-grid .number-field input[type="number"] {
+  width: 100%;
 }
 .toggle-row {
   display: flex;

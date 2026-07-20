@@ -13,6 +13,7 @@ import {
   textStyleRoles,
 } from "./style-studio-definition";
 import { FormField, Input, Select } from "./primitives";
+import { NumberField, Range } from "./style-studio-number-controls";
 
 type SetDefinition = React.Dispatch<React.SetStateAction<StyleDefinition>>;
 
@@ -148,8 +149,12 @@ export function TypographyControls({
           onChange={(color) => updateRole({ color })}
         />
       </div>
-      <fieldset className="segmented-control">
-        <legend>Italic style</legend>
+      <div
+        className="segmented-control segmented-control--titled"
+        role="radiogroup"
+        aria-label="Italic style"
+      >
+        <span className="segmented-control__title">Italic style</span>
         {(["italic", "oblique"] as const).map((value) => (
           <label key={value}>
             <input
@@ -163,47 +168,8 @@ export function TypographyControls({
             {value}
           </label>
         ))}
-      </fieldset>
+      </div>
     </section>
-  );
-}
-
-function Range({
-  label,
-  value,
-  min,
-  max,
-  step,
-  unit,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  unit: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="range-control">
-      <span>
-        {label}
-        <output>
-          {value}
-          {unit}
-        </output>
-      </span>
-      <input
-        type="range"
-        aria-label={label}
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </label>
   );
 }
 
@@ -339,8 +305,12 @@ export function PageControls({
   return (
     <section className="control-section" aria-labelledby="page-layout-title">
       <h3 id="page-layout-title">Page layout</h3>
-      <fieldset className="segmented-control">
-        <legend>Page size</legend>
+      <div
+        className="segmented-control segmented-control--titled"
+        role="radiogroup"
+        aria-label="Page size"
+      >
+        <span className="segmented-control__title">Page size</span>
         {(["A4", "LETTER"] as const).map((size) => (
           <label key={size}>
             <input
@@ -357,24 +327,25 @@ export function PageControls({
             {size}
           </label>
         ))}
-      </fieldset>
+      </div>
       <div className="margin-grid">
         {margins.map(([key, label]) => (
           <label key={key}>
             {label}{" "}
-            <Input
-              type="number"
-              min="0"
-              max="80"
+            <NumberField
+              label={`${label} margin`}
               value={definition.page[key]}
-              onChange={(event) =>
+              min={0}
+              max={80}
+              step={1}
+              unit="mm"
+              onChange={(value) =>
                 setDefinition((draft) => ({
                   ...draft,
-                  page: { ...draft.page, [key]: Number(event.target.value) },
+                  page: { ...draft.page, [key]: Number(value) },
                 }))
               }
             />
-            <small>mm</small>
           </label>
         ))}
       </div>

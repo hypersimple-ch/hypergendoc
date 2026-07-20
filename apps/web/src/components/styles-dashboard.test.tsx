@@ -381,6 +381,39 @@ describe("StylesDashboard", () => {
     ).toBeChecked();
   });
 
+  it("allows numeric values to be cleared and replaced without overflowing", async () => {
+    await openEditor();
+
+    const bodyValue = screen.getByRole("spinbutton", {
+      name: "Body size value",
+    });
+    const lineHeightValue = screen.getByRole("spinbutton", {
+      name: "Line height value",
+    });
+    const rightMargin = screen.getByRole("spinbutton", {
+      name: "Right margin value",
+    });
+
+    expect(bodyValue).toHaveValue(10);
+    fireEvent.change(bodyValue, { target: { value: "" } });
+    expect(bodyValue).toHaveValue(null);
+    fireEvent.change(bodyValue, { target: { value: "12.5" } });
+    expect(bodyValue).toHaveValue(12.5);
+    expect(screen.getByRole("slider", { name: "Body size" })).toHaveValue(
+      "12.5",
+    );
+
+    fireEvent.change(lineHeightValue, {
+      target: { value: "1.2000000000000002" },
+    });
+    expect(lineHeightValue).toHaveValue(1.2);
+
+    fireEvent.change(rightMargin, { target: { value: "" } });
+    expect(rightMargin).toHaveValue(null);
+    fireEvent.change(rightMargin, { target: { value: "15" } });
+    expect(rightMargin).toHaveValue(15);
+  });
+
   it("saves immutable active and inactive versions, reloads active history, and previews through a pre-opened window", async () => {
     await openEditor();
     const freshStyle = { ...styleB, activeVersionId: "version-active" };
