@@ -10,13 +10,14 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
-  context: vi.fn(),
   members: vi.fn(),
   invite: vi.fn(),
   changeMemberRole: vi.fn(),
   removeMember: vi.fn(),
 }));
+const activeCompany = vi.hoisted(() => vi.fn());
 vi.mock("../lib/dashboard-api", () => ({ dashboardApi: api }));
+vi.mock("./active-company", () => ({ useActiveCompany: activeCompany }));
 
 import { MembersDashboard } from "./members-dashboard";
 
@@ -37,7 +38,11 @@ afterEach(() => {
 
 describe("MembersDashboard", () => {
   it("lets owners change roles and remove members", async () => {
-    api.context.mockResolvedValue({ role: "owner", userId: "owner" });
+    activeCompany.mockReturnValue({
+      context: { role: "owner", userId: "owner" },
+      loading: false,
+      reload: vi.fn(),
+    });
     api.members.mockResolvedValue([member]);
     api.changeMemberRole.mockResolvedValue({ ...member, role: "owner" });
     api.removeMember.mockResolvedValue(undefined);
@@ -61,7 +66,11 @@ describe("MembersDashboard", () => {
   });
 
   it("keeps member management controls owner-only", async () => {
-    api.context.mockResolvedValue({ role: "member", userId: "member" });
+    activeCompany.mockReturnValue({
+      context: { role: "member", userId: "member" },
+      loading: false,
+      reload: vi.fn(),
+    });
     api.members.mockResolvedValue([member]);
 
     render(<MembersDashboard />);

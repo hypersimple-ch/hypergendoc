@@ -2,6 +2,7 @@
 import { useState } from "react";
 import type { McpAction } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
+import { useActiveCompany } from "./active-company";
 import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
 import { Button, FormField, Input, Status, Table } from "./primitives";
 const actions: McpAction[] = [
@@ -11,9 +12,14 @@ const actions: McpAction[] = [
   "documents:write",
 ];
 export function CredentialsDashboard() {
-  const context = useLoaded(dashboardApi.context);
+  const {
+    context,
+    companies,
+    loading: contextLoading,
+    error: contextError,
+    reload,
+  } = useActiveCompany();
   const credentials = useLoaded(dashboardApi.credentials);
-  const companies = useLoaded(dashboardApi.companies);
   const [name, setName] = useState("");
   const [companyIds, setCompanyIds] = useState<string[]>([]);
   const [selectedActions, setActions] = useState<McpAction[]>([
@@ -22,7 +28,7 @@ export function CredentialsDashboard() {
   const [token, setToken] = useState<string>();
   const [ack, setAck] = useState(false);
   const [message, setMessage] = useState<string>();
-  const owner = context.value?.role === "owner";
+  const owner = context?.role === "owner";
   async function create(e: React.FormEvent) {
     e.preventDefault();
     try {
@@ -64,7 +70,14 @@ export function CredentialsDashboard() {
       setMessage(safeError(e));
     }
   }
-  if (context.loading) return <LoadState {...context} />;
+  if (contextLoading || contextError)
+    return (
+      <LoadState
+        loading={contextLoading}
+        error={contextError}
+        reload={reload}
+      />
+    );
   if (!owner)
     return (
       <section className="panel feature-state">
@@ -129,8 +142,8 @@ export function CredentialsDashboard() {
             </FormField>
             <fieldset>
               <legend>Company scopes</legend>
-              {companies.value
-                ?.filter((c) => !c.archivedAt)
+              {companies
+                .filter((c) => !c.archivedAt)
                 .map((c) => (
                   <label className="checkbox" key={c.id}>
                     <input
@@ -167,7 +180,7 @@ export function CredentialsDashboard() {
                 </label>
               ))}
             </fieldset>
-            <Button disabled={!selectedActions.length}>
+            <Button type="submit" disabled={!selectedActions.length}>
               Create credential
             </Button>
           </form>

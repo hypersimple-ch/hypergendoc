@@ -1,16 +1,23 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { Company, Style } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
+import { useActiveCompany } from "./active-company";
+import { Empty, LoadState, safeError } from "./dashboard-state";
+import { Button, FormField, Input, Status } from "./primitives";
 import { initialStyleDefinition } from "./style-studio-definition";
 import { StyleStudio } from "./style-studio";
-import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
-import { Button, FormField, Input, Select, Status } from "./primitives";
 
 export function StylesDashboard() {
-  const companies = useLoaded(dashboardApi.companies);
-  const [companyId, setCompanyId] = useState("");
+  const {
+    activeCompany,
+    loading,
+    error: companyError,
+    reload,
+    noActiveCompany,
+  } = useActiveCompany();
   const [styles, setStyles] = useState<Style[]>();
   const [error, setError] = useState<string>();
   const [selected, setSelected] = useState<Style>();
@@ -20,9 +27,10 @@ export function StylesDashboard() {
     const request = ++stylesRequest.current;
     setError(undefined);
     setStyles(undefined);
-    if (!companyId) return;
+    setSelected(undefined);
+    if (!activeCompany) return;
     dashboardApi
-      .styles(companyId)
+      .styles(activeCompany.id)
       .then((result) => {
         if (stylesRequest.current === request) setStyles(result);
       })
@@ -32,24 +40,19 @@ export function StylesDashboard() {
     return () => {
       if (stylesRequest.current === request) stylesRequest.current++;
     };
-  }, [companyId]);
-
-  function created(style: Style) {
-    setSelected(style);
-    setCompanyId(style.companyId);
-  }
+  }, [activeCompany?.id]);
 
   if (selected) {
     return (
-      <main className="styles-page">
+      <div className="styles-page">
         <StyleStudio style={selected} onClose={() => setSelected(undefined)} />
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="styles-page">
-      <section className="styles-hero">
+    <div className="styles-page">
+      <section className="page-heading">
         <div>
           <p className="eyebrow">Styles</p>
           <h1>Structured brand systems.</h1>
@@ -59,97 +62,108 @@ export function StylesDashboard() {
           </p>
         </div>
       </section>
-      <section className="style-create-card">
-        <LoadState {...companies} />
-        {companies.value && (
-          <StyleCreate companies={companies.value} onCreated={created} />
-        )}
-      </section>
-      <section className="style-library" aria-labelledby="style-library-title">
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Library</p>
-            <h2 id="style-library-title">Your style systems</h2>
-          </div>
-          <FormField label="Filter styles by company">
-            <Select
-              value={companyId}
-              onValueChange={setCompanyId}
-              placeholder="Choose a company"
-              aria-label="Filter styles by company"
-              options={
-                companies.value
-                  ?.filter((company) => !company.archivedAt)
-                  .map((company) => ({
-                    value: company.id,
-                    label: company.name,
-                  })) ?? []
-              }
-            />
-          </FormField>
-        </div>
-        {error && <Status kind="error">{error}</Status>}
-        {styles &&
-          (styles.length ? (
-            <div className="style-card-grid">
-              {styles.map((style) => (
-                <article className="style-card" key={style.id}>
-                  <div className="style-card__head">
-                    <span
-                      className={`badge ${style.activeVersionId ? "" : "badge--quiet"}`}
-                    >
-                      {style.activeVersionId ? "Active" : "Inactive"}
-                    </span>
-                    <time dateTime={style.createdAt}>
-                      Created {new Date(style.createdAt).toLocaleDateString()}
-                    </time>
-                  </div>
-                  <h3>{style.name}</h3>
-                  <div
-                    className="style-card__swatches"
-                    aria-label="Example color palette"
-                  >
-                    <span
-                      style={{
-                        backgroundColor: initialStyleDefinition.colors.primary,
-                      }}
-                    />
-                    <span
-                      style={{
-                        backgroundColor: initialStyleDefinition.colors.accent,
-                      }}
-                    />
-                    <span
-                      style={{
-                        backgroundColor: initialStyleDefinition.colors.muted,
-                      }}
-                    />
-                  </div>
-                  <Button tone="quiet" onClick={() => setSelected(style)}>
-                    Edit versions
-                  </Button>
-                </article>
-              ))}
+      {activeCompany ? (
+        <>
+          <section className="panel dashboard-panel">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">New style</p>
+                <h2>Create for {activeCompany.name}</h2>
+              </div>
             </div>
-          ) : (
+            <StyleCreate company={activeCompany} onCreated={setSelected} />
+          </section>
+          <section
+            className="panel dashboard-panel"
+            aria-labelledby="style-library-title"
+          >
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">Library</p>
+                <h2 id="style-library-title">Your style systems</h2>
+              </div>
+            </div>
+            {error && <Status kind="error">{error}</Status>}
+            {styles &&
+              (styles.length ? (
+                <div className="style-card-grid">
+                  {styles.map((style) => (
+                    <article className="style-card" key={style.id}>
+                      <div className="style-card__head">
+                        <span
+                          className={`badge ${style.activeVersionId ? "" : "badge--quiet"}`}
+                        >
+                          {style.activeVersionId ? "Active" : "Inactive"}
+                        </span>
+                        <time dateTime={style.createdAt}>
+                          Created{" "}
+                          {new Date(style.createdAt).toLocaleDateString()}
+                        </time>
+                      </div>
+                      <h3>{style.name}</h3>
+                      <div
+                        className="style-card__swatches"
+                        aria-label="Example color palette"
+                      >
+                        <span
+                          style={{
+                            backgroundColor:
+                              initialStyleDefinition.colors.primary,
+                          }}
+                        />
+                        <span
+                          style={{
+                            backgroundColor:
+                              initialStyleDefinition.colors.accent,
+                          }}
+                        />
+                        <span
+                          style={{
+                            backgroundColor:
+                              initialStyleDefinition.colors.muted,
+                          }}
+                        />
+                      </div>
+                      <Button tone="quiet" onClick={() => setSelected(style)}>
+                        Edit versions
+                      </Button>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <Empty>
+                  <strong>No styles for {activeCompany.name}</strong>
+                  <p>Create a style using the structured controls above.</p>
+                </Empty>
+              ))}
+          </section>
+        </>
+      ) : (
+        <section className="panel dashboard-panel">
+          <LoadState loading={loading} error={companyError} reload={reload} />
+          {noActiveCompany && (
             <Empty>
-              <strong>No styles for this company</strong>
-              <p>Create a style using the structured controls above.</p>
+              <strong>Choose a company to manage styles</strong>
+              <p>
+                Create or select a company from{" "}
+                <Link href="/workspace/companies">Companies</Link> before
+                creating a style system.
+              </p>
             </Empty>
-          ))}
-      </section>
-    </main>
+          )}
+        </section>
+      )}
+    </div>
   );
 }
 
 function StyleCreate({
-  companies,
+  company,
   onCreated,
 }: {
-  companies: Company[];
+  company: Company;
   onCreated: (style: Style) => void;
 }) {
-  const [companyId, setCompanyId] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -157,16 +171,12 @@ function StyleCreate({
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (busy) return;
-    if (!companyId) {
-      setError("Choose a company.");
-      return;
-    }
     setBusy(true);
     setError(undefined);
     try {
       onCreated(
         await dashboardApi.createStyle({
-          companyId,
+          companyId: company.id,
           name,
           definition: initialStyleDefinition,
         }),
@@ -188,20 +198,6 @@ function StyleCreate({
           maxLength={120}
           onChange={(event) => setName(event.target.value)}
           disabled={busy}
-        />
-      </FormField>
-      <FormField label="Company">
-        <Select
-          value={companyId}
-          onValueChange={setCompanyId}
-          placeholder="Choose…"
-          aria-label="Company"
-          name="companyId"
-          required
-          disabled={busy}
-          options={companies
-            .filter((company) => !company.archivedAt)
-            .map((company) => ({ value: company.id, label: company.name }))}
         />
       </FormField>
       <Button type="submit" disabled={busy}>

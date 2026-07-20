@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { ApiError, workspaceApi } from "../lib/api-client";
 import { authClient } from "../lib/auth-client";
+import { ActiveCompanyProvider, useActiveCompany } from "./active-company";
+import { Select } from "./primitives";
 
 const links = [
   ["/workspace", "Overview"],
@@ -88,7 +90,25 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
 }
 
 export function WorkspaceShell({ children }: { children: ReactNode }) {
+  return (
+    <ActiveCompanyProvider>
+      <WorkspaceShellContent>{children}</WorkspaceShellContent>
+    </ActiveCompanyProvider>
+  );
+}
+
+function WorkspaceShellContent({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const {
+    context,
+    companies,
+    loading,
+    error,
+    reload,
+    activeCompany,
+    setActiveCompany,
+    noActiveCompany,
+  } = useActiveCompany();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [signOutState, setSignOutState] = useState<
@@ -135,7 +155,35 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         className={`sidebar ${open ? "sidebar--open" : ""}`}
       >
         <p className="workspace-label">Current workspace</p>
-        <strong>Document studio</strong>
+        <strong>{context?.name ?? "Workspace"}</strong>
+        <div className="workspace-company-selector">
+          <label htmlFor="active-company">Active company</label>
+          {loading ? <p role="status">Loading companies…</p> : null}
+          {error ? (
+            <div role="alert">
+              <p>We could not load companies. {error}</p>
+              <button onClick={reload}>Try again</button>
+            </div>
+          ) : null}
+          {noActiveCompany ? (
+            <p role="status">
+              No active companies are available. Create or restore a company to
+              continue.
+            </p>
+          ) : null}
+          {!loading && !error && !noActiveCompany ? (
+            <Select
+              id="active-company"
+              aria-label="Active company"
+              value={activeCompany?.id ?? ""}
+              onValueChange={setActiveCompany}
+              options={companies
+                .filter((company) => !company.archivedAt)
+                .map((company) => ({ value: company.id, label: company.name }))}
+              placeholder="Select a company"
+            />
+          ) : null}
+        </div>
         <nav aria-label="Workspace">
           <ul>
             {links.map(([href, label]) => (

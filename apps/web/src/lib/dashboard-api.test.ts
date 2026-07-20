@@ -110,12 +110,14 @@ describe("dashboard contract adapters", () => {
   it("recognizes the server-resolved owner role without accepting a workspace id", async () => {
     const fetcher = vi.fn().mockResolvedValue(
       response({
+        id: "workspace-1",
         name: "Studio",
         membership: { role: "owner", userId: "owner" },
       }),
     );
     vi.stubGlobal("fetch", fetcher);
     await expect(dashboardApi.context()).resolves.toEqual({
+      id: "workspace-1",
       name: "Studio",
       userId: "owner",
       role: "owner",

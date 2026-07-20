@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement as h, useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Dialog, FormField, Input, Select } from "./primitives";
 
 Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
@@ -10,36 +10,73 @@ Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
   configurable: true,
 });
 
+afterEach(cleanup);
+
 describe("accessible primitives", () => {
-  it("connects a labelled field and exposes errors", () => {
+  it("associates native controls with unique labels, hints, and errors", () => {
     render(
-      h(FormField, {
-        label: "Email",
-        error: "Required",
-        children: h(Input, { "aria-label": "Email" }),
-      }),
+      h(
+        "div",
+        null,
+        h(FormField, {
+          label: "Workspace name",
+          hint: "Used in URLs.",
+          error: "A workspace name is required.",
+          children: h(Input, { required: true, disabled: true }),
+        }),
+        h(FormField, {
+          label: "Workspace name",
+          hint: "Choose a distinct name.",
+          children: h(Input, null),
+        }),
+      ),
     );
-    expect(screen.getByRole("textbox", { name: "Email" })).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("Required");
+
+    const controls = screen.getAllByRole("textbox", { name: "Workspace name" });
+    const invalidControl = controls[0]!;
+    const otherControl = controls[1]!;
+    const hint = screen.getByText("Used in URLs.");
+    const error = screen.getByRole("alert");
+    expect(invalidControl).toBeRequired();
+    expect(invalidControl).toBeDisabled();
+    expect(invalidControl).toHaveAttribute(
+      "aria-describedby",
+      `${hint.id} ${error.id}`,
+    );
+    expect(invalidControl).toHaveAttribute("aria-invalid", "true");
+    expect(invalidControl.id).not.toBe(otherControl.id);
+    expect(hint.id).not.toBe("workspace-name-hint");
   });
-  it("uses a controlled accessible select with keyboard opening and a selected indicator", () => {
+
+  it("associates a controlled Radix select and preserves keyboard semantics", () => {
     function Example() {
       const [value, setValue] = useState("");
-      return h(Select, {
-        value,
-        onValueChange: setValue,
-        placeholder: "Choose a company",
-        "aria-label": "Company",
-        required: true,
-        options: [
-          { value: "alpha", label: "Alpha" },
-          { value: "beta", label: "Beta" },
-        ],
+      return h(FormField, {
+        label: "Company",
+        hint: "Choose the company for this style.",
+        error: "Company is required.",
+        children: h(Select, {
+          value,
+          onValueChange: setValue,
+          placeholder: "Choose a company",
+          required: true,
+          options: [
+            { value: "alpha", label: "Alpha" },
+            { value: "beta", label: "Beta" },
+          ],
+        }),
       });
     }
     render(h(Example));
     const trigger = screen.getByRole("combobox", { name: "Company" });
+    const hint = screen.getByText("Choose the company for this style.");
+    const error = screen.getByText("Company is required.");
     expect(trigger).toHaveAttribute("aria-required", "true");
+    expect(trigger).toHaveAttribute(
+      "aria-describedby",
+      `${hint.id} ${error.id}`,
+    );
+    expect(trigger).toHaveAttribute("aria-invalid", "true");
     expect(trigger).toHaveTextContent("Choose a company");
     trigger.focus();
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
@@ -51,6 +88,22 @@ describe("accessible primitives", () => {
     fireEvent.click(beta);
     expect(trigger).toHaveTextContent("Beta");
     expect(beta).toHaveAttribute("data-state", "checked");
+  });
+
+  it("keeps disabled Radix selects unavailable", () => {
+    render(
+      h(Select, {
+        value: "alpha",
+        onValueChange: vi.fn(),
+        placeholder: "Choose a company",
+        "aria-label": "Disabled company",
+        disabled: true,
+        options: [{ value: "alpha", label: "Alpha" }],
+      }),
+    );
+    expect(
+      screen.getByRole("combobox", { name: "Disabled company" }),
+    ).toBeDisabled();
   });
 
   it("manages unique labels, focus, Escape, and click-only backdrop closing", () => {

@@ -9,8 +9,10 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const api = vi.hoisted(() => ({ context: vi.fn(), audit: vi.fn() }));
+const api = vi.hoisted(() => ({ audit: vi.fn() }));
+const activeCompany = vi.hoisted(() => vi.fn());
 vi.mock("../lib/dashboard-api", () => ({ dashboardApi: api }));
+vi.mock("./active-company", () => ({ useActiveCompany: activeCompany }));
 
 import { AuditDashboard } from "./audit-dashboard";
 
@@ -30,7 +32,11 @@ const event = (id: string) => ({
 
 describe("AuditDashboard", () => {
   it("shows an owner-only state without requesting events for members", async () => {
-    api.context.mockResolvedValue({ role: "member" });
+    activeCompany.mockReturnValue({
+      context: { role: "member" },
+      loading: false,
+      reload: vi.fn(),
+    });
 
     render(<AuditDashboard />);
 
@@ -39,7 +45,11 @@ describe("AuditDashboard", () => {
   });
 
   it("loads and paginates owner audit events", async () => {
-    api.context.mockResolvedValue({ role: "owner" });
+    activeCompany.mockReturnValue({
+      context: { role: "owner" },
+      loading: false,
+      reload: vi.fn(),
+    });
     api.audit
       .mockResolvedValueOnce({ items: [event("event-1")], nextOffset: 50 })
       .mockResolvedValueOnce({ items: [event("event-2")] });

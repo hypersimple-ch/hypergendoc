@@ -2,11 +2,12 @@
 import { useState } from "react";
 import type { Company } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
-import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
+import { useActiveCompany } from "./active-company";
+import { Empty, LoadState, safeError } from "./dashboard-state";
 import { Button, FormField, Input, Status, Table } from "./primitives";
 
 export function CompaniesDashboard() {
-  const data = useLoaded(dashboardApi.companies);
+  const { companies, loading, error, reload } = useActiveCompany();
   const [name, setName] = useState("");
   const [message, setMessage] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -18,7 +19,7 @@ export function CompaniesDashboard() {
     try {
       await dashboardApi.createCompany({ name: name.trim() });
       setName("");
-      data.reload();
+      reload();
     } catch (e) {
       setMessage(safeError(e));
     } finally {
@@ -60,18 +61,19 @@ export function CompaniesDashboard() {
             <h2>Companies</h2>
           </div>
         </div>
-        <LoadState {...data} />
-        {data.value &&
-          (data.value.length ? (
+        <LoadState loading={loading} error={error} reload={reload} />
+        {!loading &&
+          !error &&
+          (companies.length ? (
             <Table
               caption="Companies"
               columns={["Company", "Status", "Updated", "Actions"]}
             >
-              {data.value.map((company) => (
+              {companies.map((company) => (
                 <CompanyRow
                   company={company}
                   key={company.id}
-                  onChange={data.reload}
+                  onChange={reload}
                 />
               ))}
             </Table>
