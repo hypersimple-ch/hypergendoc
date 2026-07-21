@@ -45,6 +45,21 @@ const style = {
   },
 } as const;
 
+const assetId = "11111111-1111-4111-8111-111111111111";
+const secondAssetId = "22222222-2222-4222-8222-222222222222";
+const thirdAssetId = "33333333-3333-4333-8333-333333333333";
+const logoId = "44444444-4444-4444-8444-444444444444";
+const asset = (id: string, contentType: string, value: string) => {
+  const bytes = Buffer.from(value);
+  return {
+    id,
+    contentType,
+    byteSize: bytes.length,
+    sha256: sourceHash(bytes.toString("binary")),
+    base64: bytes.toString("base64"),
+  };
+};
+
 const textStyles = {
   h1: {
     fontFamily: "Inter",
@@ -283,6 +298,89 @@ describe("document content foundation", () => {
     });
     expect(output).not.toContain("@top-left");
     expect(output).not.toContain("@bottom-left");
+  });
+
+  it("renders verified v1 logo and custom fonts with deterministic data URLs", () => {
+    const assets = {
+      logo: asset(logoId, "image/png", "logo"),
+      fonts: [
+        asset(assetId, "font/ttf", "ttf"),
+        asset(secondAssetId, "font/otf", "otf"),
+        asset(thirdAssetId, "font/woff2", "woff2"),
+      ],
+    };
+    const output = renderDocumentHtml(
+      "# Heading",
+      "markdown",
+      {
+        ...style,
+        assetVersion: 1,
+        logoObjectId: logoId,
+        bodyFont: assetId,
+        headingFont: secondAssetId,
+        textStyles: {
+          ...textStyles,
+          h1: { ...textStyles.h1, fontFamily: thirdAssetId },
+        },
+      },
+      assets,
+    );
+    expect(output).toContain(
+      "default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'",
+    );
+    expect(output).toContain(
+      '<img class="document-logo" src="data:image/png;base64,bG9nbw==" alt="">',
+    );
+    expect(output).toContain(
+      'font-family: "HypergendocFont_11111111111141118111111111111111"; src: url("data:font/ttf;base64,dHRm") format("truetype")',
+    );
+    expect(output).toContain('format("opentype")');
+    expect(output).toContain('format("woff2")');
+    expect(output).toContain(
+      'font-family: "HypergendocFont_33333333333343338333333333333333", sans-serif',
+    );
+  });
+
+  it("rejects invalid, missing, duplicate, and unreferenced v1 assets", () => {
+    const v1 = { ...style, assetVersion: 1, bodyFont: assetId } as const;
+    const valid = asset(assetId, "font/ttf", "font");
+    const invalid = (assets: unknown) =>
+      expect(() =>
+        renderDocumentHtml("body", "markdown", v1, assets as never),
+      ).toThrow(new DocumentInputError("invalid_assets"));
+    invalid({ logo: null, fonts: [] });
+    invalid({ logo: null, fonts: [valid, valid] });
+    invalid({ logo: null, fonts: [asset(secondAssetId, "font/ttf", "font")] });
+    invalid({ logo: null, fonts: [{ ...valid, contentType: "font/woff" }] });
+    invalid({ logo: null, fonts: [{ ...valid, sha256: "0".repeat(64) }] });
+    invalid({ logo: null, fonts: [{ ...valid, base64: "%%%%" }] });
+    invalid({
+      logo: null,
+      fonts: [{ ...valid, byteSize: valid.byteSize + 1 }],
+    });
+  });
+
+  it("keeps legacy source hashes exact while v1 asset bytes affect them", () => {
+    const legacy = renderDocumentHtml("# Heading", "markdown", style);
+    expect(sourceHash(legacy)).toBe(
+      "30226b824c7c679927889d1ce5bffb3bbd60187c727b875ca729153e44c3f250",
+    );
+    expect(
+      renderDocumentHtml("# Heading", "markdown", style, {
+        logo: asset(logoId, "image/png", "ignored"),
+        fonts: [],
+      }),
+    ).toBe(legacy);
+    const v1 = { ...style, assetVersion: 1, bodyFont: assetId } as const;
+    const first = renderDocumentHtml("# Heading", "markdown", v1, {
+      logo: null,
+      fonts: [asset(assetId, "font/ttf", "one")],
+    });
+    const second = renderDocumentHtml("# Heading", "markdown", v1, {
+      logo: null,
+      fonts: [asset(assetId, "font/ttf", "two")],
+    });
+    expect(sourceHash(first)).not.toBe(sourceHash(second));
   });
 
   it("CSS-string-escapes paged text without allowing a style breakout", () => {

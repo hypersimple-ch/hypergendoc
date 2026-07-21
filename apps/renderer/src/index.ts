@@ -5,7 +5,10 @@ import { chromium, type Browser, type BrowserServer } from "playwright-core";
 import { PDFDocument } from "pdf-lib";
 import { z } from "zod";
 import { limits } from "@hypergendoc/config";
-import { StyleDefinitionSchema } from "@hypergendoc/contracts";
+import {
+  ResolvedStyleAssetsSchema,
+  StyleDefinitionSchema,
+} from "@hypergendoc/contracts";
 import {
   DOCUMENT_MAX_PAGES,
   DocumentInputError,
@@ -14,7 +17,10 @@ import {
 } from "@hypergendoc/document";
 
 export const RENDERER_PROTOCOL = "hypergendoc-render-v2";
-const MAX_FRAME_BYTES = limits.documentBodyBytes + 16 * 1024;
+const MAX_FRAME_BYTES =
+  limits.documentBodyBytes +
+  Math.ceil(limits.renderAssetBytes / 3) * 4 +
+  16 * 1024;
 const PDF_HEADER = Buffer.from("%PDF-");
 
 const RendererRequestSchema = z
@@ -29,9 +35,13 @@ const RendererRequestSchema = z
         (body) => Buffer.byteLength(body, "utf8") <= limits.documentBodyBytes,
       ),
     style: StyleDefinitionSchema,
+    assets: ResolvedStyleAssetsSchema.optional().default({
+      logo: null,
+      fonts: [],
+    }),
   })
   .strict();
-export type RendererRequest = z.infer<typeof RendererRequestSchema>;
+export type RendererRequest = z.input<typeof RendererRequestSchema>;
 
 export const RendererResponseSchema = z
   .object({
@@ -121,6 +131,9 @@ export class ChromiumPdfRenderer implements PdfRenderer {
         await page.route("**/*", async (route) => route.abort());
         await page.emulateMedia({ media: "print" });
         await page.setContent(source, { waitUntil: "load" });
+        await page.evaluate(async () => {
+          await document.fonts.ready;
+        });
         return Buffer.from(
           await page.pdf({ printBackground: true, preferCSSPageSize: true }),
         );
@@ -183,6 +196,7 @@ export async function render(
       parsed.data.body,
       parsed.data.format,
       parsed.data.style,
+      parsed.data.assets,
     );
     const pdf = await pdfRenderer.render(source, limits.renderTimeoutMs);
     await validatePdf(pdf);

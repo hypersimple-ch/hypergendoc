@@ -2,11 +2,15 @@ import {
   renderDocumentHtml,
   validateDocumentInput,
 } from "@hypergendoc/document";
-import type { DocumentFormat, StyleDefinition } from "@hypergendoc/contracts";
+import type {
+  DocumentFormat,
+  ResolvedStyleAssets,
+  StyleDefinition,
+} from "@hypergendoc/contracts";
 import type {
   DocumentSourceBuilder,
   ResolvedDocumentSource,
-} from "./service.js";
+} from "./service-types.js";
 
 /** Canonical server-owned resolved HTML shared by evidence hashing and rendering. */
 export function createHtmlDocumentSourceBuilder(): DocumentSourceBuilder {
@@ -15,11 +19,12 @@ export function createHtmlDocumentSourceBuilder(): DocumentSourceBuilder {
       format: DocumentFormat,
       body: string,
       style: StyleDefinition,
+      assets?: ResolvedStyleAssets,
     ): ResolvedDocumentSource {
       const exactBody = validateDocumentInput(format, body);
       return {
         body: exactBody,
-        source: renderDocumentHtml(exactBody, format, style),
+        source: renderDocumentHtml(exactBody, format, style, assets),
       };
     },
   };

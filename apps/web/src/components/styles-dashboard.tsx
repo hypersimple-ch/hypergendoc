@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import type { Company, Style } from "@hypergendoc/contracts";
+import type { Company, CompanyAssets, Style } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
 import { useActiveCompany } from "./active-company";
 import { Empty, LoadState, safeError } from "./dashboard-state";
@@ -19,6 +19,7 @@ export function StylesDashboard() {
     noActiveCompany,
   } = useActiveCompany();
   const [styles, setStyles] = useState<Style[]>();
+  const [assets, setAssets] = useState<CompanyAssets>();
   const [error, setError] = useState<string>();
   const [selected, setSelected] = useState<Style>();
   const stylesRequest = useRef(0);
@@ -27,12 +28,17 @@ export function StylesDashboard() {
     const request = ++stylesRequest.current;
     setError(undefined);
     setStyles(undefined);
+    setAssets(undefined);
     setSelected(undefined);
     if (!activeCompany) return;
-    dashboardApi
-      .styles(activeCompany.id)
-      .then((result) => {
-        if (stylesRequest.current === request) setStyles(result);
+    Promise.all([
+      dashboardApi.styles(activeCompany.id),
+      dashboardApi.assets(activeCompany.id),
+    ])
+      .then(([nextStyles, nextAssets]) => {
+        if (stylesRequest.current !== request) return;
+        setStyles(nextStyles);
+        setAssets(nextAssets);
       })
       .catch((reason) => {
         if (stylesRequest.current === request) setError(safeError(reason));
@@ -45,7 +51,17 @@ export function StylesDashboard() {
   if (selected) {
     return (
       <div className="styles-page">
-        <StyleStudio style={selected} onClose={() => setSelected(undefined)} />
+        <StyleStudio
+          style={selected}
+          assets={assets}
+          refreshAssets={async () => {
+            const request = stylesRequest.current;
+            const next = await dashboardApi.assets(selected.companyId);
+            if (stylesRequest.current === request) setAssets(next);
+            return next;
+          }}
+          onClose={() => setSelected(undefined)}
+        />
       </div>
     );
   }

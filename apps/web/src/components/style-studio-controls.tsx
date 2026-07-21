@@ -1,18 +1,19 @@
-import { useEffect, useId, useRef, useState } from "react";
-import { HexColorInput, HexColorPicker } from "react-colorful";
+import { useState } from "react";
 import type {
+  CompanyAssets,
   StyleDefinition,
   TextStyleRole,
   TextStyles,
 } from "@hypergendoc/contracts";
 import {
-  colorKeys,
   fonts,
   legacyTextStyles,
-  normalizeHex,
   textStyleRoles,
 } from "./style-studio-definition";
-import { FormField, Input, Select } from "./primitives";
+import { FormField, Input, Select, Status } from "./primitives";
+import { dashboardApi } from "../lib/dashboard-api";
+import { safeError } from "./dashboard-state";
+import { ColorControl } from "./style-studio-color-controls";
 import { NumberField, Range } from "./style-studio-number-controls";
 
 type SetDefinition = React.Dispatch<React.SetStateAction<StyleDefinition>>;
@@ -21,11 +22,48 @@ export function TypographyControls({
   definition,
   setDefinition,
   updateNumber,
+  assets,
+  companyId,
+  onAssetsChanged,
 }: {
   definition: StyleDefinition;
   setDefinition: SetDefinition;
   updateNumber: (key: "bodySizePt" | "headingScale", value: string) => void;
+  assets?: CompanyAssets | undefined;
+  companyId: string;
+  onAssetsChanged: () => Promise<unknown>;
 }) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string>();
+  const catalogFonts = assets?.fonts ?? [];
+  const fontOptions = [
+    ...fonts.map(
+      (id) =>
+        catalogFonts.find((font) => font.id === id) ?? {
+          id,
+          source: "built_in" as const,
+          familyName: id,
+          subfamilyName: null,
+          displayName: id,
+          owned: false,
+          contentUrl: null,
+        },
+    ),
+    ...catalogFonts.filter((font) => font.source === "uploaded"),
+  ];
+  const uploadFont = async (file?: File) => {
+    if (!file || uploading) return;
+    setUploading(true);
+    setUploadError(undefined);
+    try {
+      await dashboardApi.uploadFont(companyId, file);
+      await onAssetsChanged();
+    } catch (reason) {
+      setUploadError(safeError(reason));
+    } finally {
+      setUploading(false);
+    }
+  };
   const [role, setRole] = useState<TextStyleRole>("h1");
   const textStyles = definition.textStyles ?? legacyTextStyles(definition);
   const style = textStyles[role];
@@ -44,31 +82,40 @@ export function TypographyControls({
       <fieldset className="font-group">
         <legend>Body font</legend>
         <div className="font-grid">
-          {fonts.map((font) => {
-            const selected = definition.bodyFont === font;
+          {fontOptions.map((font) => {
+            const selected = definition.bodyFont === font.id;
             return (
               <label
                 className={`font-option${selected ? " font-option--selected" : ""}`}
-                key={font}
-                style={{ fontFamily: font }}
+                key={font.id}
+                style={{ fontFamily: font.familyName }}
               >
                 <input
                   type="radio"
                   name="bodyFont"
-                  value={font}
+                  value={font.id}
                   checked={selected}
-                  aria-label={`Body font ${font}`}
+                  aria-label={`Body font ${font.displayName}`}
                   onChange={() =>
-                    setDefinition((draft) => ({ ...draft, bodyFont: font }))
+                    setDefinition((draft) => ({ ...draft, bodyFont: font.id }))
                   }
                 />
-                <span>{font}</span>
+                <span>{font.displayName}</span>
                 <b>Aa</b>
               </label>
             );
           })}
         </div>
       </fieldset>
+      <FormField label="Upload company font">
+        <Input
+          type="file"
+          accept=".ttf,.otf,.woff2,font/ttf,font/otf,font/woff2"
+          disabled={uploading}
+          onChange={(event) => void uploadFont(event.target.files?.[0])}
+        />
+      </FormField>
+      {uploadError && <Status kind="error">{uploadError}</Status>}
       <Range
         label="Body size"
         value={definition.bodySizePt}
@@ -95,12 +142,11 @@ export function TypographyControls({
         <FormField label="Font family">
           <Select
             value={style.fontFamily}
-            onValueChange={(fontFamily) =>
-              updateRole({
-                fontFamily: fontFamily as StyleDefinition["bodyFont"],
-              })
-            }
-            options={fonts.map((font) => ({ value: font, label: font }))}
+            onValueChange={(fontFamily) => updateRole({ fontFamily })}
+            options={fontOptions.map((font) => ({
+              value: font.id,
+              label: font.displayName,
+            }))}
             placeholder="Choose a font"
             aria-label="Font family"
           />
@@ -173,122 +219,6 @@ export function TypographyControls({
   );
 }
 
-export function ColorControls({
-  definition,
-  setDefinition,
-}: {
-  definition: StyleDefinition;
-  setDefinition: SetDefinition;
-}) {
-  return (
-    <section className="control-section" aria-labelledby="color-palette-title">
-      <h3 id="color-palette-title">Color palette</h3>
-      <div className="color-grid">
-        {colorKeys.map((key) => (
-          <ColorControl
-            key={key}
-            name={key}
-            value={definition.colors[key]}
-            onChange={(value) =>
-              setDefinition((draft) => ({
-                ...draft,
-                colors: { ...draft.colors, [key]: value },
-                ...(key === "heading" && draft.textStyles
-                  ? {
-                      textStyles: {
-                        ...draft.textStyles,
-                        h1: { ...draft.textStyles.h1, color: value },
-                        h2: { ...draft.textStyles.h2, color: value },
-                        h3: { ...draft.textStyles.h3, color: value },
-                        h4: { ...draft.textStyles.h4, color: value },
-                        h5: { ...draft.textStyles.h5, color: value },
-                        h6: { ...draft.textStyles.h6, color: value },
-                      },
-                    }
-                  : {}),
-              }))
-            }
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ColorControl({
-  name,
-  value,
-  onChange,
-}: {
-  name: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const id = useId();
-  const control = useRef<HTMLDivElement>(null);
-  const displayName = name.endsWith("color")
-    ? name
-    : `${name.charAt(0).toUpperCase()}${name.slice(1)} color`;
-  const update = (next: string) => {
-    const normalized = normalizeHex(next);
-    if (normalized) onChange(normalized);
-  };
-
-  useEffect(() => {
-    if (!open) return;
-    const closeOutside = (event: PointerEvent | FocusEvent) => {
-      if (!control.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", closeOutside);
-    document.addEventListener("focusin", closeOutside);
-    return () => {
-      document.removeEventListener("pointerdown", closeOutside);
-      document.removeEventListener("focusin", closeOutside);
-    };
-  }, [open]);
-
-  return (
-    <div
-      ref={control}
-      className="color-control"
-      onKeyDown={(event) => event.key === "Escape" && setOpen(false)}
-    >
-      <span>{displayName}</span>
-      <button
-        className="color-trigger"
-        type="button"
-        aria-label={`Edit ${displayName}`}
-        aria-expanded={open}
-        aria-controls={id}
-        onClick={() => setOpen((shown) => !shown)}
-      >
-        <i aria-hidden="true" style={{ backgroundColor: value }} />
-        <span>{value}</span>
-      </button>
-      {open && (
-        <div className="color-popover" id={id}>
-          <div role="group" aria-label={`${displayName} picker`}>
-            <HexColorPicker color={value} onChange={update} />
-          </div>
-          <label>
-            {displayName} hex
-            <HexColorInput
-              color={value}
-              onChange={update}
-              prefixed
-              aria-label={`${displayName} hex`}
-            />
-          </label>
-          <button type="button" onClick={() => setOpen(false)}>
-            Close {displayName} picker
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function PageControls({
   definition,
   setDefinition,
@@ -356,26 +286,86 @@ export function PageControls({
 export function BrandControls({
   definition,
   setDefinition,
+  assets,
+  companyId,
+  onAssetsChanged,
 }: {
   definition: StyleDefinition;
   setDefinition: SetDefinition;
+  assets?: CompanyAssets | undefined;
+  companyId: string;
+  onAssetsChanged: () => Promise<unknown>;
 }) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string>();
+  const uploadLogo = async (file?: File) => {
+    if (!file || uploading) return;
+    setUploading(true);
+    setUploadError(undefined);
+    try {
+      await dashboardApi.uploadLogo(companyId, file);
+      await onAssetsChanged();
+    } catch (reason) {
+      setUploadError(safeError(reason));
+    } finally {
+      setUploading(false);
+    }
+  };
   return (
     <>
       <section className="control-section" aria-labelledby="brand-assets-title">
         <h3 id="brand-assets-title">Brand assets</h3>
-        <FormField label="Logo object ID">
-          <Input
-            value={definition.logoObjectId ?? ""}
-            placeholder="Optional uploaded logo ID"
-            onChange={(event) =>
-              setDefinition((draft) => ({
-                ...draft,
-                logoObjectId: event.target.value || null,
-              }))
+        <div
+          className="logo-selector"
+          role="radiogroup"
+          aria-label="Company logo"
+        >
+          <button
+            type="button"
+            role="radio"
+            aria-checked={!definition.logoObjectId}
+            className={
+              !definition.logoObjectId
+                ? "logo-option logo-option--selected"
+                : "logo-option"
             }
+            onClick={() =>
+              setDefinition((draft) => ({ ...draft, logoObjectId: null }))
+            }
+          >
+            None
+          </button>
+          {assets?.logos.map((logo) => (
+            <button
+              type="button"
+              role="radio"
+              aria-checked={definition.logoObjectId === logo.id}
+              className={
+                definition.logoObjectId === logo.id
+                  ? "logo-option logo-option--selected"
+                  : "logo-option"
+              }
+              key={logo.id}
+              onClick={() =>
+                setDefinition((draft) => ({ ...draft, logoObjectId: logo.id }))
+              }
+            >
+              <img
+                src={logo.contentUrl}
+                alt={logo.displayName ?? "Company logo"}
+              />
+            </button>
+          ))}
+        </div>
+        <FormField label="Upload company logo">
+          <Input
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            disabled={uploading}
+            onChange={(event) => void uploadLogo(event.target.files?.[0])}
           />
         </FormField>
+        {uploadError && <Status kind="error">{uploadError}</Status>}
       </section>
       <HeaderFooterControls
         label="Header"

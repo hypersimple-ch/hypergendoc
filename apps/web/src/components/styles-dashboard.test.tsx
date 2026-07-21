@@ -12,6 +12,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
   styles,
+  assets,
+  uploadLogo,
+  uploadFont,
   createStyle,
   style,
   createStyleVersion,
@@ -19,6 +22,9 @@ const {
   useActiveCompany,
 } = vi.hoisted(() => ({
   styles: vi.fn(),
+  assets: vi.fn(),
+  uploadLogo: vi.fn(),
+  uploadFont: vi.fn(),
   createStyle: vi.fn(),
   style: vi.fn(),
   createStyleVersion: vi.fn(),
@@ -28,6 +34,9 @@ const {
 vi.mock("../lib/dashboard-api", () => ({
   dashboardApi: {
     styles,
+    assets,
+    uploadLogo,
+    uploadFont,
     createStyle,
     style,
     createStyleVersion,
@@ -126,11 +135,13 @@ function activeCompanyState(company = companyB) {
 }
 
 function renderWithActiveCompany(company = companyB) {
+  assets.mockResolvedValue({ logos: [], fonts: [], colors: [] });
   useActiveCompany.mockReturnValue(activeCompanyState(company));
   return render(<StylesDashboard />);
 }
 
 async function openEditor() {
+  assets.mockResolvedValue({ logos: [], fonts: [], colors: [] });
   styles.mockResolvedValue([styleB]);
   style.mockResolvedValue({ style: styleB, versions: [version()] });
   renderWithActiveCompany();
@@ -158,6 +169,7 @@ describe("StylesDashboard", () => {
       screen.queryByLabelText("Filter styles by company"),
     ).not.toBeInTheDocument();
     await waitFor(() => expect(styles).toHaveBeenCalledWith(companyB.id));
+    expect(assets).toHaveBeenCalledWith(companyB.id);
     expect(await screen.findByText("Beta style")).toBeVisible();
     expect(
       screen
@@ -511,7 +523,7 @@ describe("StylesDashboard", () => {
     await waitFor(() =>
       expect(createStyleVersion).toHaveBeenCalledWith(
         styleB.id,
-        definition,
+        { ...definition, assetVersion: 1 },
         true,
       ),
     );
@@ -524,7 +536,7 @@ describe("StylesDashboard", () => {
     await waitFor(() =>
       expect(createStyleVersion).toHaveBeenLastCalledWith(
         styleB.id,
-        definition,
+        { ...definition, assetVersion: 1 },
         false,
       ),
     );
@@ -550,7 +562,10 @@ describe("StylesDashboard", () => {
         "blob:http://localhost/style-preview",
       ),
     );
-    expect(previewStyle).toHaveBeenCalledWith(styleB.id, definition);
+    expect(previewStyle).toHaveBeenCalledWith(styleB.id, {
+      ...definition,
+      assetVersion: 1,
+    });
     expect(createObjectURL).toHaveBeenCalledOnce();
     const previewBlob = createObjectURL.mock.calls[0]?.[0];
     expect(previewBlob).toBeInstanceOf(Blob);

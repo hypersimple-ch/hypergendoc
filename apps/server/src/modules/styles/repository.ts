@@ -2,6 +2,8 @@ import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Database } from "@hypergendoc/db";
 import {
   companies,
+  companyColors,
+  companyFonts,
   storedObjects,
   styles,
   styleVersions,
@@ -60,6 +62,52 @@ function operations(db: Db): StyleOperations {
           ),
         );
       return row !== undefined;
+    },
+    async fontBelongsToCompany(workspaceId, companyId, objectId) {
+      const [row] = await db
+        .select({ id: companyFonts.id })
+        .from(companyFonts)
+        .innerJoin(
+          storedObjects,
+          eq(companyFonts.storedObjectId, storedObjects.id),
+        )
+        .where(
+          and(
+            eq(companyFonts.workspaceId, workspaceId),
+            eq(companyFonts.companyId, companyId),
+            eq(companyFonts.storedObjectId, objectId),
+            eq(storedObjects.workspaceId, workspaceId),
+            eq(storedObjects.companyId, companyId),
+            eq(storedObjects.purpose, "font"),
+            isNull(storedObjects.deletedAt),
+          ),
+        );
+      return row !== undefined;
+    },
+    async materializeAssets(workspaceId, companyId, assets) {
+      if (assets.builtInFonts.length)
+        await db
+          .insert(companyFonts)
+          .values(
+            assets.builtInFonts.map((family) => ({
+              workspaceId,
+              companyId,
+              builtInFamily: family,
+              familyName: family,
+            })),
+          )
+          .onConflictDoNothing({
+            target: [companyFonts.companyId, companyFonts.builtInFamily],
+          });
+      if (assets.colors.length)
+        await db
+          .insert(companyColors)
+          .values(
+            assets.colors.map((color) => ({ workspaceId, companyId, color })),
+          )
+          .onConflictDoNothing({
+            target: [companyColors.companyId, companyColors.color],
+          });
     },
     async list(workspaceId, companyId) {
       return (

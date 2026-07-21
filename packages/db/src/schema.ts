@@ -1,6 +1,5 @@
 import { sql } from "drizzle-orm";
 import {
-  boolean,
   check,
   foreignKey,
   index,
@@ -15,171 +14,24 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import {
+  accounts,
+  companies,
+  createdAt,
+  deletionStatus,
+  id,
+  sessions,
+  users,
+  verifications,
+  workspaces,
+} from "./core-schema.js";
 
-/**
- * Better Auth's Drizzle adapter maps its core fields to `user`, `session`,
- * `account`, and `verification`. Keep these names and camelCase properties:
- * they are the adapter's documented PostgreSQL schema, not application copies.
- */
-const id = () => uuid("id").defaultRandom().primaryKey();
-const createdAt = () =>
-  timestamp("created_at", { withTimezone: true }).defaultNow().notNull();
+export * from "./core-schema.js";
 
-export const workspaceRole = pgEnum("workspace_role", ["owner", "member"]);
-export const deletionStatus = pgEnum("deletion_status", [
-  "pending",
-  "running",
-  "completed",
-  "failed",
+export const storedObjectPurpose = pgEnum("stored_object_purpose", [
+  "logo",
+  "font",
 ]);
-export const storedObjectPurpose = pgEnum("stored_object_purpose", ["logo"]);
-
-export const users = pgTable(
-  "user",
-  {
-    id: text("id").primaryKey(),
-    name: text("name").notNull(),
-    email: text("email").notNull(),
-    emailVerified: boolean("email_verified").default(false).notNull(),
-    image: text("image"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [uniqueIndex("user_email_unique").on(table.email)],
-);
-
-export const sessions = pgTable(
-  "session",
-  {
-    id: text("id").primaryKey(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    token: text("token").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    ipAddress: text("ip_address"),
-    userAgent: text("user_agent"),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-  },
-  (table) => [
-    uniqueIndex("session_token_unique").on(table.token),
-    index("session_user_id_idx").on(table.userId),
-  ],
-);
-
-export const accounts = pgTable(
-  "account",
-  {
-    id: text("id").primaryKey(),
-    accountId: text("account_id").notNull(),
-    providerId: text("provider_id").notNull(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    accessToken: text("access_token"),
-    refreshToken: text("refresh_token"),
-    idToken: text("id_token"),
-    accessTokenExpiresAt: timestamp("access_token_expires_at", {
-      withTimezone: true,
-    }),
-    refreshTokenExpiresAt: timestamp("refresh_token_expires_at", {
-      withTimezone: true,
-    }),
-    scope: text("scope"),
-    password: text("password"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    unique("account_provider_account_unique").on(
-      table.providerId,
-      table.accountId,
-    ),
-    index("account_user_id_idx").on(table.userId),
-  ],
-);
-
-export const verifications = pgTable(
-  "verification",
-  {
-    id: text("id").primaryKey(),
-    identifier: text("identifier").notNull(),
-    value: text("value").notNull(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [index("verification_identifier_idx").on(table.identifier)],
-);
-
-export const workspaces = pgTable("workspaces", {
-  id: id(),
-  name: text("name").notNull(),
-  createdAt: createdAt(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
-export const memberships = pgTable(
-  "memberships",
-  {
-    id: id(),
-    workspaceId: uuid("workspace_id")
-      .notNull()
-      .references(() => workspaces.id, { onDelete: "cascade" }),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    role: workspaceRole("role").notNull(),
-    createdAt: createdAt(),
-  },
-  (table) => [
-    unique("membership_workspace_user_unique").on(
-      table.workspaceId,
-      table.userId,
-    ),
-    index("membership_user_id_idx").on(table.userId),
-    index("membership_workspace_role_idx").on(table.workspaceId, table.role),
-  ],
-);
-
-export const companies = pgTable(
-  "companies",
-  {
-    id: id(),
-    workspaceId: uuid("workspace_id")
-      .notNull()
-      .references(() => workspaces.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
-    archivedAt: timestamp("archived_at", { withTimezone: true }),
-    createdAt: createdAt(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    unique("company_workspace_id_unique").on(table.workspaceId, table.id),
-    unique("company_workspace_name_unique").on(table.workspaceId, table.name),
-    index("company_workspace_idx").on(table.workspaceId),
-  ],
-);
 
 export const storedObjects = pgTable(
   "stored_objects",
@@ -190,6 +42,7 @@ export const storedObjects = pgTable(
       .references(() => workspaces.id, { onDelete: "restrict" }),
     companyId: uuid("company_id").notNull(),
     purpose: storedObjectPurpose("purpose").notNull(),
+    displayName: text("display_name"),
     objectKey: text("object_key").notNull(),
     contentType: text("content_type").notNull(),
     byteSize: integer("byte_size").notNull(),
@@ -199,6 +52,11 @@ export const storedObjects = pgTable(
   },
   (table) => [
     unique("stored_object_workspace_id_unique").on(table.workspaceId, table.id),
+    unique("stored_object_workspace_company_id_unique").on(
+      table.workspaceId,
+      table.companyId,
+      table.id,
+    ),
     uniqueIndex("stored_object_key_unique").on(table.objectKey),
     foreignKey({
       columns: [table.workspaceId, table.companyId],
@@ -212,6 +70,82 @@ export const storedObjects = pgTable(
     ),
     check("stored_object_size_positive", sql`${table.byteSize} > 0`),
     check("stored_object_sha256_hex", sql`${table.sha256} ~ '^[0-9a-f]{64}$'`),
+  ],
+);
+
+export const companyFonts = pgTable(
+  "company_fonts",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "restrict" }),
+    companyId: uuid("company_id").notNull(),
+    storedObjectId: uuid("stored_object_id"),
+    builtInFamily: text("built_in_family"),
+    familyName: text("family_name").notNull(),
+    subfamilyName: text("subfamily_name"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    unique("company_font_workspace_id_unique").on(table.workspaceId, table.id),
+    unique("company_font_company_built_in_unique").on(
+      table.companyId,
+      table.builtInFamily,
+    ),
+    unique("company_font_stored_object_unique").on(table.storedObjectId),
+    foreignKey({
+      columns: [table.workspaceId, table.companyId],
+      foreignColumns: [companies.workspaceId, companies.id],
+      name: "company_fonts_workspace_company_fk",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.workspaceId, table.companyId, table.storedObjectId],
+      foreignColumns: [
+        storedObjects.workspaceId,
+        storedObjects.companyId,
+        storedObjects.id,
+      ],
+      name: "company_fonts_stored_object_owner_fk",
+    }).onDelete("restrict"),
+    index("company_font_workspace_company_idx").on(
+      table.workspaceId,
+      table.companyId,
+    ),
+    check(
+      "company_font_source_xor",
+      sql`(${table.storedObjectId} IS NULL) <> (${table.builtInFamily} IS NULL)`,
+    ),
+  ],
+);
+
+export const companyColors = pgTable(
+  "company_colors",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "restrict" }),
+    companyId: uuid("company_id").notNull(),
+    color: text("color").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    unique("company_color_workspace_id_unique").on(table.workspaceId, table.id),
+    unique("company_color_company_value_unique").on(
+      table.companyId,
+      table.color,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.companyId],
+      foreignColumns: [companies.workspaceId, companies.id],
+      name: "company_colors_workspace_company_fk",
+    }).onDelete("cascade"),
+    index("company_color_workspace_company_idx").on(
+      table.workspaceId,
+      table.companyId,
+    ),
+    check("company_color_lower_hex", sql`${table.color} ~ '^#[0-9a-f]{6}$'`),
   ],
 );
 

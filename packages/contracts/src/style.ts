@@ -10,11 +10,12 @@ export const FontFamilySchema = z.enum([
   "Noto Serif",
   "Libertinus Serif",
 ]);
+export const FontReferenceSchema = z.union([FontFamilySchema, UuidSchema]);
 
 const LengthMmSchema = z.number().min(0).max(80);
 const TextStyleSchema = z
   .object({
-    fontFamily: FontFamilySchema,
+    fontFamily: FontReferenceSchema,
     fontSizePt: z.number().min(6).max(72),
     fontWeight: z.union([
       z.literal(400),
@@ -49,9 +50,10 @@ const HeaderFooterSchema = z
 
 export const StyleDefinitionSchema = z
   .object({
+    assetVersion: z.literal(1).optional(),
     logoObjectId: UuidSchema.nullable(),
-    bodyFont: FontFamilySchema,
-    headingFont: FontFamilySchema,
+    bodyFont: FontReferenceSchema,
+    headingFont: FontReferenceSchema,
     bodySizePt: z.number().min(8).max(16),
     headingScale: z.number().min(1.05).max(2.5),
     textStyles: TextStylesSchema.optional(),
@@ -77,7 +79,26 @@ export const StyleDefinitionSchema = z
     header: HeaderFooterSchema,
     footer: HeaderFooterSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((definition, context) => {
+    if (definition.assetVersion === 1) return;
+    const references = [
+      definition.bodyFont,
+      definition.headingFont,
+      ...Object.values(definition.textStyles ?? {}).map(
+        (textStyle) => textStyle.fontFamily,
+      ),
+    ];
+    if (
+      references.some(
+        (reference) => !FontFamilySchema.safeParse(reference).success,
+      )
+    )
+      context.addIssue({
+        code: "custom",
+        message: "Custom fonts require assetVersion 1",
+      });
+  });
 
 export const CreateStyleInputSchema = z
   .object({

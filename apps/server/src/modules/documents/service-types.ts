@@ -1,6 +1,7 @@
 import type {
   Document,
   DocumentFormat,
+  ResolvedStyleAssets,
   StyleDefinition,
 } from "@hypergendoc/contracts";
 import type { AuditWriter } from "../../platform/audit.js";
@@ -20,7 +21,17 @@ export interface DocumentSourceBuilder {
     format: DocumentFormat,
     body: string,
     style: StyleDefinition,
+    assets?: ResolvedStyleAssets,
   ): ResolvedDocumentSource;
+}
+
+/** Resolves authorized immutable style bytes for canonical document rendering. */
+export interface StyleAssetResolver {
+  resolve(
+    workspaceId: string,
+    companyId: string,
+    style: StyleDefinition,
+  ): Promise<ResolvedStyleAssets>;
 }
 
 export interface DocumentRepository {
@@ -82,5 +93,6 @@ export interface DocumentServiceDependencies {
   >;
   readonly renderer: Renderer;
   readonly sourceBuilder: DocumentSourceBuilder;
+  readonly styleAssetResolver?: StyleAssetResolver;
   readonly audit?: AuditWriter;
 }

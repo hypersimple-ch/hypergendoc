@@ -1,11 +1,18 @@
 import { createHash, randomUUID } from "node:crypto";
 import { connect } from "node:net";
 import { limits } from "@hypergendoc/config";
-import type { DocumentFormat, StyleDefinition } from "@hypergendoc/contracts";
+import type {
+  DocumentFormat,
+  ResolvedStyleAssets,
+  StyleDefinition,
+} from "@hypergendoc/contracts";
 import { AppError } from "../../platform/errors.js";
 
 const protocol = "hypergendoc-render-v2" as const;
-const maxRequestFrameBytes = limits.documentBodyBytes + 16 * 1024;
+const maxRequestFrameBytes =
+  limits.documentBodyBytes +
+  Math.ceil(limits.renderAssetBytes / 3) * 4 +
+  16 * 1024;
 const maxResponseFrameBytes =
   Math.ceil(limits.renderedArtifactBytes / 3) * 4 + 16 * 1024;
 const sha256 = (value: Uint8Array) =>
@@ -16,6 +23,7 @@ export interface RenderRequest {
   readonly format: DocumentFormat;
   readonly body: string;
   readonly style: StyleDefinition;
+  readonly assets?: ResolvedStyleAssets;
 }
 export interface RenderResult {
   readonly ok: boolean;

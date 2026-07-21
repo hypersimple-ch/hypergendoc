@@ -2,6 +2,7 @@ export * from "./audit.js";
 export * from "./context.js";
 export * from "./env.js";
 export * from "./errors.js";
+export * from "./font-upload.js";
 export * from "./health.js";
 export * from "./logger.js";
 export * from "./logo-upload.js";

@@ -60,6 +60,8 @@ function repository(): StyleRepository {
     companyExists: async (workspace, company) =>
       workspace === "workspace-a" && company === "company-a",
     logoBelongsToCompany: async () => false,
+    fontBelongsToCompany: async () => false,
+    materializeAssets: async () => undefined,
     list: async (workspace, company) =>
       styles.filter(
         (style) => style.companyId === company && workspace === "workspace-a",
@@ -167,6 +169,103 @@ describe("style versions", () => {
         companyId: "company-a",
         name: "brand",
         definition: { ...definition, logoObjectId: "logo" },
+      }),
+    ).rejects.toMatchObject({ code: "not_found" });
+  });
+  it("materializes normalized built-in fonts and colors for inactive versions", async () => {
+    const repo = repository();
+    const materialized: Array<
+      Readonly<{ builtInFonts: readonly string[]; colors: readonly string[] }>
+    > = [];
+    repo.materializeAssets = async (_workspace, _company, assets) => {
+      materialized.push(assets);
+    };
+    const service = createStyleService({
+      repository: repo,
+      audit,
+      renderer: { renderPreview: async () => ({ url: "preview" }) },
+    });
+    const created = await service.create(actor, {
+      companyId: "company-a",
+      name: "brand",
+      definition: {
+        ...definition,
+        bodyFont: "Inter",
+        headingFont: "Noto Serif",
+        colors: { ...definition.colors, text: "#AaBbCc" },
+        textStyles: {
+          h1: {
+            fontFamily: "Inter",
+            fontSizePt: 12,
+            fontWeight: 700,
+            lineHeight: 1.2,
+            color: "#AABBCC",
+          },
+          h2: {
+            fontFamily: "Inter",
+            fontSizePt: 12,
+            fontWeight: 700,
+            lineHeight: 1.2,
+            color: "#000000",
+          },
+          h3: {
+            fontFamily: "Inter",
+            fontSizePt: 12,
+            fontWeight: 700,
+            lineHeight: 1.2,
+            color: "#000000",
+          },
+          h4: {
+            fontFamily: "Inter",
+            fontSizePt: 12,
+            fontWeight: 700,
+            lineHeight: 1.2,
+            color: "#000000",
+          },
+          h5: {
+            fontFamily: "Inter",
+            fontSizePt: 12,
+            fontWeight: 700,
+            lineHeight: 1.2,
+            color: "#000000",
+          },
+          h6: {
+            fontFamily: "Inter",
+            fontSizePt: 12,
+            fontWeight: 700,
+            lineHeight: 1.2,
+            color: "#000000",
+          },
+          caption: {
+            fontFamily: "Noto Serif",
+            fontSizePt: 10,
+            fontWeight: 400,
+            lineHeight: 1.2,
+            color: "#000000",
+          },
+        },
+      },
+    });
+    await service.createVersion(actor, created.style.id, definition, false);
+    expect(materialized[0]).toEqual({
+      builtInFonts: ["Inter", "Noto Serif"],
+      colors: ["#aabbcc", "#000000"],
+    });
+    expect(created.version.definition.assetVersion).toBe(1);
+    expect(materialized).toHaveLength(2);
+  });
+  it("rejects custom fonts not owned by the style company", async () => {
+    const customFont = "00000000-0000-4000-8000-000000000001";
+    const service = createStyleService({
+      repository: repository(),
+      audit,
+      renderer: { renderPreview: async () => ({ url: "preview" }) },
+    });
+    await expect(
+      service.create(actor, {
+        companyId: "company-a",
+        name: "brand",
+        definition: { ...definition, assetVersion: 1, bodyFont: customFont },
       }),
     ).rejects.toMatchObject({ code: "not_found" });
   });

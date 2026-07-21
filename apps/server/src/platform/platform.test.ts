@@ -8,6 +8,7 @@ import {
   createStructuredLogger,
   loadServerEnvironment,
   redact,
+  uploadFont,
   uploadLogo,
 } from "./index.js";
 
@@ -95,6 +96,27 @@ describe("platform", () => {
         { create: vi.fn() },
       ),
     ).rejects.toBeInstanceOf(AppError);
+  });
+
+  it("rejects malformed and unsupported font uploads before storage", async () => {
+    const store = {
+      putPrivate: vi.fn(),
+      delete: vi.fn(),
+      authorizedGet: vi.fn(),
+    };
+    for (const bytes of [
+      new Uint8Array([0, 1, 0, 0]),
+      Buffer.from("wOFF"),
+      Buffer.from("not a font"),
+    ])
+      await expect(
+        uploadFont(
+          { workspaceId: "workspace", companyId: "company", bytes },
+          store,
+          { create: vi.fn() },
+        ),
+      ).rejects.toBeInstanceOf(AppError);
+    expect(store.putPrivate).not.toHaveBeenCalled();
   });
 
   it("redacts sensitive fields in child request and actor logs", () => {

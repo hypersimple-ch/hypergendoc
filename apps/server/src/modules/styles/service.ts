@@ -1,7 +1,8 @@
-import type {
-  Style,
-  StyleDefinition,
-  StyleVersion,
+import {
+  FontFamilySchema,
+  type Style,
+  type StyleDefinition,
+  type StyleVersion,
 } from "@hypergendoc/contracts";
 import type { AuditWriter } from "../../platform/audit.js";
 import { auditActor } from "../../platform/audit.js";
@@ -29,6 +30,20 @@ export interface StyleRepository {
     companyId: string,
     objectId: string,
   ): Promise<boolean>;
+  /** Must prove the object is an active uploaded font for this company in this workspace. */
+  fontBelongsToCompany(
+    workspaceId: string,
+    companyId: string,
+    objectId: string,
+  ): Promise<boolean>;
+  materializeAssets(
+    workspaceId: string,
+    companyId: string,
+    assets: Readonly<{
+      builtInFonts: readonly string[];
+      colors: readonly string[];
+    }>,
+  ): Promise<void>;
   list(workspaceId: string, companyId: string): Promise<readonly Style[]>;
   find(workspaceId: string, styleId: string): Promise<Style | undefined>;
   listVersions(
@@ -67,19 +82,62 @@ export function createStyleService(deps: {
   renderer: PreviewRenderer;
 }) {
   async function validateDefinition(
+    repository: StyleOperations,
     actor: HumanActor,
     companyId: string,
     definition: StyleDefinition,
   ) {
-    if (!definition.logoObjectId) return;
     if (
-      !(await deps.repository.logoBelongsToCompany(
+      definition.logoObjectId &&
+      !(await repository.logoBelongsToCompany(
         actor.workspaceId,
         companyId,
         definition.logoObjectId,
       ))
     )
       throw new AuthorizationError("not_found");
+    const references = [
+      definition.bodyFont,
+      definition.headingFont,
+      ...Object.values(definition.textStyles ?? {}).map(
+        (style) => style.fontFamily,
+      ),
+    ];
+    for (const reference of references)
+      if (
+        !FontFamilySchema.safeParse(reference).success &&
+        !(await repository.fontBelongsToCompany(
+          actor.workspaceId,
+          companyId,
+          reference,
+        ))
+      )
+        throw new AuthorizationError("not_found");
+  }
+  function materializedAssets(definition: StyleDefinition) {
+    const fonts = new Set<string>();
+    for (const reference of [
+      definition.bodyFont,
+      definition.headingFont,
+      ...Object.values(definition.textStyles ?? {}).map(
+        (style) => style.fontFamily,
+      ),
+    ])
+      if (FontFamilySchema.safeParse(reference).success) fonts.add(reference);
+    const colors = new Set(
+      [
+        ...Object.values(definition.colors),
+        ...Object.values(definition.textStyles ?? {}).map(
+          (style) => style.color,
+        ),
+      ].map((color) => color.toLowerCase()),
+    );
+    return { builtInFonts: [...fonts], colors: [...colors] };
+  }
+  function savedDefinition(definition: StyleDefinition): StyleDefinition {
+    return definition.assetVersion === 1
+      ? definition
+      : { ...definition, assetVersion: 1 };
   }
   const emit = (actor: HumanActor, event: string, styleId: string) =>
     deps.audit.write({
@@ -126,10 +184,21 @@ export function createStyleService(deps: {
         ))
       )
         throw new AuthorizationError("not_found");
-      await validateDefinition(actor, input.companyId, input.definition);
+      const definition = savedDefinition(input.definition);
       let result: { style: Style; version: StyleVersion };
       try {
         result = await deps.repository.transaction(async (repository) => {
+          await validateDefinition(
+            repository,
+            actor,
+            input.companyId,
+            definition,
+          );
+          await repository.materializeAssets(
+            actor.workspaceId,
+            input.companyId,
+            materializedAssets(definition),
+          );
           const style = await repository.createStyle({
             workspaceId: actor.workspaceId,
             companyId: input.companyId,
@@ -138,7 +207,7 @@ export function createStyleService(deps: {
           const version = await repository.createNextVersion({
             workspaceId: actor.workspaceId,
             styleId: style.id,
-            definition: input.definition,
+            definition,
             createdByUserId: actor.userId,
           });
           if (
@@ -173,12 +242,18 @@ export function createStyleService(deps: {
       activate: boolean,
     ): Promise<StyleVersion> {
       const style = await this.get(actor, styleId);
-      await validateDefinition(actor, style.companyId, definition);
+      const saved = savedDefinition(definition);
       const version = await deps.repository.transaction(async (repository) => {
+        await validateDefinition(repository, actor, style.companyId, saved);
+        await repository.materializeAssets(
+          actor.workspaceId,
+          style.companyId,
+          materializedAssets(saved),
+        );
         const created = await repository.createNextVersion({
           workspaceId: actor.workspaceId,
           styleId,
-          definition,
+          definition: saved,
           createdByUserId: actor.userId,
         });
         if (
@@ -241,7 +316,12 @@ export function createStyleService(deps: {
       if (!definition) throw new AuthorizationError("not_found");
       // Draft previews never create a style version or stored object.  They use
       // the same logo ownership validation as persisted definitions.
-      await validateDefinition(actor, style.companyId, definition);
+      await validateDefinition(
+        deps.repository,
+        actor,
+        style.companyId,
+        definition,
+      );
       return deps.renderer.renderPreview({
         workspaceId: actor.workspaceId,
         companyId: style.companyId,
