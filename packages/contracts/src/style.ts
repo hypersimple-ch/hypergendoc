@@ -7,8 +7,22 @@ export const FontFamilySchema = z.enum([
   "IBM Plex Sans",
   "Source Sans 3",
   "Noto Sans",
+  "Manrope",
+  "DM Sans",
+  "Work Sans",
+  "Lato",
+  "Montserrat",
+  "Open Sans",
   "Noto Serif",
   "Libertinus Serif",
+  "Fraunces",
+  "Lora",
+  "Merriweather",
+  "Source Serif 4",
+  "Playfair Display",
+  "Libre Baskerville",
+  "IBM Plex Mono",
+  "Source Code Pro",
 ]);
 export const FontReferenceSchema = z.union([FontFamilySchema, UuidSchema]);
 
@@ -36,6 +50,7 @@ const TextStylesSchema = z
     h5: TextStyleSchema,
     h6: TextStyleSchema,
     caption: TextStyleSchema,
+    body: TextStyleSchema.optional(),
   })
   .strict();
 const HeaderFooterSchema = z
@@ -85,8 +100,8 @@ export const StyleDefinitionSchema = z
     const references = [
       definition.bodyFont,
       definition.headingFont,
-      ...Object.values(definition.textStyles ?? {}).map(
-        (textStyle) => textStyle.fontFamily,
+      ...Object.values(definition.textStyles ?? {}).flatMap((textStyle) =>
+        textStyle ? [textStyle.fontFamily] : [],
       ),
     ];
     if (

@@ -122,6 +122,11 @@ async function chooseOption(selectName: string, optionName: string) {
   fireEvent.click(await screen.findByRole("option", { name: optionName }));
 }
 
+async function chooseFont(font: string) {
+  fireEvent.click(screen.getByRole("button", { name: /Font family:/ }));
+  fireEvent.click(await screen.findByRole("button", { name: font }));
+}
+
 function activeCompanyState(company = companyB) {
   return {
     activeCompany: company,
@@ -146,7 +151,7 @@ async function openEditor() {
   style.mockResolvedValue({ style: styleB, versions: [version()] });
   renderWithActiveCompany();
   fireEvent.click(await screen.findByRole("button", { name: "Edit versions" }));
-  await screen.findByRole("radio", { name: /Body font Inter/ });
+  await screen.findByRole("button", { name: "Body" });
 }
 
 afterEach(() => {
@@ -314,41 +319,47 @@ describe("StylesDashboard", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("edits one text role at a time and applies its styles to the live sample", async () => {
+  it("edits Body independently, synchronizes legacy fields, and preserves other roles", async () => {
     await openEditor();
 
-    fireEvent.click(
-      screen.getByRole("radio", { name: /Body font IBM Plex Sans/ }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "H2" }));
-    await chooseOption("Font family", "Libertinus Serif");
-    await chooseOption("Weight", "500");
-    fireEvent.change(screen.getByRole("slider", { name: "Font size" }), {
-      target: { value: "30" },
-    });
-    expect(screen.getByRole("button", { name: "H2" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Body" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
-    expect(
-      screen
-        .getByText(
-          "Good design gives important information room to breathe. This sample makes the selected type, scale, and colors immediately visible.",
-        )
-        .closest("article"),
-    ).toHaveStyle({ fontFamily: "IBM Plex Sans" });
-    const h2 = screen.getByRole("heading", { name: "Strategy and direction" });
-    expect(h2).toHaveStyle({
-      fontFamily: "Libertinus Serif",
-      fontSize: "30pt",
-      fontWeight: "500",
+    await chooseFont("IBM Plex Sans");
+    await chooseOption("Weight", "500");
+    fireEvent.change(screen.getByRole("slider", { name: "Font size" }), {
+      target: { value: "12" },
     });
-
-    fireEvent.click(screen.getByRole("button", { name: "Edit Heading color" }));
-    fireEvent.change(screen.getByLabelText("Heading color hex"), {
+    fireEvent.change(screen.getByRole("slider", { name: "Line height" }), {
+      target: { value: "1.35" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Edit Body color" }));
+    fireEvent.change(screen.getByLabelText("Body color hex"), {
       target: { value: "334455" },
     });
-    expect(h2).toHaveStyle({ color: "#334455" });
+    fireEvent.click(screen.getByRole("button", { name: "Edit Text color" }));
+    fireEvent.change(screen.getByLabelText("Text color hex"), {
+      target: { value: "556677" },
+    });
+
+    const page = screen
+      .getByText(/Good design gives important information room to breathe/)
+      .closest("article");
+    const h2 = screen.getByRole("heading", { name: "Strategy and direction" });
+    expect(page).toHaveStyle({
+      fontFamily: "IBM Plex Sans",
+      fontSize: "12pt",
+      fontWeight: "500",
+      lineHeight: "1.35",
+      color: "#556677",
+    });
+    expect(h2).toHaveStyle({
+      fontFamily: "Noto Serif",
+      fontSize: "12.75pt",
+      fontWeight: "700",
+      color: "#1D403C",
+    });
 
     fireEvent.click(
       screen.getByRole("button", { name: "Save & activate version" }),
@@ -357,25 +368,62 @@ describe("StylesDashboard", () => {
     const saved = createStyleVersion.mock.calls.at(-1) as unknown as [
       string,
       {
-        textStyles?: {
-          h2: {
-            fontFamily: string;
-            fontSizePt: number;
-            fontWeight: number;
-            color: string;
-          };
-        };
+        bodyFont: string;
+        bodySizePt: number;
+        colors: { text: string };
+        textStyles?: { body?: Record<string, unknown> };
       },
       boolean,
     ];
     expect(saved[0]).toBe(styleB.id);
-    expect(saved[1].textStyles?.h2).toMatchObject({
-      fontFamily: "Libertinus Serif",
-      fontSizePt: 30,
+    expect(saved[1]).toMatchObject({
+      bodyFont: "IBM Plex Sans",
+      bodySizePt: 12,
+      colors: { text: "#556677" },
+    });
+    expect(saved[1].textStyles?.body).toMatchObject({
+      fontFamily: "IBM Plex Sans",
+      fontSizePt: 12,
       fontWeight: 500,
-      color: "#334455",
+      lineHeight: 1.35,
+      color: "#556677",
+    });
+    expect(saved[1].textStyles).toMatchObject({
+      h1: { fontFamily: "Noto Serif", fontSizePt: 15 },
+      h2: { fontFamily: "Noto Serif", fontSizePt: 12.75 },
+      h3: { fontFamily: "Noto Serif", fontSizePt: 11.7 },
+      h4: { fontFamily: "Noto Serif", fontSizePt: 10 },
+      h5: { fontFamily: "Noto Serif", fontSizePt: 8.299999999999999 },
+      h6: { fontFamily: "Noto Serif", fontSizePt: 6.7 },
+      caption: { fontFamily: "Inter", fontSizePt: 8 },
     });
     expect(saved[2]).toBe(true);
+  });
+
+  it("filters, selects, and dismisses the font picker", async () => {
+    await openEditor();
+
+    fireEvent.click(screen.getByRole("button", { name: "Font family: Inter" }));
+    const search = await screen.findByLabelText("Search fonts");
+    expect(search).toHaveFocus();
+    fireEvent.change(search, { target: { value: "source" } });
+    expect(
+      screen.getByRole("button", { name: "Source Serif 4" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Inter" }),
+    ).not.toBeInTheDocument();
+    fireEvent.change(search, { target: { value: "missing" } });
+    expect(screen.getByRole("status")).toHaveTextContent("No fonts found.");
+    fireEvent.keyDown(search, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Search fonts")).not.toBeInTheDocument(),
+    );
+
+    await chooseFont("Lora");
+    expect(
+      screen.getByRole("button", { name: "Font family: Lora" }),
+    ).toBeVisible();
   });
 
   it("integrates the hex picker without a native color input and closes its disclosure", async () => {
@@ -429,10 +477,14 @@ describe("StylesDashboard", () => {
     ).toBeVisible();
     expect(screen.getByRole("heading", { name: "Page layout" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Brand assets" })).toBeVisible();
-    const bodySize = screen.getByRole("slider", { name: "Body size" });
+    expect(
+      screen.queryByRole("slider", { name: "Body size" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("radio", { name: /Body font/ }),
+    ).not.toBeInTheDocument();
     const fontSize = screen.getByRole("slider", { name: "Font size" });
-    fireEvent.change(bodySize, { target: { value: "12" } });
-    fireEvent.change(fontSize, { target: { value: "24" } });
+    fireEvent.change(fontSize, { target: { value: "12" } });
     fireEvent.click(screen.getByRole("radio", { name: "LETTER" }));
     fireEvent.change(screen.getByLabelText(/Top.*mm/), {
       target: { value: "30" },
@@ -451,8 +503,7 @@ describe("StylesDashboard", () => {
       target: { value: "Prepared for Beta" },
     });
 
-    expect(bodySize).toHaveValue("12");
-    expect(fontSize).toHaveValue("24");
+    expect(fontSize).toHaveValue("12");
     expect(screen.getByRole("radio", { name: "LETTER" })).toBeChecked();
     expect(screen.getByText("CONFIDENTIAL")).toBeVisible();
     expect(screen.getByText("Prepared for Beta")).toBeVisible();
@@ -465,7 +516,7 @@ describe("StylesDashboard", () => {
     await openEditor();
 
     const bodyValue = screen.getByRole("spinbutton", {
-      name: "Body size value",
+      name: "Font size value",
     });
     const lineHeightValue = screen.getByRole("spinbutton", {
       name: "Line height value",
@@ -479,7 +530,7 @@ describe("StylesDashboard", () => {
     expect(bodyValue).toHaveValue(null);
     fireEvent.change(bodyValue, { target: { value: "12.5" } });
     expect(bodyValue).toHaveValue(12.5);
-    expect(screen.getByRole("slider", { name: "Body size" })).toHaveValue(
+    expect(screen.getByRole("slider", { name: "Font size" })).toHaveValue(
       "12.5",
     );
 

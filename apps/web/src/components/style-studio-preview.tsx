@@ -4,7 +4,7 @@ import type {
   StyleDefinition,
   TextStyleRole,
 } from "@hypergendoc/contracts";
-import { legacyTextStyles } from "./style-studio-definition";
+import { resolveTextStyles } from "./style-studio-definition";
 
 export function StyleStudioPreview({
   definition,
@@ -29,15 +29,18 @@ export function StyleStudioPreview({
         `@font-face{font-family:"company-font-${font.id}";src:url(${JSON.stringify(font.contentUrl)});font-display:swap;}`,
     )
     .join("");
-  const textStyles = definition.textStyles ?? legacyTextStyles(definition);
+  const textStyles = resolveTextStyles(definition);
+  const bodyStyle = textStyles.body;
   const pageStyle = {
-    fontFamily: previewFont(definition.bodyFont),
-    fontSize: `${definition.bodySizePt}pt`,
-    color: colors.text,
-    "--font-family": previewFont(definition.bodyFont),
+    fontFamily: previewFont(bodyStyle.fontFamily),
+    fontSize: `${bodyStyle.fontSizePt}pt`,
+    fontWeight: bodyStyle.fontWeight,
+    lineHeight: bodyStyle.lineHeight,
+    color: bodyStyle.color,
+    "--font-family": previewFont(bodyStyle.fontFamily),
     "--heading-font-family": previewFont(definition.headingFont),
-    "--font-size": `${definition.bodySizePt}pt`,
-    "--page-text": colors.text,
+    "--font-size": `${bodyStyle.fontSizePt}pt`,
+    "--page-text": bodyStyle.color,
     "--heading-color": colors.heading,
     "--primary-color": colors.primary,
     "--accent-color": colors.accent,

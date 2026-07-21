@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,500;9..144,650&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Libertinus+Serif:wght@400;600;700&family=Manrope:wght@400;500;600;700&family=Noto+Sans:wght@400;500;600;700&family=Noto+Serif:wght@400;500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Lato:wght@400;700&family=Libre+Baskerville:wght@400;700&family=Libertinus+Serif:wght@400;500;600;700&family=Lora:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=Merriweather:wght@400;700&family=Montserrat:wght@400;500;600;700&family=Noto+Sans:wght@400;500;600;700&family=Noto+Serif:wght@400;500;600;700&family=Open+Sans:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700&family=Source+Code+Pro:wght@400;500;600;700&family=Source+Sans+3:wght@400;500;600;700&family=Source+Serif+4:wght@400;500;600;700&family=Work+Sans:wght@400;500;600;700&display=swap");
 :root {
   color-scheme: light;
   background: #f5f0e6;
@@ -67,6 +67,9 @@ h2 {
 .button:focus-visible,
 .input:focus-visible,
 .select-trigger:focus-visible,
+.font-picker-trigger:focus-visible,
+.font-picker-search input:focus-visible,
+.font-picker-option:focus-visible,
 a:focus-visible {
   outline: 3px solid #e49b4d;
   outline-offset: 3px;
@@ -841,7 +844,7 @@ legend {
   justify-content: space-between;
   gap: 0.75rem;
 }
-.control-section label:not(.font-option):not(.color-control):not(.toggle-row) {
+.control-section label:not(.color-control):not(.toggle-row) {
   display: grid;
   gap: 0.4rem;
   color: #3f4a45;
@@ -864,30 +867,10 @@ legend {
 .style-controls select {
   padding: 0.55rem 0.65rem;
 }
-.font-group {
-  display: grid;
-  gap: 0.45rem;
-  margin: 0 0 1rem;
-  padding: 0;
-  border: 0;
-}
-.font-group:last-of-type {
-  margin-bottom: 1.25rem;
-}
-.font-group legend {
-  color: #3f4a45;
-  font-size: 0.8rem;
-  font-weight: 700;
-}
-.font-grid,
 .color-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.65rem;
-}
-.font-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.45rem;
 }
 .select-trigger {
   display: inline-flex;
@@ -969,7 +952,7 @@ legend {
 .role-tabs {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   gap: 0.2rem;
   padding: 0.2rem;
   border: 1px solid #c8c0b1;
@@ -994,74 +977,93 @@ legend {
   color: var(--studio-forest);
   box-shadow: 0 1px 3px #80766633;
 }
-.font-option {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  min-height: 4rem;
+.font-picker-trigger {
+  display: inline-flex;
+  width: 100%;
+  min-height: 2.75rem;
   align-items: center;
-  gap: 0.35rem 0.5rem;
-  padding: 0.55rem;
-  border: 1px solid #c8c0b1;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #aeb4ac;
+  border-radius: 2px;
   background: #fffefa;
+  color: var(--studio-ink, #1d2624);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.font-picker-content {
+  z-index: 50;
+  width: min(24rem, var(--radix-popover-trigger-width));
+  max-height: min(28rem, var(--radix-popover-content-available-height));
+  padding: 0.65rem;
+  border: 1px solid #aeb4ac;
+  background: #fffdf8;
+  box-shadow: 5px 5px 0 #d9cfbd;
+}
+.font-picker-search {
+  display: grid;
+  gap: 0.3rem;
+  color: #3f4a45;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.font-picker-search input {
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #aeb4ac;
+  border-radius: 2px;
+  background: #fffefa;
+  color: var(--studio-ink);
+  font: inherit;
+}
+.font-picker-options {
+  max-height: calc(
+    min(28rem, var(--radix-popover-content-available-height)) - 4.5rem
+  );
+  margin-top: 0.65rem;
+  overflow: auto;
+}
+.font-picker-options section + section {
+  margin-top: 0.65rem;
+}
+.font-picker-options h5 {
+  margin: 0 0 0.25rem;
+  color: #59635d;
+  font:
+    700 0.68rem Manrope,
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.font-picker-option {
+  display: flex;
+  width: 100%;
+  min-height: 2.6rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.45rem 0.55rem;
+  border: 0;
+  border-left: 3px solid transparent;
+  background: transparent;
   color: var(--studio-ink);
   text-align: left;
   cursor: pointer;
 }
-.font-option:hover,
-.font-option[aria-checked="true"],
-.font-option[aria-pressed="true"],
-.font-option--selected {
-  border-color: var(--studio-forest);
-}
-.font-option[aria-checked="true"],
-.font-option[aria-pressed="true"],
-.font-option--selected {
+.font-picker-option:hover,
+.font-picker-option[aria-pressed="true"] {
+  border-left-color: var(--studio-forest);
   background: #e9f0e9;
-  box-shadow: inset 3px 0 var(--studio-forest);
 }
-.font-option:focus-within {
-  outline: 3px solid #e49b4d;
-  outline-offset: 3px;
-}
-.font-option input[type="radio"] {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
-}
-.font-option span {
-  font-size: 0.76rem;
-  line-height: 1.3;
-}
-.font-option b {
-  font-size: 1.35rem;
+.font-picker-option b {
+  font-size: 1.25rem;
   font-weight: 600;
 }
-.font-option:is([data-value="inter"], [value="inter"]),
-.font-option--inter {
-  font-family: Inter, Arial, sans-serif;
-}
-.font-option:is([data-value="ibm-plex-sans"], [value="ibm-plex-sans"]),
-.font-option--ibm-plex-sans {
-  font-family: "IBM Plex Sans", Arial, sans-serif;
-}
-.font-option:is([data-value="source-sans-3"], [value="source-sans-3"]),
-.font-option--source-sans-3 {
-  font-family: "Source Sans 3", Arial, sans-serif;
-}
-.font-option:is([data-value="noto-sans"], [value="noto-sans"]),
-.font-option--noto-sans {
-  font-family: "Noto Sans", Arial, sans-serif;
-}
-.font-option:is([data-value="noto-serif"], [value="noto-serif"]),
-.font-option--noto-serif {
-  font-family: "Noto Serif", Georgia, serif;
-}
-.font-option:is([data-value="libertinus-serif"], [value="libertinus-serif"]),
-.font-option--libertinus-serif {
-  font-family: "Libertinus Serif", Georgia, serif;
+.font-picker-empty {
+  margin: 0;
+  padding: 1rem 0.55rem;
+  color: #59635d;
 }
 .color-control {
   position: relative;
@@ -1535,9 +1537,6 @@ legend {
   }
   .style-preview-pane {
     position: static;
-  }
-  .font-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .color-grid,
   .role-editor {

@@ -41,9 +41,6 @@ export function StyleStudio({
     if (latest) setDefinition(latest.definition);
   }, [detail.value]);
 
-  const updateNumber = (key: "bodySizePt" | "headingScale", value: string) =>
-    setDefinition((draft) => ({ ...draft, [key]: Number(value) }));
-
   async function save(activate: boolean) {
     if (busy) return;
     setBusy(true);
@@ -122,7 +119,6 @@ export function StyleStudio({
             <TypographyControls
               definition={definition}
               setDefinition={setDefinition}
-              updateNumber={updateNumber}
               assets={assets}
               companyId={style.companyId}
               onAssetsChanged={refreshAssets}

@@ -7,9 +7,10 @@ import type {
 } from "@hypergendoc/contracts";
 import {
   fonts,
-  legacyTextStyles,
+  resolveTextStyles,
   textStyleRoles,
 } from "./style-studio-definition";
+import { FontPicker } from "./font-picker";
 import { FormField, Input, Select, Status } from "./primitives";
 import { dashboardApi } from "../lib/dashboard-api";
 import { safeError } from "./dashboard-state";
@@ -21,14 +22,12 @@ type SetDefinition = React.Dispatch<React.SetStateAction<StyleDefinition>>;
 export function TypographyControls({
   definition,
   setDefinition,
-  updateNumber,
   assets,
   companyId,
   onAssetsChanged,
 }: {
   definition: StyleDefinition;
   setDefinition: SetDefinition;
-  updateNumber: (key: "bodySizePt" | "headingScale", value: string) => void;
   assets?: CompanyAssets | undefined;
   companyId: string;
   onAssetsChanged: () => Promise<unknown>;
@@ -64,49 +63,31 @@ export function TypographyControls({
       setUploading(false);
     }
   };
-  const [role, setRole] = useState<TextStyleRole>("h1");
-  const textStyles = definition.textStyles ?? legacyTextStyles(definition);
+  const [role, setRole] = useState<TextStyleRole>("body");
+  const textStyles = resolveTextStyles(definition);
   const style = textStyles[role];
-  const updateRole = (change: Partial<TextStyles[TextStyleRole]>) =>
+  const updateRole = (
+    change: Partial<NonNullable<TextStyles[TextStyleRole]>>,
+  ) =>
     setDefinition((draft) => {
-      const styles = draft.textStyles ?? legacyTextStyles(draft);
+      const styles = resolveTextStyles(draft);
+      const next = { ...styles[role], ...change };
       return {
         ...draft,
-        textStyles: { ...styles, [role]: { ...styles[role], ...change } },
+        textStyles: { ...styles, [role]: next },
+        ...(role === "body"
+          ? {
+              bodyFont: next.fontFamily,
+              bodySizePt: next.fontSizePt,
+              colors: { ...draft.colors, text: next.color },
+            }
+          : {}),
       };
     });
 
   return (
     <section className="control-section" aria-labelledby="typography-title">
       <h3 id="typography-title">Typography</h3>
-      <fieldset className="font-group">
-        <legend>Body font</legend>
-        <div className="font-grid">
-          {fontOptions.map((font) => {
-            const selected = definition.bodyFont === font.id;
-            return (
-              <label
-                className={`font-option${selected ? " font-option--selected" : ""}`}
-                key={font.id}
-                style={{ fontFamily: font.familyName }}
-              >
-                <input
-                  type="radio"
-                  name="bodyFont"
-                  value={font.id}
-                  checked={selected}
-                  aria-label={`Body font ${font.displayName}`}
-                  onChange={() =>
-                    setDefinition((draft) => ({ ...draft, bodyFont: font.id }))
-                  }
-                />
-                <span>{font.displayName}</span>
-                <b>Aa</b>
-              </label>
-            );
-          })}
-        </div>
-      </fieldset>
       <FormField label="Upload company font">
         <Input
           type="file"
@@ -116,15 +97,6 @@ export function TypographyControls({
         />
       </FormField>
       {uploadError && <Status kind="error">{uploadError}</Status>}
-      <Range
-        label="Body size"
-        value={definition.bodySizePt}
-        min={8}
-        max={16}
-        step={0.5}
-        unit="pt"
-        onChange={(value) => updateNumber("bodySizePt", value)}
-      />
       <div className="role-editor" aria-labelledby="text-role-title">
         <h4 id="text-role-title">Text roles</h4>
         <div className="role-tabs" role="group" aria-label="Text role">
@@ -140,23 +112,21 @@ export function TypographyControls({
           ))}
         </div>
         <FormField label="Font family">
-          <Select
+          <FontPicker
             value={style.fontFamily}
             onValueChange={(fontFamily) => updateRole({ fontFamily })}
             options={fontOptions.map((font) => ({
               value: font.id,
               label: font.displayName,
             }))}
-            placeholder="Choose a font"
-            aria-label="Font family"
           />
         </FormField>
         <Range
           label="Font size"
           value={style.fontSizePt}
-          min={6}
-          max={72}
-          step={1}
+          min={role === "body" ? 8 : 6}
+          max={role === "body" ? 16 : 72}
+          step={role === "body" ? 0.5 : 1}
           unit="pt"
           onChange={(fontSizePt) =>
             updateRole({ fontSizePt: Number(fontSizePt) })

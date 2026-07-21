@@ -4,14 +4,42 @@ import type {
   TextStyles,
 } from "@hypergendoc/contracts";
 
-export const fonts: StyleDefinition["bodyFont"][] = [
-  "Inter",
-  "IBM Plex Sans",
-  "Source Sans 3",
-  "Noto Sans",
-  "Noto Serif",
-  "Libertinus Serif",
-];
+export const fontGroups = [
+  {
+    label: "Sans",
+    fonts: [
+      "Inter",
+      "IBM Plex Sans",
+      "Source Sans 3",
+      "Noto Sans",
+      "Manrope",
+      "DM Sans",
+      "Work Sans",
+      "Lato",
+      "Montserrat",
+      "Open Sans",
+    ],
+  },
+  {
+    label: "Serif",
+    fonts: [
+      "Noto Serif",
+      "Libertinus Serif",
+      "Fraunces",
+      "Lora",
+      "Merriweather",
+      "Source Serif 4",
+      "Playfair Display",
+      "Libre Baskerville",
+    ],
+  },
+  { label: "Mono", fonts: ["IBM Plex Mono", "Source Code Pro"] },
+] as const satisfies ReadonlyArray<{
+  label: string;
+  fonts: readonly StyleDefinition["bodyFont"][];
+}>;
+
+export const fonts = fontGroups.flatMap((group) => group.fonts);
 
 export const colorKeys = [
   "text",
@@ -23,6 +51,7 @@ export const colorKeys = [
 export type ColorKey = (typeof colorKeys)[number];
 
 export const textStyleRoles: { value: TextStyleRole; label: string }[] = [
+  { value: "body", label: "Body" },
   { value: "h1", label: "H1" },
   { value: "h2", label: "H2" },
   { value: "h3", label: "H3" },
@@ -33,6 +62,13 @@ export const textStyleRoles: { value: TextStyleRole; label: string }[] = [
 ];
 
 export const initialTextStyles: TextStyles = {
+  body: {
+    fontFamily: "Inter",
+    fontSizePt: 10,
+    fontWeight: 400,
+    lineHeight: 1.5,
+    color: "#1D2624",
+  },
   h1: {
     fontFamily: "Noto Serif",
     fontSizePt: 28,
@@ -97,6 +133,13 @@ export function legacyTextStyles(definition: StyleDefinition): TextStyles {
     color: definition.colors.heading,
   });
   return {
+    body: {
+      fontFamily: definition.bodyFont,
+      fontSizePt: definition.bodySizePt,
+      fontWeight: 400,
+      lineHeight: 1.5,
+      color: definition.colors.text,
+    },
     h1: heading(definition.bodySizePt * definition.headingScale, 700, 1.2),
     h2: heading(
       definition.bodySizePt * definition.headingScale * 0.85,
@@ -115,6 +158,21 @@ export function legacyTextStyles(definition: StyleDefinition): TextStyles {
       color: definition.colors.muted,
     },
   };
+}
+
+type ResolvedTextStyles = Omit<TextStyles, "body"> & {
+  body: NonNullable<TextStyles["body"]>;
+};
+
+export function resolveTextStyles(
+  definition: StyleDefinition,
+): ResolvedTextStyles {
+  const legacy = legacyTextStyles(definition);
+  return {
+    ...legacy,
+    ...definition.textStyles,
+    body: definition.textStyles?.body ?? legacy.body,
+  } as ResolvedTextStyles;
 }
 
 export const initialStyleDefinition: StyleDefinition = {

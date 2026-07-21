@@ -120,8 +120,60 @@ describe("shared contracts", () => {
     );
   });
 
+  it("accepts the expanded font family set", () => {
+    for (const bodyFont of [
+      "Inter",
+      "IBM Plex Sans",
+      "Source Sans 3",
+      "Noto Sans",
+      "Manrope",
+      "DM Sans",
+      "Work Sans",
+      "Lato",
+      "Montserrat",
+      "Open Sans",
+      "Noto Serif",
+      "Libertinus Serif",
+      "Fraunces",
+      "Lora",
+      "Merriweather",
+      "Source Serif 4",
+      "Playfair Display",
+      "Libre Baskerville",
+      "IBM Plex Mono",
+      "Source Code Pro",
+    ]) {
+      expect(StyleDefinitionSchema.parse({ ...style, bodyFont }).bodyFont).toBe(
+        bodyFont,
+      );
+    }
+    expect(() =>
+      StyleDefinitionSchema.parse({ ...style, bodyFont: "Helvetica" }),
+    ).toThrow();
+  });
+
   it("validates explicit text styles while retaining legacy definitions", () => {
     expect(StyleDefinitionSchema.parse(style)).toEqual(style);
+    expect(StyleDefinitionSchema.parse({ ...style, textStyles })).toMatchObject(
+      {
+        textStyles,
+      },
+    );
+    expect(
+      StyleDefinitionSchema.parse({
+        ...style,
+        textStyles: {
+          ...textStyles,
+          body: {
+            fontFamily: "IBM Plex Mono",
+            fontSizePt: 10,
+            fontWeight: 400,
+            lineHeight: 1.5,
+            color: "#17201c",
+          },
+        },
+      }).textStyles?.body,
+    ).toMatchObject({ fontFamily: "IBM Plex Mono" });
     expect(() =>
       StyleDefinitionSchema.parse({
         ...style,

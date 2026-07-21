@@ -69,7 +69,7 @@ const textStyles = {
     color: "#101112",
   },
   h2: {
-    fontFamily: "IBM Plex Sans",
+    fontFamily: "DM Sans",
     fontSizePt: 20,
     fontWeight: 600,
     lineHeight: 1.2,
@@ -90,14 +90,14 @@ const textStyles = {
     color: "#404142",
   },
   h5: {
-    fontFamily: "Noto Serif",
+    fontFamily: "Fraunces",
     fontSizePt: 14,
     fontWeight: 700,
     lineHeight: 1.5,
     color: "#505152",
   },
   h6: {
-    fontFamily: "Libertinus Serif",
+    fontFamily: "IBM Plex Mono",
     fontSizePt: 12,
     fontWeight: 600,
     lineHeight: 1.6,
@@ -161,10 +161,13 @@ describe("document content foundation", () => {
       "h5 { color: #505152; font-family: Georgia, serif; font-size: 14pt; font-weight: 700; line-height: 1.5; }",
     );
     expect(output).toContain(
-      "h6 { color: #606162; font-family: Georgia, serif; font-size: 12pt; font-weight: 600; line-height: 1.6; }",
+      "h6 { color: #606162; font-family: Courier New, monospace; font-size: 12pt; font-weight: 600; line-height: 1.6; }",
     );
     expect(output).toContain(
       "caption { color: #707172; font-family: Georgia, serif; font-size: 9pt; font-weight: 500; line-height: 1.7; }",
+    );
+    expect(output).toContain(
+      "body { color: #17201c; font-family: Arial, sans-serif; font-size: 10pt; line-height: 1.5; margin: 0; }",
     );
     expect(output).toBe(
       renderDocumentHtml(
@@ -172,6 +175,26 @@ describe("document content foundation", () => {
         "html",
         styled,
       ),
+    );
+  });
+
+  it("renders an explicit body text style", () => {
+    const output = renderDocumentHtml("Text", "markdown", {
+      ...style,
+      textStyles: {
+        ...textStyles,
+        body: {
+          fontFamily: "Source Code Pro",
+          fontSizePt: 11,
+          fontWeight: 500,
+          lineHeight: 1.25,
+          color: "#808182",
+        },
+      },
+    });
+
+    expect(output).toContain(
+      "body { color: #808182; font-family: Courier New, monospace; font-size: 11pt; font-weight: 500; line-height: 1.25; margin: 0; }",
     );
   });
 

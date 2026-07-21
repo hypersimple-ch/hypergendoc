@@ -40,7 +40,14 @@ export function ColorControls({
                         h6: { ...draft.textStyles.h6, color: value },
                       },
                     }
-                  : {}),
+                  : key === "text" && draft.textStyles?.body
+                    ? {
+                        textStyles: {
+                          ...draft.textStyles,
+                          body: { ...draft.textStyles.body, color: value },
+                        },
+                      }
+                    : {}),
               }))
             }
           />

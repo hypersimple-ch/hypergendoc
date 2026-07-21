@@ -152,8 +152,22 @@ const font = (name: StyleDefinition["bodyFont"]) =>
     "IBM Plex Sans": "Arial, sans-serif",
     "Source Sans 3": "Arial, sans-serif",
     "Noto Sans": "Arial, sans-serif",
+    Manrope: "Arial, sans-serif",
+    "DM Sans": "Arial, sans-serif",
+    "Work Sans": "Arial, sans-serif",
+    Lato: "Arial, sans-serif",
+    Montserrat: "Arial, sans-serif",
+    "Open Sans": "Arial, sans-serif",
     "Noto Serif": "Georgia, serif",
     "Libertinus Serif": "Georgia, serif",
+    Fraunces: "Georgia, serif",
+    Lora: "Georgia, serif",
+    Merriweather: "Georgia, serif",
+    "Source Serif 4": "Georgia, serif",
+    "Playfair Display": "Georgia, serif",
+    "Libre Baskerville": "Georgia, serif",
+    "IBM Plex Mono": "Courier New, monospace",
+    "Source Code Pro": "Courier New, monospace",
   })[name];
 
 const uuidPattern =
@@ -205,8 +219,8 @@ function resolveAssets(
   const references = [
     style.bodyFont,
     style.headingFont,
-    ...Object.values(style.textStyles ?? {}).map(
-      (textStyle) => textStyle.fontFamily,
+    ...Object.values(style.textStyles ?? {}).flatMap((textStyle) =>
+      textStyle ? [textStyle.fontFamily] : [],
     ),
   ];
   const expected = new Set<string>();
@@ -300,6 +314,10 @@ h1 { font-size: ${(style.bodySizePt * style.headingScale).toFixed(2)}pt; } h2 { 
         })
         .join("\n")
     : legacyHeadingCss;
+  const bodyTextStyle = textStyles?.body;
+  const bodyCss = bodyTextStyle
+    ? `color: ${bodyTextStyle.color}; font-family: ${renderedFont(bodyTextStyle.fontFamily)}; font-size: ${bodyTextStyle.fontSizePt}pt; font-weight: ${bodyTextStyle.fontWeight}; line-height: ${bodyTextStyle.lineHeight};`
+    : `color: ${style.colors.text}; font-family: ${renderedFont(style.bodyFont)}; font-size: ${style.bodySizePt}pt; line-height: 1.5;`;
   const emphasis = style.italicStyle;
   const pageSize = style.page.size === "A4" ? "A4" : "letter";
   const fontFaceCss = assetRendering
@@ -329,7 +347,7 @@ ${pageMarginBoxes("top", style.header, style.colors.muted)}
 ${pageMarginBoxes("bottom", style.footer, style.colors.muted)}
 }
 * { box-sizing: border-box; }
-body { color: ${style.colors.text}; font-family: ${renderedFont(style.bodyFont)}; font-size: ${style.bodySizePt}pt; line-height: 1.5; margin: 0; }
+body { ${bodyCss} margin: 0; }
 ${logo ? ".document-logo { display: block; max-height: 24mm; max-width: 100%; object-fit: contain; margin: 0 0 6mm; }\n" : ""}main { min-height: 100%; }
 ${textStylesCss}
 em { font-style: ${emphasis}; } a { color: ${style.colors.primary}; } blockquote { border-left: 3px solid ${style.colors.accent}; color: ${style.colors.muted}; margin-left: 0; padding-left: 1em; }
