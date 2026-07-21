@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { Pool } from "pg";
 import {
   companies,
@@ -35,6 +35,14 @@ integration("Git document repository PostgreSQL", () => {
   it("keeps document index operations workspace-isolated and serializes company Git writes", async () => {
     const workspaceId = randomUUID();
     const otherWorkspaceId = randomUUID();
+    const purgeWorkspace = (id: string) =>
+      db.transaction(async (tx) => {
+        await tx.execute(
+          sql`select set_config('hypergendoc.allow_purge', 'on', true)`,
+        );
+        await tx.delete(storedObjects).where(eq(storedObjects.workspaceId, id));
+        await tx.delete(workspaces).where(eq(workspaces.id, id));
+      });
     const companyId = randomUUID();
     const otherCompanyId = randomUUID();
     const styleId = randomUUID();
@@ -120,19 +128,13 @@ integration("Git document repository PostgreSQL", () => {
         }
       });
 
-      await db
-        .delete(storedObjects)
-        .where(eq(storedObjects.workspaceId, workspaceId));
-      await db.delete(workspaces).where(eq(workspaces.id, workspaceId));
+      await purgeWorkspace(workspaceId);
       expect(
         await db.select().from(documents).where(eq(documents.id, document.id)),
       ).toEqual([]);
     } finally {
-      await db
-        .delete(storedObjects)
-        .where(eq(storedObjects.workspaceId, workspaceId));
-      await db.delete(workspaces).where(eq(workspaces.id, workspaceId));
-      await db.delete(workspaces).where(eq(workspaces.id, otherWorkspaceId));
+      await purgeWorkspace(workspaceId);
+      await purgeWorkspace(otherWorkspaceId);
     }
   });
 });

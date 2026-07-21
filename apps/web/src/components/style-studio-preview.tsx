@@ -1,20 +1,41 @@
 import type { CSSProperties } from "react";
-import type { StyleDefinition, TextStyleRole } from "@hypergendoc/contracts";
+import type {
+  CompanyAssets,
+  StyleDefinition,
+  TextStyleRole,
+} from "@hypergendoc/contracts";
 import { legacyTextStyles } from "./style-studio-definition";
 
 export function StyleStudioPreview({
   definition,
+  assets,
 }: {
   definition: StyleDefinition;
+  assets?: CompanyAssets | undefined;
 }) {
   const { colors, page, header, footer } = definition;
+  const uploadedFonts =
+    assets?.fonts.filter((font) => font.source === "uploaded") ?? [];
+  const selectedLogo = assets?.logos.find(
+    (logo) => logo.id === definition.logoObjectId,
+  );
+  const previewFont = (font: string) =>
+    uploadedFonts.some((asset) => asset.id === font)
+      ? `company-font-${font}`
+      : font;
+  const fontFaces = uploadedFonts
+    .map(
+      (font) =>
+        `@font-face{font-family:"company-font-${font.id}";src:url(${JSON.stringify(font.contentUrl)});font-display:swap;}`,
+    )
+    .join("");
   const textStyles = definition.textStyles ?? legacyTextStyles(definition);
   const pageStyle = {
-    fontFamily: definition.bodyFont,
+    fontFamily: previewFont(definition.bodyFont),
     fontSize: `${definition.bodySizePt}pt`,
     color: colors.text,
-    "--font-family": definition.bodyFont,
-    "--heading-font-family": definition.headingFont,
+    "--font-family": previewFont(definition.bodyFont),
+    "--heading-font-family": previewFont(definition.headingFont),
     "--font-size": `${definition.bodySizePt}pt`,
     "--page-text": colors.text,
     "--heading-color": colors.heading,
@@ -33,7 +54,7 @@ export function StyleStudioPreview({
     aspectRatio: page.size === "A4" ? "0.707" : "0.773",
   } as CSSProperties;
   const textStyle = (role: TextStyleRole): CSSProperties => ({
-    fontFamily: textStyles[role].fontFamily,
+    fontFamily: previewFont(textStyles[role].fontFamily),
     fontSize: `${textStyles[role].fontSizePt}pt`,
     fontWeight: textStyles[role].fontWeight,
     lineHeight: textStyles[role].lineHeight,
@@ -52,6 +73,7 @@ export function StyleStudioPreview({
 
   return (
     <aside className="style-preview-pane">
+      {fontFaces && <style>{fontFaces}</style>}
       <div className="style-preview-pane__heading">
         <div>
           <p className="eyebrow">Instant canvas</p>
@@ -74,8 +96,12 @@ export function StyleStudioPreview({
             </header>
           )}
           <main>
-            {definition.logoObjectId && (
-              <div className="style-preview-page__logo">Logo</div>
+            {selectedLogo && (
+              <img
+                className="style-preview-page__logo"
+                src={selectedLogo.contentUrl}
+                alt={selectedLogo.displayName ?? "Company logo"}
+              />
             )}
             <p className="style-preview-page__eyebrow">Brand briefing · 2025</p>
             <h1 style={textStyle("h1")}>A clearer way to make progress</h1>

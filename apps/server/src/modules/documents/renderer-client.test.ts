@@ -10,7 +10,10 @@ const hash = (value: Uint8Array | string) =>
 const servers: ReturnType<typeof createServer>[] = [];
 
 async function server(
-  respond: (request: { requestId: string }, socket: Socket) => void,
+  respond: (
+    request: { requestId: string; assets?: { logo: null; fonts: unknown[] } },
+    socket: Socket,
+  ) => void,
 ): Promise<string> {
   const path = `/tmp/hypergendoc-renderer-${randomUUID()}.sock`;
   const instance = createServer((socket) => {
@@ -57,6 +60,24 @@ describe("Unix renderer protocol", () => {
       style: definition,
     });
     expect(result).toMatchObject({ ok: true, pdfHash: hash(pdf) });
+  });
+
+  it("sends optional resolved assets in the bounded renderer frame", async () => {
+    const pdf = Buffer.from("%PDF-1.7\n");
+    const path = await server((request, socket) => {
+      expect(request.assets).toEqual({ logo: null, fonts: [] });
+      socket.end(
+        `${JSON.stringify({ protocol: "hypergendoc-render-v2", requestId: request.requestId, ok: true, sourceHash: hash("source"), pdfHash: hash(pdf), pdfBase64: pdf.toString("base64") })}\n`,
+      );
+    });
+    await expect(
+      createUnixSocketRenderer(path, 100).render({
+        format: "markdown",
+        body: "body",
+        style: definition,
+        assets: { logo: null, fonts: [] },
+      }),
+    ).resolves.toMatchObject({ ok: true });
   });
 
   it("rejects oversized or multi-frame responses", async () => {

@@ -95,6 +95,9 @@ function requestSocket(
       }
     });
     socket.on("error", reject);
+    socket.on("close", () => {
+      if (!response) reject(new Error("socket closed without response"));
+    });
   });
 }
 
@@ -120,6 +123,38 @@ describe("renderer worker", () => {
       expect(received).toBe(renderDocumentHtml(body, format, style));
     },
   );
+
+  it("carries resolved assets into the canonical source", async () => {
+    const bytes = Buffer.from("font");
+    const fontId = "11111111-1111-4111-8111-111111111111";
+    const assets = {
+      logo: null,
+      fonts: [
+        {
+          id: fontId,
+          contentType: "font/ttf",
+          byteSize: bytes.length,
+          sha256: createHash("sha256").update(bytes).digest("hex"),
+          base64: bytes.toString("base64"),
+        },
+      ],
+    };
+    let received = "";
+    const result = await render(
+      {
+        ...request,
+        style: {
+          ...style,
+          assetVersion: 1,
+          bodyFont: fontId,
+        },
+        assets,
+      },
+      { render: async (source) => ((received = source), pdf()) },
+    );
+    expect(result).toMatchObject({ ok: true });
+    expect(received).toContain("data:font/ttf;base64,Zm9udA==");
+  });
 
   it("sanitizes malicious markup before Chromium and does not fetch URLs", async () => {
     let received = "";
@@ -209,6 +244,10 @@ describe("renderer worker", () => {
         calls.push("content");
         return Promise.resolve();
       },
+      evaluate: () => {
+        calls.push("fonts");
+        return Promise.resolve();
+      },
       pdf: (options: unknown) => {
         calls.push(JSON.stringify(options));
         return pdf();
@@ -248,8 +287,11 @@ describe("renderer worker", () => {
     );
     expect(calls).toContain("ws://renderer.test");
     expect(calls).toContain("route");
-    expect(calls).toContain(
-      JSON.stringify({ printBackground: true, preferCSSPageSize: true }),
+    expect(calls.indexOf("content")).toBeLessThan(calls.indexOf("fonts"));
+    expect(calls.indexOf("fonts")).toBeLessThan(
+      calls.indexOf(
+        JSON.stringify({ printBackground: true, preferCSSPageSize: true }),
+      ),
     );
     expect(calls.at(-1)).toBe("server-kill");
     await abort!();
@@ -276,6 +318,7 @@ describe("renderer worker", () => {
                   route: () => Promise.resolve(),
                   emulateMedia: () => Promise.resolve(),
                   setContent: () => Promise.resolve(),
+                  evaluate: () => Promise.resolve(),
                   pdf: () => new Promise<Buffer>(() => undefined),
                 }),
             }),
@@ -319,11 +362,14 @@ describe("renderer worker", () => {
       release!();
       await expect(second).resolves.toMatchObject({ ok: true });
       await expect(
-        requestSocket(socketPath, `${"x".repeat(256 * 1024 + 16 * 1024 + 1)}`),
+        requestSocket(
+          socketPath,
+          `${"x".repeat(256 * 1024 + Math.ceil((30 * 1024 * 1024) / 3) * 4 + 16 * 1024 + 1)}`,
+        ),
       ).rejects.toBeDefined();
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await rm(directory, { recursive: true, force: true });
     }
-  });
+  }, 20_000);
 });

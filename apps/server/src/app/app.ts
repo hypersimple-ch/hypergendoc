@@ -1,5 +1,4 @@
 import { S3Client, HeadBucketCommand } from "@aws-sdk/client-s3";
-import { createConnection } from "node:net";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
@@ -12,12 +11,15 @@ import { z, ZodError } from "zod";
 import { createAuth } from "../modules/auth/better-auth.js";
 import type { HumanActor } from "../modules/auth/actors.js";
 import {
+  createCompanyAssetRepository,
+  createCompanyAssetRoutes,
+  createCompanyAssetService,
   createCompanyLogoRoutes,
-  createCompanyLogoService,
   createCompanyRepository,
   createCompanyRoutes,
-  createLogoOwnershipRepository,
   createCompanyService,
+  createCompanyStyleAssetResolver,
+  createLogoOwnershipRepository,
 } from "../modules/companies/index.js";
 import {
   createCredentialRepository,
@@ -72,6 +74,7 @@ import {
   createAwsS3ObjectClient,
 } from "../platform/object-store.js";
 import { createInMemoryRateLimiter } from "../platform/rate-limit.js";
+import { checkUnixSocket } from "./dependency-health.js";
 import { shouldRejectMutationOrigin } from "./origin-policy.js";
 import { page } from "./page.js";
 
@@ -81,25 +84,6 @@ export interface Application extends FastifyInstance {
 
 function actorContext(actor: HumanActor): ActorContext {
   return { type: "human", ...actor };
-}
-
-function checkUnixSocket(path: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const socket = createConnection(path);
-    const timeout = setTimeout(() => {
-      socket.destroy();
-      reject(new Error("renderer socket check timed out"));
-    }, 1_000);
-    const finish = (error?: Error) => {
-      clearTimeout(timeout);
-      socket.removeAllListeners();
-      socket.destroy();
-      if (error) reject(error);
-      else resolve();
-    };
-    socket.once("connect", () => finish());
-    socket.once("error", finish);
-  });
 }
 
 /** Builds the production composition root; tests may call this without listening. */
@@ -139,6 +123,18 @@ export async function createApplication(
     repository: createCompanyRepository(db),
     audit,
   });
+  const companyAssetRepository = createCompanyAssetRepository(db);
+  const companyAssets = createCompanyAssetService({
+    companies,
+    repository: companyAssetRepository,
+    store: objects,
+    logoOwnership: createLogoOwnershipRepository(db),
+    audit,
+  });
+  const styleAssetResolver = createCompanyStyleAssetResolver(
+    companyAssetRepository,
+    objects,
+  );
   const renderer = createDocumentRenderer({
     socketPath: environment.rendererSocket,
   });
@@ -147,9 +143,15 @@ export async function createApplication(
     audit,
     renderer: {
       async renderPreview(input) {
+        const assets = await styleAssetResolver.resolve(
+          input.workspaceId,
+          input.companyId,
+          input.definition,
+        );
         const result = await renderer.render({
           ...STYLE_PREVIEW_DOCUMENT,
           style: input.definition,
+          assets,
         });
         if (!result.ok || !result.pdfHash)
           throw new AppError(
@@ -174,6 +176,7 @@ export async function createApplication(
     git: new CompanyDocumentGitStore({ rootDir: environment.documentGitRoot }),
     renderer,
     sourceBuilder: createHtmlDocumentSourceBuilder(),
+    styleAssetResolver,
     audit,
   });
   const smtp = environment.smtp
@@ -367,13 +370,14 @@ export async function createApplication(
   await app.register(
     createCompanyLogoRoutes({
       authenticate,
-      service: createCompanyLogoService({
-        companies,
-        store: objects,
-        ownership: createLogoOwnershipRepository(db),
-        audit,
-      }),
+      service: {
+        upload: (actor, companyId, bytes) =>
+          companyAssets.uploadLogo(actor, companyId, bytes),
+      },
     }),
+  );
+  await app.register(
+    createCompanyAssetRoutes({ authenticate, service: companyAssets }),
   );
   await app.register(createStyleRoutes({ authenticate, service: styles }));
   const credentials = createCredentialService({

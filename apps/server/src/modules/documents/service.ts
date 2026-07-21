@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
   CreateDocumentInputSchema,
   RevertDocumentInputSchema,
@@ -7,6 +6,7 @@ import {
   type DocumentCommit,
   type DocumentCurrentSource,
   type DocumentDetail,
+  type ResolvedStyleAssets,
   type StyleDefinition,
 } from "@hypergendoc/contracts";
 import {
@@ -16,13 +16,19 @@ import {
 import { auditActor } from "../../platform/audit.js";
 import type { ActorContext } from "../../platform/context.js";
 import { AppError } from "../../platform/errors.js";
-import {
-  GitDocumentNotFoundError,
-  GitDocumentStoreValidationError,
-  type GitDocumentRevision,
-} from "./git-store.js";
+import type { GitDocumentRevision } from "./git-store.js";
 import { toDocumentCommit, toDocumentSnapshot } from "./commit-mappers.js";
 import { rendererFailure, type RenderResult } from "./renderer-client.js";
+import {
+  actorId,
+  actorType,
+  invalid,
+  mapGitError,
+  notFound,
+  requireAction,
+  requireActor,
+  sha256,
+} from "./service-helpers.js";
 import type {
   DocumentServiceDependencies,
   ResolvedDocumentSource,
@@ -33,36 +39,8 @@ export type {
   DocumentServiceDependencies,
   DocumentSourceBuilder,
   ResolvedDocumentSource,
+  StyleAssetResolver,
 } from "./service-types.js";
-
-const sha256 = (value: string | Uint8Array) =>
-  createHash("sha256").update(value).digest("hex");
-const actorId = (actor: ActorContext) =>
-  actor.type === "human" ? actor.userId : actor.credentialId;
-const actorType = (actor: ActorContext) =>
-  actor.type === "human" ? ("user" as const) : ("credential" as const);
-
-function requireActor(
-  actor: ActorContext | undefined,
-): asserts actor is ActorContext {
-  if (!actor) throw new AppError("unauthenticated", 401);
-}
-
-function requireAction(
-  actor: ActorContext,
-  action: "documents:read" | "documents:write",
-  companyId: string,
-): void {
-  if (
-    actor.type === "agent" &&
-    (!actor.actions.includes(action) ||
-      !actor.allowedCompanyIds.includes(companyId))
-  )
-    throw new AppError("not_found", 404);
-}
-
-const invalid = () => new AppError("validation_failed", 400);
-const notFound = () => new AppError("not_found", 404);
 
 export class DocumentService {
   public constructor(private readonly deps: DocumentServiceDependencies) {}
@@ -95,6 +73,11 @@ export class DocumentService {
           parsed.data.format,
           parsed.data.body,
           style.definition,
+          await this.resolveStyleAssets(
+            actor.workspaceId,
+            parsed.data.companyId,
+            style.definition,
+          ),
         );
         await repository.lockCompanyForGitWrites(
           actor.workspaceId,
@@ -159,6 +142,11 @@ export class DocumentService {
           parsed.data.format,
           parsed.data.body,
           style.definition,
+          await this.resolveStyleAssets(
+            actor.workspaceId,
+            locked.companyId,
+            style.definition,
+          ),
         );
         const touched =
           (await repository.touchDocument(actor.workspaceId, documentId)) ??
@@ -303,7 +291,7 @@ export class DocumentService {
             actor: { type: actorType(actor), id: actorId(actor) },
           });
         } catch (error) {
-          this.mapGitError(error);
+          mapGitError(error);
         }
         return touched;
       },
@@ -327,10 +315,16 @@ export class DocumentService {
       current.snapshot.styleVersionId,
     );
     if (!style) throw notFound();
+    const assets = await this.resolveStyleAssets(
+      actor!.workspaceId,
+      document.companyId,
+      style.definition,
+    );
     const source = this.resolveSource(
       current.snapshot.format,
       current.snapshot.body,
       style.definition,
+      assets,
     );
     let result: RenderResult;
     try {
@@ -338,6 +332,7 @@ export class DocumentService {
         format: current.snapshot.format,
         body: source.body,
         style: style.definition,
+        assets,
       });
     } catch {
       throw new AppError("dependency_unavailable", 503);
@@ -369,7 +364,7 @@ export class DocumentService {
         })
       ).map((entry) => toDocumentCommit(document.id, entry));
     } catch (error) {
-      this.mapGitError(error);
+      mapGitError(error);
     }
   }
 
@@ -402,7 +397,7 @@ export class DocumentService {
         documentId: document.id,
       });
     } catch (error) {
-      this.mapGitError(error);
+      mapGitError(error);
     }
   }
 
@@ -419,7 +414,7 @@ export class DocumentService {
         commitId,
       });
     } catch (error) {
-      this.mapGitError(error);
+      mapGitError(error);
     }
   }
 
@@ -441,17 +436,34 @@ export class DocumentService {
         actor: { type: actorType(actor), id: actorId(actor) },
       });
     } catch (error) {
-      this.mapGitError(error);
+      mapGitError(error);
     }
+  }
+
+  private async resolveStyleAssets(
+    workspaceId: string,
+    companyId: string,
+    style: StyleDefinition,
+  ) {
+    return (
+      this.deps.styleAssetResolver?.resolve(workspaceId, companyId, style) ??
+      Promise.resolve({ logo: null, fonts: [] })
+    );
   }
 
   private resolveSource(
     format: "markdown" | "html",
     body: string,
     style: StyleDefinition,
+    assets: ResolvedStyleAssets,
   ): ResolvedDocumentSource {
     try {
-      const source = this.deps.sourceBuilder.resolve(format, body, style);
+      const source = this.deps.sourceBuilder.resolve(
+        format,
+        body,
+        style,
+        assets,
+      );
       if (source.body !== body || !source.source)
         throw new Error("invalid source");
       return source;
@@ -460,12 +472,6 @@ export class DocumentService {
       if (error instanceof AppError) throw error;
       throw new AppError("render_rejected", 422);
     }
-  }
-
-  private mapGitError(error: unknown): never {
-    if (error instanceof GitDocumentStoreValidationError) throw invalid();
-    if (error instanceof GitDocumentNotFoundError) throw notFound();
-    throw new AppError("internal_error", 500);
   }
 
   private async audit(

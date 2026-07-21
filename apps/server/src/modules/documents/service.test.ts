@@ -3,16 +3,21 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Document, StyleDefinition } from "@hypergendoc/contracts";
+import type {
+  Document,
+  ResolvedStyleAssets,
+  StyleDefinition,
+} from "@hypergendoc/contracts";
 import type { ActorContext } from "../../platform/context.js";
 import { AppError } from "../../platform/errors.js";
 import { CompanyDocumentGitStore } from "./git-store.js";
 import type { Renderer } from "./renderer-client.js";
-import {
-  createDocumentService,
-  type DocumentRepository,
-  type DocumentSourceBuilder,
-} from "./service.js";
+import { createDocumentService } from "./service.js";
+import type {
+  DocumentRepository,
+  DocumentSourceBuilder,
+  StyleAssetResolver,
+} from "./service-types.js";
 
 const ids = {
   workspace: "00000000-0000-4000-8000-000000000001",
@@ -57,7 +62,11 @@ afterEach(async () => {
 });
 
 async function fixture(
-  options: { failWrite?: boolean; failTouch?: boolean } = {},
+  options: {
+    failWrite?: boolean;
+    failTouch?: boolean;
+    styleAssetResolver?: StyleAssetResolver;
+  } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), "hypergendoc-service-"));
   roots.push(root);
@@ -147,8 +156,11 @@ async function fixture(
     lockCompanyForGitWrites,
   };
   const sourceBuilder: DocumentSourceBuilder = {
-    resolve(format, body, style) {
-      return { body, source: `${format}:${style.bodyFont}:${body}` };
+    resolve(format, body, style, assets) {
+      return {
+        body,
+        source: `${format}:${style.bodyFont}:${body}:${JSON.stringify(assets)}`,
+      };
     },
   };
   const render = vi.fn<Renderer["render"]>((input) => {
@@ -156,6 +168,7 @@ async function fixture(
       input.format,
       input.body,
       input.style,
+      input.assets,
     ).source;
     const pdf = Buffer.from("%PDF-current");
     return Promise.resolve({
@@ -183,6 +196,9 @@ async function fixture(
       git,
       renderer,
       sourceBuilder,
+      ...(options.styleAssetResolver
+        ? { styleAssetResolver: options.styleAssetResolver }
+        : {}),
       audit: { write: audit },
     }),
     git: actualGit,
@@ -284,6 +300,21 @@ describe("DocumentService Git history", () => {
     expect(render).toHaveBeenCalledWith(
       expect.objectContaining({ format: "html", body: "<p>current</p>" }),
     );
+  });
+
+  it("resolves assets once and gives identical bytes to source hashing and renderer", async () => {
+    const assets: ResolvedStyleAssets = { logo: null, fonts: [] };
+    const resolve = vi.fn(() => Promise.resolve(assets));
+    const resolver: StyleAssetResolver = { resolve };
+    const { service, render } = await fixture({ styleAssetResolver: resolver });
+    await service.create(human, createInput);
+    await service.pdf(human, ids.document);
+    expect(resolve).toHaveBeenLastCalledWith(
+      ids.workspace,
+      ids.company,
+      definition,
+    );
+    expect(render).toHaveBeenCalledWith(expect.objectContaining({ assets }));
   });
 
   it("serializes concurrent company writes and keeps both commits", async () => {

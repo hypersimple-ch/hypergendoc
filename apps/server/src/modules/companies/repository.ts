@@ -1,8 +1,19 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Database } from "@hypergendoc/db";
-import { companies, storedObjects } from "@hypergendoc/db";
-import type { Company, CreateCompanyInput } from "@hypergendoc/contracts";
+import {
+  companies,
+  companyColors,
+  companyFonts,
+  storedObjects,
+} from "@hypergendoc/db";
+import type {
+  Company,
+  CompanyAssets,
+  CreateCompanyInput,
+} from "@hypergendoc/contracts";
+import { FontFamilySchema } from "@hypergendoc/contracts";
 import type { LogoOwnershipRepository } from "../../platform/logo-upload.js";
+import type { CompanyAssetRepository } from "./assets.js";
 import type { CompanyRepository } from "./service.js";
 
 const company = (row: typeof companies.$inferSelect): Company => ({
@@ -94,6 +105,158 @@ export function createLogoOwnershipRepository(
         .returning({ id: storedObjects.id });
       if (!row) throw new Error("stored object insert did not return a row");
       return row;
+    },
+  };
+}
+
+export function createCompanyAssetRepository(
+  db: Database,
+): CompanyAssetRepository {
+  const builtInFonts = FontFamilySchema.options;
+  return {
+    async list(workspaceId, companyId): Promise<CompanyAssets> {
+      const [logos, uploadedFonts, ownedBuiltIns, colors] = await Promise.all([
+        db
+          .select({
+            id: storedObjects.id,
+            displayName: storedObjects.displayName,
+            contentType: storedObjects.contentType,
+            byteSize: storedObjects.byteSize,
+            createdAt: storedObjects.createdAt,
+          })
+          .from(storedObjects)
+          .where(
+            and(
+              eq(storedObjects.workspaceId, workspaceId),
+              eq(storedObjects.companyId, companyId),
+              eq(storedObjects.purpose, "logo"),
+              isNull(storedObjects.deletedAt),
+            ),
+          ),
+        db
+          .select({
+            id: storedObjects.id,
+            displayName: storedObjects.displayName,
+            familyName: companyFonts.familyName,
+            subfamilyName: companyFonts.subfamilyName,
+          })
+          .from(companyFonts)
+          .innerJoin(
+            storedObjects,
+            eq(companyFonts.storedObjectId, storedObjects.id),
+          )
+          .where(
+            and(
+              eq(companyFonts.workspaceId, workspaceId),
+              eq(companyFonts.companyId, companyId),
+              eq(storedObjects.purpose, "font"),
+              isNull(storedObjects.deletedAt),
+            ),
+          ),
+        db
+          .select({ family: companyFonts.builtInFamily })
+          .from(companyFonts)
+          .where(
+            and(
+              eq(companyFonts.workspaceId, workspaceId),
+              eq(companyFonts.companyId, companyId),
+              inArray(companyFonts.builtInFamily, builtInFonts),
+            ),
+          ),
+        db
+          .select({ color: companyColors.color })
+          .from(companyColors)
+          .where(
+            and(
+              eq(companyColors.workspaceId, workspaceId),
+              eq(companyColors.companyId, companyId),
+            ),
+          ),
+      ]);
+      const owned = new Set(ownedBuiltIns.flatMap((font) => font.family ?? []));
+      return {
+        logos: logos.map((logo) => ({
+          id: logo.id,
+          displayName: logo.displayName,
+          contentType: logo.contentType as
+            "image/png" | "image/jpeg" | "image/webp",
+          byteSize: logo.byteSize,
+          contentUrl: `/api/companies/${companyId}/assets/logos/${logo.id}/content`,
+          createdAt: logo.createdAt.toISOString(),
+        })),
+        fonts: [
+          ...builtInFonts.map((family) => ({
+            id: family,
+            source: "built_in" as const,
+            familyName: family,
+            subfamilyName: null,
+            displayName: family,
+            owned: owned.has(family),
+            contentUrl: null,
+          })),
+          ...uploadedFonts.map((font) => ({
+            id: font.id,
+            source: "uploaded" as const,
+            familyName: font.familyName,
+            subfamilyName: font.subfamilyName,
+            displayName: font.displayName ?? font.familyName,
+            owned: true,
+            contentUrl: `/api/companies/${companyId}/assets/fonts/${font.id}/content`,
+          })),
+        ],
+        colors: colors.map((color) => color.color),
+      };
+    },
+    async findContent(workspaceId, companyId, kind, objectId) {
+      const query = db
+        .select({
+          key: storedObjects.objectKey,
+          sha256: storedObjects.sha256,
+          byteSize: storedObjects.byteSize,
+          contentType: storedObjects.contentType,
+        })
+        .from(storedObjects)
+        .where(
+          and(
+            eq(storedObjects.workspaceId, workspaceId),
+            eq(storedObjects.companyId, companyId),
+            eq(storedObjects.id, objectId),
+            eq(storedObjects.purpose, kind),
+            isNull(storedObjects.deletedAt),
+            kind === "font"
+              ? sql`exists (select 1 from company_fonts f where f.workspace_id = ${workspaceId} and f.company_id = ${companyId} and f.stored_object_id = ${storedObjects.id})`
+              : undefined,
+          ),
+        );
+      const [row] = await query;
+      return row;
+    },
+    async create(input) {
+      return db.transaction(async (tx) => {
+        const [object] = await tx
+          .insert(storedObjects)
+          .values({
+            workspaceId: input.workspaceId,
+            companyId: input.companyId,
+            purpose: "font",
+            displayName: input.displayName,
+            objectKey: input.objectKey,
+            contentType: input.contentType,
+            byteSize: input.bytes,
+            sha256: input.sha256,
+          })
+          .returning({ id: storedObjects.id });
+        if (!object)
+          throw new Error("stored object insert did not return a row");
+        await tx.insert(companyFonts).values({
+          workspaceId: input.workspaceId,
+          companyId: input.companyId,
+          storedObjectId: object.id,
+          familyName: input.familyName,
+          subfamilyName: input.subfamilyName,
+        });
+        return object;
+      });
     },
   };
 }

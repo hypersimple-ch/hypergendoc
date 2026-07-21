@@ -118,6 +118,7 @@ export function legacyTextStyles(definition: StyleDefinition): TextStyles {
 }
 
 export const initialStyleDefinition: StyleDefinition = {
+  assetVersion: 1,
   logoObjectId: null,
   bodyFont: "Inter",
   headingFont: "Noto Serif",

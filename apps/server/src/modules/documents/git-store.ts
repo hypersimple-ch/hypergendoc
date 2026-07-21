@@ -71,6 +71,7 @@ export class GitDocumentNotFoundError extends Error {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const USER_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const TRAILER_PREFIX = "Document update\n\n";
 
@@ -327,10 +328,9 @@ function validateIdentity(input: DocumentGitIdentity): void {
 }
 
 function validateActor(actor: DocumentGitActor): void {
-  validateUuid(actor.id);
-  if (actor.type !== "user" && actor.type !== "credential") {
+  if (actor.type === "credential") validateUuid(actor.id);
+  else if (actor.type !== "user" || !USER_ID.test(actor.id))
     throw new GitDocumentStoreValidationError();
-  }
 }
 
 function validateUuid(value: string): void {
@@ -384,7 +384,7 @@ function parseMetadata(message: string): ParsedMetadata | undefined {
   try {
     validateUuid(documentId);
     validateUuid(styleVersionId);
-    validateUuid(actorId);
+    validateActor({ type: actorType, id: actorId });
   } catch {
     return undefined;
   }

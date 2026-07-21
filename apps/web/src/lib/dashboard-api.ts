@@ -1,5 +1,6 @@
 import type {
   Company,
+  CompanyAssets,
   CreateCompanyInput,
   Document,
   DocumentCommit,
@@ -120,6 +121,29 @@ export const dashboardApi = {
       throw new ApiError(
         "network_error",
         "Logo upload could not be completed.",
+      );
+    return (await response.json().catch(() => undefined)) as unknown;
+  },
+  assets: (companyId: string) =>
+    api<CompanyAssets>(`/api/companies/${companyId}/assets`),
+  uploadFont: async (id: string, file: File) => {
+    if (file.size > 10 * 1024 * 1024)
+      throw new ApiError(
+        "validation_failed",
+        "Choose a font smaller than 10 MiB.",
+      );
+    const form = new FormData();
+    form.set("font", file);
+    const response = await fetch(`/api/companies/${id}/assets/fonts`, {
+      method: "POST",
+      credentials: "include",
+      body: form,
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok)
+      throw new ApiError(
+        "network_error",
+        "Font upload could not be completed.",
       );
     return (await response.json().catch(() => undefined)) as unknown;
   },

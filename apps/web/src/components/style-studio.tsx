@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type {
+  CompanyAssets,
   Style,
   StyleDefinition,
   StyleVersion,
@@ -7,11 +8,11 @@ import type {
 import { dashboardApi } from "../lib/dashboard-api";
 import {
   BrandControls,
-  ColorControls,
   HeaderFooterControls,
   PageControls,
   TypographyControls,
 } from "./style-studio-controls";
+import { ColorControls } from "./style-studio-color-controls";
 import { initialStyleDefinition } from "./style-studio-definition";
 import { StyleStudioPreview } from "./style-studio-preview";
 import { LoadState, safeError, useLoaded } from "./dashboard-state";
@@ -19,9 +20,13 @@ import { Button, Status } from "./primitives";
 
 export function StyleStudio({
   style,
+  assets,
+  refreshAssets,
   onClose,
 }: {
   style: Style;
+  assets?: CompanyAssets | undefined;
+  refreshAssets: () => Promise<unknown>;
   onClose: () => void;
 }) {
   const detail = useLoaded(() => dashboardApi.style(style.id), [style.id]);
@@ -44,7 +49,11 @@ export function StyleStudio({
     setBusy(true);
     setMessage(undefined);
     try {
-      await dashboardApi.createStyleVersion(style.id, definition, activate);
+      await dashboardApi.createStyleVersion(
+        style.id,
+        { ...definition, assetVersion: 1 },
+        activate,
+      );
       detail.reload();
       setMessage({
         text: activate
@@ -65,7 +74,10 @@ export function StyleStudio({
     setBusy(true);
     setMessage(undefined);
     try {
-      const result = await dashboardApi.previewStyle(style.id, definition);
+      const result = await dashboardApi.previewStyle(style.id, {
+        ...definition,
+        assetVersion: 1,
+      });
       if (result.url && previewWindow) {
         const response = await fetch(result.url);
         const pdfUrl = URL.createObjectURL(
@@ -111,10 +123,14 @@ export function StyleStudio({
               definition={definition}
               setDefinition={setDefinition}
               updateNumber={updateNumber}
+              assets={assets}
+              companyId={style.companyId}
+              onAssetsChanged={refreshAssets}
             />
             <ColorControls
               definition={definition}
               setDefinition={setDefinition}
+              savedColors={assets?.colors ?? []}
             />
             <PageControls
               definition={definition}
@@ -123,6 +139,9 @@ export function StyleStudio({
             <BrandControls
               definition={definition}
               setDefinition={setDefinition}
+              assets={assets}
+              companyId={style.companyId}
+              onAssetsChanged={refreshAssets}
             />
             <HeaderFooterControls
               label="Footer"
@@ -162,7 +181,7 @@ export function StyleStudio({
               active={detail.value.style.activeVersionId}
             />
           </div>
-          <StyleStudioPreview definition={definition} />
+          <StyleStudioPreview definition={definition} assets={assets} />
         </div>
       )}
     </section>

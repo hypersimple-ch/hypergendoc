@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CommitShaSchema,
+  CompanyAssetsSchema,
   CreateDocumentInputSchema,
   CreateDocumentToolInputSchema,
   CreateMcpCredentialInputSchema,
@@ -9,6 +10,7 @@ import {
   McpToolNameSchema,
   RegisterInputSchema,
   RevertDocumentToolInputSchema,
+  ResolvedStyleAssetsSchema,
   StyleDefinitionSchema,
   UpdateDocumentToolInputSchema,
 } from "./index.js";
@@ -138,6 +140,89 @@ describe("shared contracts", () => {
         },
       }),
     ).toThrow();
+  });
+
+  it("accepts asset-aware styles without changing legacy definitions", () => {
+    const fontId = "00000000-0000-4000-8000-000000000002";
+    const assetStyle = {
+      ...style,
+      assetVersion: 1,
+      bodyFont: fontId,
+      textStyles: {
+        ...textStyles,
+        caption: { ...textStyles.caption, fontFamily: fontId },
+      },
+    } as const;
+
+    expect(StyleDefinitionSchema.parse(style)).toEqual(style);
+    expect(StyleDefinitionSchema.parse(assetStyle)).toEqual(assetStyle);
+    expect(() =>
+      StyleDefinitionSchema.parse({ ...assetStyle, assetVersion: 2 }),
+    ).toThrow();
+    expect(() =>
+      StyleDefinitionSchema.parse({ ...style, bodyFont: fontId }),
+    ).toThrow();
+  });
+
+  it("validates company asset catalogs and resolved render payloads", () => {
+    const fontId = "00000000-0000-4000-8000-000000000002";
+    const logoId = "00000000-0000-4000-8000-000000000003";
+    expect(
+      CompanyAssetsSchema.parse({
+        logos: [
+          {
+            id: logoId,
+            displayName: "Primary logo.png",
+            contentType: "image/png",
+            byteSize: 128,
+            contentUrl: `/api/companies/${id}/assets/logos/${logoId}/content`,
+            createdAt: "2026-07-21T10:00:00.000Z",
+          },
+        ],
+        fonts: [
+          {
+            id: "Inter",
+            source: "built_in",
+            familyName: "Inter",
+            subfamilyName: null,
+            displayName: "Inter",
+            owned: false,
+            contentUrl: null,
+          },
+          {
+            id: fontId,
+            source: "uploaded",
+            familyName: "Acme Sans",
+            subfamilyName: "Regular",
+            displayName: "Acme Sans Regular",
+            owned: true,
+            contentUrl: `/api/companies/${id}/assets/fonts/${fontId}/content`,
+          },
+        ],
+        colors: ["#aabbcc"],
+      }),
+    ).toBeTruthy();
+
+    expect(
+      ResolvedStyleAssetsSchema.parse({
+        logo: {
+          id: logoId,
+          contentType: "image/png",
+          byteSize: 3,
+          sha256: "a".repeat(64),
+          base64: "YWJj",
+        },
+        fonts: [
+          {
+            id: fontId,
+            contentType: "font/woff2",
+            byteSize: 3,
+            sha256: "b".repeat(64),
+            base64: "YWJj",
+          },
+        ],
+      }),
+    ).toBeTruthy();
   });
 
   it("accepts the reference document request", () => {

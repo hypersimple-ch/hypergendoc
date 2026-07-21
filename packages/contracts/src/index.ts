@@ -1,3 +1,4 @@
+export * from "./asset.js";
 export * from "./auth.js";
 export * from "./common.js";
 export * from "./company.js";

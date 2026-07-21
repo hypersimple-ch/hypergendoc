@@ -308,4 +308,110 @@ integration("Git document history migration", () => {
       }
     }
   });
+
+  it("adds company asset libraries without rewriting existing styles or logos", async () => {
+    const client = await pool!.connect();
+    const schema = `assets_${randomUUID().replaceAll("-", "")}`;
+    const workspace = randomUUID();
+    const company = randomUUID();
+    const style = randomUUID();
+    const styleVersion = randomUUID();
+    const logo = randomUUID();
+    const fontObject = randomUUID();
+    const definition = {
+      logoObjectId: logo,
+      bodyFont: "Inter",
+      colors: { primary: "#AABBCC" },
+    };
+
+    try {
+      await client.query(`CREATE SCHEMA ${quoteIdentifier(schema)}`);
+      for (const migration of [
+        "0000_ambitious_blink.sql",
+        "0001_replace_document_pipeline.sql",
+        "0002_git_document_history.sql",
+      ]) {
+        await beginInSchema(client, schema);
+        await applyMigration(client, schema, migration);
+        await client.query("COMMIT");
+      }
+
+      await beginInSchema(client, schema);
+      await client.query(
+        "INSERT INTO workspaces (id, name) VALUES ($1, 'asset migration')",
+        [workspace],
+      );
+      await client.query(
+        "INSERT INTO companies (id, workspace_id, name) VALUES ($1, $2, 'asset company')",
+        [company, workspace],
+      );
+      await client.query(
+        "INSERT INTO styles (id, workspace_id, company_id, name) VALUES ($1, $2, $3, 'asset style')",
+        [style, workspace, company],
+      );
+      await client.query(
+        "INSERT INTO stored_objects (id, workspace_id, company_id, purpose, object_key, content_type, byte_size, sha256) VALUES ($1, $2, $3, 'logo', $4, 'image/png', 3, $5)",
+        [logo, workspace, company, `logo-${logo}`, "d".repeat(64)],
+      );
+      await client.query(
+        "INSERT INTO style_versions (id, workspace_id, style_id, version, definition) VALUES ($1, $2, $3, 1, $4::jsonb)",
+        [styleVersion, workspace, style, JSON.stringify(definition)],
+      );
+      await client.query("COMMIT");
+
+      await beginInSchema(client, schema);
+      await applyMigration(client, schema, "0003_company_assets.sql");
+      await client.query("COMMIT");
+
+      await beginInSchema(client, schema);
+      const preserved = await client.query<{
+        definition: unknown;
+        purpose: string;
+        displayName: string | null;
+      }>(
+        'SELECT sv.definition, so.purpose::text AS purpose, so.display_name AS "displayName" FROM style_versions sv JOIN stored_objects so ON so.id = $1 WHERE sv.id = $2',
+        [logo, styleVersion],
+      );
+      expect(preserved.rows[0]).toEqual({
+        definition,
+        purpose: "logo",
+        displayName: null,
+      });
+
+      await client.query(
+        "INSERT INTO stored_objects (id, workspace_id, company_id, purpose, display_name, object_key, content_type, byte_size, sha256) VALUES ($1, $2, $3, 'font', 'Acme Sans', $4, 'font/woff2', 3, $5)",
+        [fontObject, workspace, company, `font-${fontObject}`, "e".repeat(64)],
+      );
+      await client.query(
+        "INSERT INTO company_fonts (workspace_id, company_id, stored_object_id, family_name, subfamily_name) VALUES ($1, $2, $3, 'Acme Sans', 'Regular')",
+        [workspace, company, fontObject],
+      );
+      await client.query(
+        "INSERT INTO company_colors (workspace_id, company_id, color) VALUES ($1, $2, '#aabbcc')",
+        [workspace, company],
+      );
+      await client.query("SAVEPOINT invalid_color");
+      await expect(
+        client.query(
+          "INSERT INTO company_colors (workspace_id, company_id, color) VALUES ($1, $2, '#AABBCC')",
+          [workspace, company],
+        ),
+      ).rejects.toThrow();
+      await client.query("ROLLBACK TO SAVEPOINT invalid_color");
+      await client.query("ROLLBACK");
+    } finally {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        // No active transaction.
+      }
+      try {
+        await client.query(
+          `DROP SCHEMA IF EXISTS ${quoteIdentifier(schema)} CASCADE`,
+        );
+      } finally {
+        client.release();
+      }
+    }
+  });
 });

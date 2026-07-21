@@ -104,6 +104,26 @@ describe("CompanyDocumentGitStore", () => {
     });
   });
 
+  it("accepts safe Better Auth user IDs and rejects trailer injection", async () => {
+    const gitStore = await store();
+    const actor = {
+      type: "user" as const,
+      id: "tmMw4N9FeELUeIppXC6papyrOKqJJJ8h",
+    };
+
+    await gitStore.write(writeInput({ actor }));
+    await expect(gitStore.history(writeInput())).resolves.toMatchObject([
+      { actor },
+    ]);
+    await expect(
+      gitStore.write(
+        writeInput({
+          actor: { type: "user", id: "unsafe\nActor-Type: credential" },
+        }),
+      ),
+    ).rejects.toThrow(GitDocumentStoreValidationError);
+  });
+
   it("reads the HEAD document commit when commit timestamps are non-monotonic", async () => {
     const gitStore = await store();
     await gitStore.write(writeInput({ body: "older" }));
