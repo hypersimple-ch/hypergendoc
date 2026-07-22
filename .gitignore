@@ -9,6 +9,7 @@ coverage/
 *.tsbuildinfo
 .local/
 artifacts/
+.lazyweb/
 test-results/
 deploy/prod/secrets.env
 deploy/prod/state/
