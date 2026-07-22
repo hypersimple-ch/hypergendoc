@@ -1,7 +1,17 @@
 "use client";
 
-import * as SelectPrimitive from "@radix-ui/react-select";
 import { createPortal } from "react-dom";
+import { Button as UiButton } from "./ui/button";
+import { Input as UiInput } from "./ui/input";
+import { badgeVariants } from "./ui/badge";
+import {
+  Select as UiSelect,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
+import { cn } from "../lib/utils";
 import {
   Children,
   cloneElement,
@@ -27,11 +37,18 @@ export const Button = forwardRef<
   { className = "", tone = "primary", type = "button", ...props },
   ref,
 ) {
+  const variant =
+    tone === "danger"
+      ? "destructive"
+      : tone === "quiet"
+        ? "outline"
+        : "default";
   return (
-    <button
+    <UiButton
       ref={ref}
       type={type}
-      className={`button button--${tone} ${className}`}
+      variant={variant}
+      className={cn(`button button--${tone}`, className)}
       {...props}
     />
   );
@@ -41,7 +58,7 @@ export const Input = forwardRef<
   HTMLInputElement,
   InputHTMLAttributes<HTMLInputElement>
 >(function Input({ className = "", ...props }, ref) {
-  return <input ref={ref} className={`input ${className}`} {...props} />;
+  return <UiInput ref={ref} className={cn("input", className)} {...props} />;
 });
 
 export function FormField({
@@ -126,14 +143,14 @@ export function Select({
   "aria-invalid"?: boolean | "true" | "false";
 }) {
   return (
-    <SelectPrimitive.Root
+    <UiSelect
       value={value}
       onValueChange={onValueChange}
       disabled={disabled}
       required={required}
       {...(name ? { name } : {})}
     >
-      <SelectPrimitive.Trigger
+      <SelectTrigger
         id={id}
         className="select-trigger"
         aria-label={ariaLabel}
@@ -141,39 +158,21 @@ export function Select({
         aria-invalid={ariaInvalid}
         aria-required={required || undefined}
       >
-        <SelectPrimitive.Value placeholder={placeholder} />
-        <SelectPrimitive.Icon
-          className="select-trigger__icon"
-          aria-hidden="true"
-        >
-          ▾
-        </SelectPrimitive.Icon>
-      </SelectPrimitive.Trigger>
-      <SelectPrimitive.Portal>
-        <SelectPrimitive.Content className="select-content" position="popper">
-          <SelectPrimitive.Viewport>
-            {options.map((option) => (
-              <SelectPrimitive.Item
-                key={option.value}
-                value={option.value}
-                {...(option.disabled ? { disabled: true } : {})}
-                className="select-item"
-              >
-                <SelectPrimitive.ItemText>
-                  {option.label}
-                </SelectPrimitive.ItemText>
-                <SelectPrimitive.ItemIndicator
-                  className="select-item__indicator"
-                  aria-hidden="true"
-                >
-                  ✓
-                </SelectPrimitive.ItemIndicator>
-              </SelectPrimitive.Item>
-            ))}
-          </SelectPrimitive.Viewport>
-        </SelectPrimitive.Content>
-      </SelectPrimitive.Portal>
-    </SelectPrimitive.Root>
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent className="select-content" position="popper">
+        {options.map((option) => (
+          <SelectItem
+            key={option.value}
+            value={option.value}
+            {...(option.disabled ? { disabled: true } : {})}
+            className="select-item"
+          >
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </UiSelect>
   );
 }
 
@@ -390,9 +389,17 @@ export function Status({
   children: ReactNode;
   kind?: "neutral" | "success" | "warning" | "error";
 }) {
+  const variant =
+    kind === "success"
+      ? "success"
+      : kind === "warning"
+        ? "warning"
+        : kind === "error"
+          ? "error"
+          : "neutral";
   return (
     <p
-      className={`status status--${kind}`}
+      className={cn(badgeVariants({ variant }), `status status--${kind}`)}
       role={kind === "error" ? "alert" : "status"}
     >
       {children}

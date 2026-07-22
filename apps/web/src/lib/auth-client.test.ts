@@ -20,6 +20,24 @@ describe("auth client", () => {
     logger.mockRestore();
   });
 
+  it("surfaces Better Auth's safe top-level failure message", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ message: "Email or password is incorrect." }),
+            { status: 401 },
+          ),
+        ),
+    );
+
+    await expect(
+      authClient.login("person@example.test", "incorrect password"),
+    ).rejects.toThrow("Email or password is incorrect.");
+  });
+
   it("uses the login verification callback for signup and resend requests", async () => {
     const fetcher = vi
       .fn<typeof fetch>()

@@ -60,7 +60,11 @@ vi.mock("./primitives", () => ({
 
 import { ApiError } from "../lib/api-client";
 import { useActiveCompany } from "./active-company";
-import { SessionBoundary, WorkspaceShell } from "./workspace-shell";
+import {
+  SessionBoundary,
+  WorkspaceSetupBoundary,
+  WorkspaceShell,
+} from "./workspace-shell";
 
 const workspace = {
   id: "workspace-1",
@@ -154,6 +158,45 @@ describe("SessionBoundary", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByText("Dashboard")).toBeVisible();
+  });
+});
+
+describe("WorkspaceSetupBoundary", () => {
+  it("only exposes workspace creation to signed-in accounts without membership", async () => {
+    current.mockRejectedValueOnce(
+      new ApiError("unauthenticated", "Sign in required."),
+    );
+    const unauthenticated = render(
+      <WorkspaceSetupBoundary>
+        <p>Create workspace form</p>
+      </WorkspaceSetupBoundary>,
+    );
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith("/login?next=%2Fsetup"),
+    );
+    expect(screen.queryByText("Create workspace form")).not.toBeInTheDocument();
+
+    unauthenticated.unmount();
+    vi.clearAllMocks();
+    current.mockRejectedValueOnce(new ApiError("forbidden", "No membership."));
+    render(
+      <WorkspaceSetupBoundary>
+        <p>Create workspace form</p>
+      </WorkspaceSetupBoundary>,
+    );
+    expect(await screen.findByText("Create workspace form")).toBeVisible();
+  });
+
+  it("redirects existing workspace members away from setup", async () => {
+    current.mockResolvedValue({ id: "workspace-1" });
+    render(
+      <WorkspaceSetupBoundary>
+        <p>Create workspace form</p>
+      </WorkspaceSetupBoundary>,
+    );
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/workspace"));
+    expect(screen.queryByText("Create workspace form")).not.toBeInTheDocument();
   });
 });
 
@@ -270,6 +313,9 @@ describe("WorkspaceShell", () => {
     menu.focus();
     fireEvent.click(menu);
     expect(menu).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.queryByRole("region", { name: "Active workspace context" }),
+    ).not.toBeInTheDocument();
     expect(menu).toHaveAttribute("aria-controls", "workspace-navigation");
     const overview = screen.getByRole("link", { name: "Overview" });
     await waitFor(() => expect(overview).toHaveFocus());

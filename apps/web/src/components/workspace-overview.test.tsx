@@ -192,7 +192,7 @@ describe("WorkspaceOverview", () => {
     ).toHaveTextContent("Current workspace-wide total");
     expect(
       screen.getByText("Active MCP credentials (workspace-wide)").parentElement,
-    ).toHaveTextContent("1Current workspace-wide total");
+    ).toHaveTextContent("1 active · Current workspace-wide total");
     expect(api.credentials).toHaveBeenCalledOnce();
   });
 

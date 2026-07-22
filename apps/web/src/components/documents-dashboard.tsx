@@ -1,4 +1,6 @@
 "use client";
+import Link from "next/link";
+import { FileText, History } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Document, DocumentCommit } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
@@ -56,60 +58,101 @@ export function DocumentsDashboard() {
   }
 
   return (
-    <>
-      <section className="page-heading">
+    <div className="mx-auto max-w-7xl space-y-5 text-foreground">
+      <header className="flex flex-col gap-3 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="eyebrow">Documents</p>
-          <h1>Immutable commit history.</h1>
-          <p>
-            Documents are created by authorized agents. Inspect a company’s
-            source and commit metadata, or revert a prior commit as a new
-            revision.
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+            Operations console
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
+            Documents
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+            Inspect immutable source history and restore a prior revision as a
+            new commit.
           </p>
         </div>
-      </section>
+        <Link
+          className="inline-flex items-center gap-2 text-sm font-medium text-primary underline-offset-4 hover:underline"
+          href="/workspace/styles"
+        >
+          Review styles
+        </Link>
+      </header>
       {activeCompany && (
-        <section className="panel dashboard-panel filters document-filters">
-          <p className="subtle">
-            Showing documents for {activeCompany.name} only.
-          </p>
-          <FormField label="Search documents in this company">
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by title"
-            />
-          </FormField>
+        <section
+          aria-label="Document filters"
+          className="rounded-lg border border-border bg-card p-4 shadow-sm"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                Active scope
+              </p>
+              <p className="mt-1 text-sm font-medium">
+                Showing documents for {activeCompany.name} only.
+              </p>
+            </div>
+            <div className="w-full sm:max-w-sm">
+              <FormField label="Search documents in this company">
+                <Input
+                  className="pl-9"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search by title"
+                />
+              </FormField>
+            </div>
+          </div>
         </section>
       )}
-      <section className="panel dashboard-panel document-directory-panel">
-        <LoadState loading={companyLoading} error={companyError} />
-        {noActiveCompany ? (
-          <NoActiveCompany />
-        ) : activeCompany ? (
-          <>
-            <LoadState {...data} />
-            {data.value &&
-              (visible.length ? (
-                <Table
-                  caption={`Documents for ${activeCompany.name}`}
-                  columns={["Document", "Updated", "Open"]}
-                >
-                  {visible.map((document) => (
-                    <DocumentRow
-                      key={document.id}
-                      document={document}
-                      onOpen={openHistory}
-                    />
-                  ))}
-                </Table>
-              ) : query ? (
-                <NoMatchingDocuments onClear={() => setQuery("")} />
-              ) : (
-                <NoDocumentsForCompany companyName={activeCompany.name} />
-              ))}
-          </>
-        ) : null}
+      <section
+        aria-labelledby="document-directory-heading"
+        className="rounded-lg border border-border bg-card shadow-sm"
+      >
+        <div className="flex items-center justify-between border-b border-border p-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Directory
+            </p>
+            <h2
+              id="document-directory-heading"
+              className="mt-1 text-base font-semibold"
+            >
+              Document records
+            </h2>
+          </div>
+          <FileText className="size-5 text-primary" aria-hidden="true" />
+        </div>
+        <div className="p-4">
+          <LoadState loading={companyLoading} error={companyError} />
+          {noActiveCompany ? (
+            <NoActiveCompany />
+          ) : activeCompany ? (
+            <>
+              <LoadState {...data} />
+              {data.value &&
+                (visible.length ? (
+                  <Table
+                    caption={`Documents for ${activeCompany.name}`}
+                    columns={["Document", "Updated", "History"]}
+                  >
+                    {visible.map((document) => (
+                      <DocumentRow
+                        key={document.id}
+                        document={document}
+                        onOpen={openHistory}
+                      />
+                    ))}
+                  </Table>
+                ) : query ? (
+                  <NoMatchingDocuments onClear={() => setQuery("")} />
+                ) : (
+                  <NoDocumentsForCompany companyName={activeCompany.name} />
+                ))}
+            </>
+          ) : null}
+        </div>
       </section>
       {selected && selected.companyId === activeCompany?.id && (
         <DocumentDetail
@@ -117,7 +160,7 @@ export function DocumentsDashboard() {
           onClose={() => setSelected(undefined)}
         />
       )}
-    </>
+    </div>
   );
 }
 
@@ -126,6 +169,12 @@ function NoActiveCompany() {
     <Empty>
       <strong>Choose or create a company to view documents</strong>
       <p>Documents are organized by the active company in this workspace.</p>
+      <Link
+        className="mt-3 inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline"
+        href="/workspace/companies"
+      >
+        Manage companies
+      </Link>
     </Empty>
   );
 }
@@ -156,18 +205,22 @@ function DocumentRow({
   onOpen: (document: Document, trigger: HTMLButtonElement) => void;
 }) {
   return (
-    <tr className="document-record">
+    <tr className="hover:bg-muted/50">
       <td data-label="Document">
-        <strong>{document.title}</strong>
+        <div className="flex items-center gap-2">
+          <FileText className="size-4 text-primary" aria-hidden="true" />
+          <strong>{document.title}</strong>
+        </div>
       </td>
-      <td data-label="Updated">
+      <td data-label="Updated" className="text-sm text-muted-foreground">
         {new Date(document.updatedAt).toLocaleDateString()}
       </td>
-      <td data-label="Open">
+      <td data-label="History">
         <Button
           tone="quiet"
           onClick={(event) => onOpen(document, event.currentTarget)}
         >
+          <History className="size-3.5" aria-hidden="true" />
           View history
         </Button>
       </td>
@@ -239,10 +292,10 @@ function DocumentDetail({
 
   return (
     <section
-      className="panel dashboard-panel document-detail"
+      className="rounded-lg border border-border bg-card p-4 shadow-sm"
       aria-labelledby="document-detail-title"
     >
-      <div className="panel-heading">
+      <div className="flex items-start justify-between gap-3 border-b border-border pb-4">
         <div>
           <p className="eyebrow">Document detail</p>
           <h2 id="document-detail-title" ref={heading} tabIndex={-1}>

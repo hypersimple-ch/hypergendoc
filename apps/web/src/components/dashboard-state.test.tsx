@@ -17,6 +17,15 @@ function deferred<T>(): Deferred<T> {
 }
 
 describe("dashboard state", () => {
+  it("announces secure loading without exposing an empty or error state", () => {
+    render(<LoadState loading />);
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Loading secure workspace data…",
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("offers an explicit retry for load failures", () => {
     const retry = vi.fn();
     render(

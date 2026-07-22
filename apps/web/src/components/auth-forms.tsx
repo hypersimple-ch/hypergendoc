@@ -47,7 +47,7 @@ export function LoginForm() {
   return (
     <form
       onSubmit={state.submit}
-      className="auth-form"
+      className="space-y-4"
       aria-busy={state.pending}
       aria-label="Sign in"
     >
@@ -70,10 +70,13 @@ export function LoginForm() {
         />
       </FormField>
       {state.error && <Status kind="error">{state.error}</Status>}
-      <Button type="submit" disabled={state.pending}>
+      <Button className="w-full" type="submit" disabled={state.pending}>
         {state.pending ? "Signing in…" : "Sign in"}
       </Button>
-      <Link className="auth-form__recovery-link" href="/forgot-password">
+      <Link
+        className="block text-center text-sm font-medium text-primary hover:text-primary-hover"
+        href="/forgot-password"
+      >
         Forgot password?
       </Link>
     </form>
@@ -88,7 +91,7 @@ export function RegisterForm() {
   return (
     <form
       onSubmit={state.submit}
-      className="auth-form"
+      className="space-y-4"
       aria-busy={state.pending}
       aria-label="Create account"
     >
@@ -121,7 +124,7 @@ export function RegisterForm() {
       </FormField>
       {state.error && <Status kind="error">{state.error}</Status>}
       {state.message && <Status kind="success">{state.message}</Status>}
-      <Button type="submit" disabled={state.pending}>
+      <Button className="w-full" type="submit" disabled={state.pending}>
         {state.pending ? "Creating…" : "Create account"}
       </Button>
     </form>
@@ -138,7 +141,7 @@ export function EmailActionForm({ kind }: { kind: "forgot" | "verify" }) {
   return (
     <form
       onSubmit={state.submit}
-      className="auth-form"
+      className="space-y-4"
       aria-busy={state.pending}
       aria-label={
         kind === "forgot"
@@ -157,7 +160,7 @@ export function EmailActionForm({ kind }: { kind: "forgot" | "verify" }) {
       </FormField>
       {state.error && <Status kind="error">{state.error}</Status>}
       {state.message && <Status kind="success">{state.message}</Status>}
-      <Button type="submit" disabled={state.pending}>
+      <Button className="w-full" type="submit" disabled={state.pending}>
         {state.pending
           ? kind === "forgot"
             ? "Sending reset link…"
@@ -179,7 +182,7 @@ export function ResetForm() {
   );
   if (!token)
     return (
-      <div className="auth-form">
+      <div className="space-y-4">
         <Status kind="warning">
           This password-reset link is missing or incomplete. Request a new one
           before continuing.
@@ -190,7 +193,7 @@ export function ResetForm() {
   return (
     <form
       onSubmit={state.submit}
-      className="auth-form"
+      className="space-y-4"
       aria-busy={state.pending}
       aria-label="Set new password"
     >
@@ -208,7 +211,7 @@ export function ResetForm() {
       {state.message && (
         <Status kind="success">Password changed. You can now sign in.</Status>
       )}
-      <Button type="submit" disabled={state.pending}>
+      <Button className="w-full" type="submit" disabled={state.pending}>
         {state.pending ? "Saving password…" : "Set new password"}
       </Button>
     </form>
@@ -224,7 +227,7 @@ export function WorkspaceForm() {
   return (
     <form
       onSubmit={state.submit}
-      className="auth-form"
+      className="space-y-4"
       aria-busy={state.pending}
       aria-label="Create workspace"
     >
@@ -237,7 +240,7 @@ export function WorkspaceForm() {
         />
       </FormField>
       {state.error && <Status kind="error">{state.error}</Status>}
-      <Button type="submit" disabled={state.pending}>
+      <Button className="w-full" type="submit" disabled={state.pending}>
         {state.pending ? "Creating workspace…" : "Create workspace"}
       </Button>
     </form>
@@ -252,7 +255,7 @@ export function InvitationForm() {
   );
   if (!invitationId)
     return (
-      <div className="auth-form">
+      <div className="space-y-4">
         <Status kind="warning">
           This invitation link is missing or incomplete. Ask a workspace owner
           for a valid invitation.
@@ -263,11 +266,11 @@ export function InvitationForm() {
   return (
     <form
       onSubmit={state.submit}
-      className="auth-form"
+      className="space-y-4"
       aria-busy={state.pending}
       aria-label="Accept workspace invitation"
     >
-      <p className="auth-form__intro">
+      <p className="text-sm leading-6 text-muted-foreground">
         Accepting an invitation joins the workspace named in your secure
         invitation.
       </p>
@@ -277,7 +280,7 @@ export function InvitationForm() {
           Invitation accepted. You can open your workspace.
         </Status>
       )}
-      <Button type="submit" disabled={state.pending}>
+      <Button className="w-full" type="submit" disabled={state.pending}>
         {state.pending ? "Accepting invitation…" : "Accept invitation"}
       </Button>
     </form>

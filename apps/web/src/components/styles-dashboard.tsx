@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { ArrowRight, Palette, Plus } from "lucide-react";
 import type { Company, CompanyAssets, Style } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
 import { useActiveCompany } from "./active-company";
@@ -80,24 +81,35 @@ export function StylesDashboard() {
 
   return (
     <div className="styles-page">
-      <section className="page-heading">
-        <div>
-          <p className="eyebrow">Styles</p>
-          <h1>Structured brand systems.</h1>
-          <p>
+      <section className="page-heading !items-start !border-border !pb-5">
+        <div className="max-w-2xl">
+          <p className="eyebrow !font-mono !text-primary">Style library</p>
+          <h1 className="!mt-1 !text-3xl !font-semibold !tracking-tight text-foreground sm:!text-4xl">
+            Structured brand systems.
+          </h1>
+          <p className="!mt-2 !text-sm !leading-6 text-muted-foreground">
             Build an intentional visual language. Every save remains an
             immutable version for reliable document rendering.
           </p>
         </div>
+        <div className="hidden items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground sm:flex">
+          <Palette className="size-4 text-primary" aria-hidden="true" />
+          Versioned document styling
+        </div>
       </section>
       {activeCompany ? (
         <>
-          <section className="panel dashboard-panel">
-            <div className="panel-heading">
+          <section className="panel dashboard-panel !rounded-lg !border-border !bg-card !p-5 !shadow-sm">
+            <div className="panel-heading !mb-4 !items-center">
               <div>
-                <p className="eyebrow">New style</p>
-                <h2>Create for {activeCompany.name}</h2>
+                <p className="eyebrow !font-mono !text-primary">New style</p>
+                <h2 className="!mt-1 !text-lg !font-semibold text-foreground">
+                  Create for {activeCompany.name}
+                </h2>
               </div>
+              <span className="hidden rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-foreground sm:inline-flex">
+                <Plus className="mr-1 size-3.5" aria-hidden="true" /> New system
+              </span>
             </div>
             <StyleCreate
               company={activeCompany}
@@ -116,22 +128,35 @@ export function StylesDashboard() {
             />
           </section>
           <section
-            className="panel dashboard-panel"
+            className="panel dashboard-panel !rounded-lg !border-border !bg-card !p-5 !shadow-sm"
             aria-labelledby="style-library-title"
           >
-            <div className="panel-heading">
+            <div className="panel-heading !mb-4 !items-center">
               <div>
-                <p className="eyebrow">Library</p>
-                <h2 id="style-library-title">Your style systems</h2>
+                <p className="eyebrow !font-mono !text-primary">Library</p>
+                <h2
+                  id="style-library-title"
+                  className="!mt-1 !text-lg !font-semibold text-foreground"
+                >
+                  Your style systems
+                </h2>
               </div>
+              {styles && (
+                <span className="font-mono text-xs text-muted-foreground">
+                  {styles.length} total
+                </span>
+              )}
             </div>
             {error && <Status kind="error">{error}</Status>}
             {styles &&
               (styles.length ? (
                 <div className="style-card-grid">
                   {styles.map((style) => (
-                    <article className="style-card" key={style.id}>
-                      <div className="style-card__head">
+                    <article
+                      className="style-card !gap-4 !rounded-lg !border-border !bg-card !p-4 !shadow-none hover:!border-primary hover:!shadow-sm"
+                      key={style.id}
+                    >
+                      <div className="style-card__head !text-xs !text-muted-foreground">
                         <span
                           className={`badge ${style.activeVersionId ? "" : "badge--quiet"}`}
                         >
@@ -142,7 +167,9 @@ export function StylesDashboard() {
                           {new Date(style.createdAt).toLocaleDateString()}
                         </time>
                       </div>
-                      <h3>{style.name}</h3>
+                      <h3 className="!font-sans !text-base !font-semibold !tracking-tight text-foreground">
+                        {style.name}
+                      </h3>
                       <div
                         className="style-card__swatches"
                         aria-label="Example color palette"
@@ -166,8 +193,13 @@ export function StylesDashboard() {
                           }}
                         />
                       </div>
-                      <Button tone="quiet" onClick={() => setSelected(style)}>
-                        Edit versions
+                      <Button
+                        className="!justify-between"
+                        tone="quiet"
+                        onClick={() => setSelected(style)}
+                      >
+                        Edit versions{" "}
+                        <ArrowRight className="size-4" aria-hidden="true" />
                       </Button>
                     </article>
                   ))}
@@ -246,7 +278,10 @@ function StyleCreate({
   }
 
   return (
-    <form className="inline-form" onSubmit={(event) => void submit(event)}>
+    <form
+      className="inline-form !gap-3"
+      onSubmit={(event) => void submit(event)}
+    >
       <FormField label="New style name">
         <Input
           value={name}
@@ -256,7 +291,8 @@ function StyleCreate({
           disabled={busy}
         />
       </FormField>
-      <Button type="submit" disabled={busy}>
+      <Button className="sm:!min-w-36" type="submit" disabled={busy}>
+        <Plus className="size-4" aria-hidden="true" />
         {busy ? "Creating…" : "Create style"}
       </Button>
       {error && <Status kind="error">{error}</Status>}

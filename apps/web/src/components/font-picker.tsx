@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { Check, ChevronDown, Search } from "lucide-react";
 import * as Popover from "@radix-ui/react-popover";
 import type { StyleDefinition } from "@hypergendoc/contracts";
 import { fontGroups } from "./style-studio-definition";
@@ -81,12 +82,15 @@ export function FontPicker({
         aria-expanded={open}
       >
         <span style={{ fontFamily: value }}>{value}</span>
-        <span aria-hidden="true">⌄</span>
+        <ChevronDown
+          className="size-4 text-muted-foreground"
+          aria-hidden="true"
+        />
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
           ref={content}
-          className="font-picker-content"
+          className="font-picker-content !rounded-lg !border-border !bg-popover !shadow-xl"
           role="dialog"
           aria-label="Font family options"
           side="bottom"
@@ -120,7 +124,10 @@ export function FontPicker({
           }}
         >
           <label className="font-picker-search">
-            <span>Search fonts</span>
+            <span className="flex items-center gap-1.5">
+              <Search className="size-3.5 text-primary" aria-hidden="true" />
+              Search fonts
+            </span>
             <input
               ref={search}
               value={query}
@@ -146,7 +153,14 @@ export function FontPicker({
                         }}
                       >
                         <span>{font.label}</span>
-                        <b aria-hidden="true">Aa</b>
+                        {font.value === value ? (
+                          <Check
+                            className="size-4 text-primary"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <b aria-hidden="true">Aa</b>
+                        )}
                       </button>
                     ))}
                   </section>
@@ -170,7 +184,14 @@ export function FontPicker({
                         }}
                       >
                         <span>{font}</span>
-                        <b aria-hidden="true">Aa</b>
+                        {font === value ? (
+                          <Check
+                            className="size-4 text-primary"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <b aria-hidden="true">Aa</b>
+                        )}
                       </button>
                     ))}
                   </section>

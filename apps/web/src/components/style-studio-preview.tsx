@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { FileText } from "lucide-react";
 import type {
   CompanyAssets,
   StyleDefinition,
@@ -76,22 +77,28 @@ export function StyleStudioPreview({
 
   return (
     <aside
-      className="style-preview-pane style-preview-pane--responsive"
+      className="style-preview-pane style-preview-pane--responsive rounded-lg border border-border bg-card p-4 shadow-sm"
       aria-labelledby="style-preview-title"
     >
       {fontFaces && <style>{fontFaces}</style>}
       <div className="style-preview-pane__heading">
         <div>
-          <p className="eyebrow">Instant canvas</p>
-          <h3 id="style-preview-title">Sample document</h3>
+          <p className="eyebrow !font-mono !text-primary">Instant canvas</p>
+          <h3
+            id="style-preview-title"
+            className="flex items-center gap-2 !font-sans !text-base !font-semibold text-foreground"
+          >
+            <FileText className="size-4 text-primary" aria-hidden="true" />
+            Sample document
+          </h3>
         </div>
         <small id="style-preview-note">
-          Approximate browser preview — open the generated PDF for the exact
-          server render.
+          Browser approximation — open the generated PDF for the exact server
+          render.
         </small>
       </div>
       <div
-        className="style-preview-frame"
+        className="style-preview-frame !rounded-lg !border-border !bg-muted !p-3"
         aria-describedby="style-preview-note"
       >
         <article

@@ -1,5 +1,7 @@
 "use client";
+
 import { useRef, useState } from "react";
+import { KeyRound, LockKeyhole, ShieldCheck } from "lucide-react";
 import type { McpAction } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
 import { useActiveCompany } from "./active-company";
@@ -12,12 +14,14 @@ import {
   Status,
   Table,
 } from "./primitives";
+
 const actions: McpAction[] = [
   "companies:read",
   "styles:read",
   "documents:read",
   "documents:write",
 ];
+
 export function CredentialsDashboard() {
   const {
     context,
@@ -47,8 +51,12 @@ export function CredentialsDashboard() {
   const creatingRef = useRef(false);
   const revokingRef = useRef(false);
   const owner = context?.role === "owner";
-  async function create(e: React.FormEvent) {
-    e.preventDefault();
+  const activeCredentials = credentials.value?.filter(
+    (credential) => !credential.revokedAt,
+  ).length;
+
+  async function create(event: React.FormEvent) {
+    event.preventDefault();
     if (creatingRef.current) return;
     creatingRef.current = true;
     setCreating(true);
@@ -65,8 +73,8 @@ export function CredentialsDashboard() {
       setAck(false);
       setName("");
       credentials.reload();
-    } catch (e) {
-      setMessage(safeError(e));
+    } catch (error) {
+      setMessage(safeError(error));
     } finally {
       creatingRef.current = false;
       setCreating(false);
@@ -91,13 +99,14 @@ export function CredentialsDashboard() {
       setMessage("Credential revoked.");
       credentials.reload();
       setCredentialToRevoke(undefined);
-    } catch (e) {
-      setMessage(safeError(e));
+    } catch (error) {
+      setMessage(safeError(error));
     } finally {
       revokingRef.current = false;
       setRevokingId(undefined);
     }
   }
+
   if (contextLoading || contextError)
     return (
       <LoadState
@@ -108,29 +117,67 @@ export function CredentialsDashboard() {
     );
   if (!owner)
     return (
-      <section className="panel feature-state">
-        <p className="eyebrow">MCP access</p>
-        <h1>Owner access required.</h1>
-        <Status kind="warning">
-          Only workspace owners can view or manage MCP credentials.
-        </Status>
-      </section>
-    );
-  return (
-    <>
-      <section className="page-heading credentials-dashboard">
-        <div>
-          <p className="eyebrow">MCP access</p>
-          <h1>Scoped agent access.</h1>
-          <p>
-            Each credential can access only the companies and MCP actions you
-            select. Its secret is shown once, never stored in this browser, and
-            cannot be retrieved later.
-          </p>
+      <section className="panel feature-state border border-border bg-card p-5">
+        <div className="flex gap-3">
+          <LockKeyhole
+            className="mt-0.5 size-5 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <div>
+            <p className="eyebrow">Governance / MCP access</p>
+            <h1 className="mt-1">Owner access required.</h1>
+            <Status kind="warning">
+              Only workspace owners can view or manage MCP credentials.
+            </Status>
+          </div>
         </div>
       </section>
+    );
+
+  return (
+    <>
+      <section className="credentials-dashboard page-heading flex flex-col gap-5 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="max-w-2xl">
+          <p className="eyebrow">Governance / MCP access</p>
+          <h1 className="mt-1">Scoped agent access</h1>
+          <p>
+            Issue narrowly scoped credentials for MCP agents. Secrets are shown
+            once and cannot be retrieved later.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <ShieldCheck className="size-4 text-primary" aria-hidden="true" />
+          Owner-managed credentials
+        </div>
+      </section>
+
+      <section
+        className="grid gap-3 sm:grid-cols-3"
+        aria-label="Credential access summary"
+      >
+        <SummaryCard
+          icon={<KeyRound className="size-4" />}
+          label="Active credentials"
+          value={activeCredentials ?? "—"}
+        />
+        <SummaryCard
+          icon={<ShieldCheck className="size-4" />}
+          label="Selected company scopes"
+          value={companyIds.length}
+        />
+        <SummaryCard
+          icon={<LockKeyhole className="size-4" />}
+          label="One-time secret reveal"
+          value="Enabled"
+        />
+      </section>
+
       {message && (
-        <div className="credentials-dashboard__announcement" aria-live="polite">
+        <div
+          className="mutation-feedback"
+          aria-live="polite"
+          aria-atomic="true"
+        >
           <Status
             kind={
               message.includes("copied") || message === "Credential revoked."
@@ -142,21 +189,40 @@ export function CredentialsDashboard() {
           </Status>
         </div>
       )}
+
       {token ? (
-        <section className="panel dashboard-panel token-panel credentials-dashboard__token">
-          <h2>Copy this secret now</h2>
-          <Status kind="warning">
-            This is the only time the full token will be shown. Save it in a
-            secret manager before continuing.
-          </Status>
-          <code className="secret-token">{token}</code>
-          <div className="row-actions credentials-dashboard__token-actions">
+        <section
+          className="panel dashboard-panel border border-warning/30 bg-card p-4 sm:p-5"
+          aria-labelledby="credential-token-title"
+        >
+          <div className="flex gap-3">
+            <div className="rounded-md bg-warning-soft p-2 text-warning">
+              <LockKeyhole className="size-4" aria-hidden="true" />
+            </div>
+            <div>
+              <p className="eyebrow">Secret handling</p>
+              <h2
+                id="credential-token-title"
+                className="text-base font-semibold"
+              >
+                Copy this secret now
+              </h2>
+              <Status kind="warning">
+                This is the only time the full token will be shown. Save it in a
+                secret manager before continuing.
+              </Status>
+            </div>
+          </div>
+          <code className="secret-token mt-4 block overflow-x-auto rounded-md border border-border bg-muted p-3 text-sm">
+            {token}
+          </code>
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
             <Button onClick={() => void copy()}>Copy token</Button>
-            <label className="checkbox">
+            <label className="checkbox text-sm">
               <input
                 type="checkbox"
                 checked={ack}
-                onChange={(e) => setAck(e.target.checked)}
+                onChange={(event) => setAck(event.target.checked)}
               />{" "}
               I have saved this one-time token in a secret manager.
             </label>
@@ -170,71 +236,114 @@ export function CredentialsDashboard() {
           </div>
         </section>
       ) : (
-        <section className="panel dashboard-panel credentials-dashboard__create">
-          <form
-            className="credential-form credentials-dashboard__create-form"
-            onSubmit={(event) => void create(event)}
-          >
+        <section className="panel dashboard-panel border border-border bg-card p-4 sm:p-5">
+          <div className="mb-4 flex gap-3">
+            <div className="rounded-md bg-accent p-2 text-accent-foreground">
+              <KeyRound className="size-4" aria-hidden="true" />
+            </div>
+            <div>
+              <p className="eyebrow">New credential</p>
+              <h2 className="text-base font-semibold">
+                Define the access boundary
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Limit each agent to the companies and actions it needs.
+              </p>
+            </div>
+          </div>
+          <form className="grid gap-5" onSubmit={(event) => void create(event)}>
             <FormField label="Credential name">
               <Input
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(event) => setName(event.target.value)}
                 required
                 maxLength={120}
                 disabled={creating}
               />
             </FormField>
-            <fieldset>
-              <legend>Company scopes</legend>
-              {companies
-                .filter((c) => !c.archivedAt)
-                .map((c) => (
-                  <label className="checkbox" key={c.id}>
-                    <input
-                      type="checkbox"
-                      checked={companyIds.includes(c.id)}
-                      onChange={(e) =>
-                        setCompanyIds((ids) =>
-                          e.target.checked
-                            ? [...ids, c.id]
-                            : ids.filter((id) => id !== c.id),
-                        )
-                      }
-                    />
-                    {c.name}
-                  </label>
-                ))}
-            </fieldset>
-            <fieldset>
-              <legend>Allowed actions</legend>
-              {actions.map((action) => (
-                <label className="checkbox" key={action}>
-                  <input
-                    type="checkbox"
-                    checked={selectedActions.includes(action)}
-                    onChange={(e) =>
-                      setActions((current) =>
-                        e.target.checked
-                          ? [...current, action]
-                          : current.filter((a) => a !== action),
-                      )
-                    }
-                  />
-                  {action}
-                </label>
-              ))}
-            </fieldset>
-            <Button
-              type="submit"
-              disabled={creating || !selectedActions.length}
-            >
-              {creating ? "Creating…" : "Create credential"}
-            </Button>
+            <div className="grid gap-5 lg:grid-cols-2">
+              <fieldset className="rounded-md border border-border p-4">
+                <legend className="px-1 text-sm font-medium">
+                  Company scopes
+                </legend>
+                <p className="mb-3 text-sm text-muted-foreground">
+                  Select the companies this credential may access.
+                </p>
+                <div className="grid gap-2">
+                  {companies
+                    .filter((company) => !company.archivedAt)
+                    .map((company) => (
+                      <label className="checkbox" key={company.id}>
+                        <input
+                          type="checkbox"
+                          checked={companyIds.includes(company.id)}
+                          onChange={(event) =>
+                            setCompanyIds((ids) =>
+                              event.target.checked
+                                ? [...ids, company.id]
+                                : ids.filter((id) => id !== company.id),
+                            )
+                          }
+                        />
+                        {company.name}
+                      </label>
+                    ))}
+                </div>
+              </fieldset>
+              <fieldset className="rounded-md border border-border p-4">
+                <legend className="px-1 text-sm font-medium">
+                  Allowed actions
+                </legend>
+                <p className="mb-3 text-sm text-muted-foreground">
+                  Grant only the MCP actions this agent requires.
+                </p>
+                <div className="grid gap-2">
+                  {actions.map((action) => (
+                    <label className="checkbox font-mono text-sm" key={action}>
+                      <input
+                        type="checkbox"
+                        checked={selectedActions.includes(action)}
+                        onChange={(event) =>
+                          setActions((current) =>
+                            event.target.checked
+                              ? [...current, action]
+                              : current.filter(
+                                  (selected) => selected !== action,
+                                ),
+                          )
+                        }
+                      />
+                      {action}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            </div>
+            <div className="flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-muted-foreground">
+                The full token is never stored in this browser.
+              </p>
+              <Button
+                type="submit"
+                disabled={creating || !selectedActions.length}
+              >
+                {creating ? "Creating…" : "Create credential"}
+              </Button>
+            </div>
           </form>
         </section>
       )}
-      <section className="panel dashboard-panel credentials-dashboard__list">
-        <h2>Credentials</h2>
+
+      <section className="panel dashboard-panel border border-border bg-card p-4 sm:p-5">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="eyebrow">Credential register</p>
+            <h2 className="text-base font-semibold">Credentials</h2>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Revocation takes effect on the next request.
+          </p>
+        </div>
         <LoadState {...credentials} />
         {credentials.value &&
           (credentials.value.length ? (
@@ -242,35 +351,40 @@ export function CredentialsDashboard() {
               caption="MCP credentials"
               columns={["Credential", "Scopes", "Last used", "State", "Action"]}
             >
-              {credentials.value.map((c) => (
-                <tr key={c.id}>
+              {credentials.value.map((credential) => (
+                <tr key={credential.id}>
                   <td>
-                    <strong>{c.name}</strong>
-                    <small className="subtle">{c.prefix}…</small>
+                    <div className="flex flex-col gap-0.5">
+                      <strong>{credential.name}</strong>
+                      <small className="font-mono text-muted-foreground">
+                        {credential.prefix}…
+                      </small>
+                    </div>
                   </td>
                   <td>
-                    {c.companyIds.length} companies · {c.actions.join(", ")}
+                    {credential.companyIds.length} companies ·{" "}
+                    {credential.actions.join(", ")}
                   </td>
                   <td>
-                    {c.lastUsedAt
-                      ? new Date(c.lastUsedAt).toLocaleString()
+                    {credential.lastUsedAt
+                      ? new Date(credential.lastUsedAt).toLocaleString()
                       : "Never"}
                   </td>
                   <td>
-                    {c.revokedAt ? (
+                    {credential.revokedAt ? (
                       <span className="badge badge--muted">Revoked</span>
                     ) : (
                       <span className="badge">Active</span>
                     )}
                   </td>
-                  <td className="credentials-dashboard__actions">
-                    {!c.revokedAt && (
+                  <td>
+                    {!credential.revokedAt && (
                       <Button
                         tone="danger"
-                        disabled={revokingId === c.id}
-                        onClick={() => setCredentialToRevoke(c.id)}
+                        disabled={revokingId === credential.id}
+                        onClick={() => setCredentialToRevoke(credential.id)}
                       >
-                        {revokingId === c.id ? "Revoking…" : "Revoke"}
+                        {revokingId === credential.id ? "Revoking…" : "Revoke"}
                       </Button>
                     )}
                   </td>
@@ -297,5 +411,25 @@ export function CredentialsDashboard() {
         }}
       />
     </>
+  );
+}
+
+function SummaryCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-card px-4 py-3">
+      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {icon}
+        {label}
+      </div>
+      <p className="mt-2 text-lg font-semibold text-foreground">{value}</p>
+    </div>
   );
 }

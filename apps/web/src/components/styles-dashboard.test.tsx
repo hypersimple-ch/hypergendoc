@@ -650,6 +650,30 @@ describe("StylesDashboard", () => {
     ).toBeVisible();
   });
 
+  it("switches between editor, preview, and split without losing the view controls", async () => {
+    await openEditor();
+    const view = screen.getByRole("group", { name: "Workspace view" });
+    const typography = screen.getByRole("heading", { name: "Typography" });
+    const preview = screen.getByRole("complementary", {
+      name: "Sample document",
+    });
+
+    fireEvent.click(within(view).getByRole("button", { name: "Preview" }));
+    expect(typography).not.toBeVisible();
+    expect(preview).toBeVisible();
+    expect(document.querySelector(".style-studio__layout")).toHaveClass(
+      "style-studio__layout--preview",
+    );
+
+    fireEvent.click(within(view).getByRole("button", { name: "Editor" }));
+    expect(typography).toBeVisible();
+    expect(preview).not.toBeVisible();
+
+    fireEvent.click(within(view).getByRole("button", { name: "Split" }));
+    expect(typography).toBeVisible();
+    expect(preview).toBeVisible();
+  });
+
   it("orders section navigation before the accessible live preview", async () => {
     await openEditor();
     const navigation = screen.getByRole("navigation", {

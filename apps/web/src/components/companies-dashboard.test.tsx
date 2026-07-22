@@ -46,6 +46,18 @@ afterEach(() => {
 });
 
 describe("CompaniesDashboard", () => {
+  it("keeps singular counts and the active-scope badge readable", () => {
+    activeCompany.mockReturnValue(workspace({ activeCompany: company }));
+    render(<CompaniesDashboard />);
+
+    expect(screen.getByText("1 record")).toBeVisible();
+    expect(screen.queryByText("1 records")).not.toBeInTheDocument();
+    expect(screen.getByText("Active scope")).toHaveClass(
+      "shrink-0",
+      "whitespace-nowrap",
+    );
+  });
+
   it("reloads the shared company collection after creating and renaming", async () => {
     const reload = vi.fn();
     activeCompany.mockReturnValue(workspace({ reload }));

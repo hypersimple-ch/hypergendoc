@@ -36,8 +36,9 @@ export function NumberField({
   };
 
   return (
-    <span className="number-field">
+    <span className="number-field rounded-md border border-border bg-card px-2 py-1">
       <input
+        className="!min-h-7 !border-0 !bg-transparent !p-0 !shadow-none focus-visible:!ring-0"
         type="number"
         aria-label={`${label} value`}
         min={min}
@@ -70,7 +71,7 @@ export function Range({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="range-control">
+    <label className="range-control rounded-md border border-border bg-muted/40 p-2.5">
       <span>
         {label}
         <NumberField
@@ -84,6 +85,7 @@ export function Range({
         />
       </span>
       <input
+        className="accent-primary"
         type="range"
         aria-label={label}
         min={min}

@@ -23,14 +23,31 @@ export default async function LoginPage({
 
   return (
     <>
-      <header className="auth-card__header">
-        <p className="eyebrow">Welcome back</p>
-        <h1>Sign in to your workspace.</h1>
+      <header className="mb-7">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">
+          Welcome back
+        </p>
+        <h1 className="mt-3 text-3xl font-semibold tracking-[-0.035em] text-foreground">
+          Sign in to your workspace.
+        </h1>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">
+          Manage the brands, access, and documents your team relies on.
+        </p>
       </header>
-      {status && <Status kind={status.kind}>{status.message}</Status>}
+      {status && (
+        <div className="mb-5">
+          <Status kind={status.kind}>{status.message}</Status>
+        </div>
+      )}
       <LoginForm />
-      <p className="form-foot">
-        New here? <Link href="/register">Create an account</Link>
+      <p className="mt-6 text-center text-sm text-muted-foreground">
+        New here?{" "}
+        <Link
+          className="font-semibold text-primary hover:text-primary-hover"
+          href="/register"
+        >
+          Create an account
+        </Link>
       </p>
     </>
   );

@@ -16,11 +16,26 @@ export function ColorControls({
 }) {
   return (
     <section
-      className="control-section style-studio__section"
+      className="control-section style-studio__section !rounded-lg !border-border !bg-card !p-4 !shadow-sm"
       aria-labelledby="color-palette-title"
     >
-      <h3 id="color-palette-title">Color palette</h3>
-      <div className="color-grid">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h3
+            id="color-palette-title"
+            className="!mb-1 !font-sans !text-base !font-semibold !normal-case !tracking-normal text-foreground"
+          >
+            Color palette
+          </h3>
+          <p className="text-xs font-normal normal-case tracking-normal text-muted-foreground">
+            Document colors remain independent from the application interface.
+          </p>
+        </div>
+        <span className="rounded bg-muted px-2 py-1 font-mono text-[10px] uppercase text-muted-foreground">
+          Color
+        </span>
+      </div>
+      <div className="color-grid !gap-3">
         {colorKeys.map((key) => (
           <ColorControl
             key={key}
@@ -110,7 +125,7 @@ export function ColorControl({
   return (
     <div
       ref={control}
-      className="color-control"
+      className="color-control rounded-md border border-border bg-muted/40 p-2.5"
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.preventDefault();
@@ -121,7 +136,7 @@ export function ColorControl({
       <span>{displayName}</span>
       <button
         ref={trigger}
-        className="color-trigger"
+        className="color-trigger !rounded-md !border-border !bg-card"
         type="button"
         aria-label={`Edit ${displayName}`}
         aria-haspopup="dialog"
@@ -135,7 +150,7 @@ export function ColorControl({
       {open && (
         <div
           ref={popover}
-          className="color-popover"
+          className="color-popover !rounded-lg !border-border !bg-popover !shadow-xl"
           id={id}
           role="dialog"
           aria-label={`${displayName} picker`}
@@ -170,7 +185,11 @@ export function ColorControl({
               aria-label={`${displayName} hex`}
             />
           </label>
-          <button type="button" onClick={() => close()}>
+          <button
+            className="mt-2 min-h-9 rounded-md border border-border bg-card px-3 text-xs font-medium text-foreground hover:bg-muted"
+            type="button"
+            onClick={() => close()}
+          >
             Close {displayName} picker
           </button>
         </div>

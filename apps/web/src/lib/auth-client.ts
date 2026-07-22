@@ -2,7 +2,11 @@
 
 import { api, ApiError } from "./api-client";
 
-type AuthReply = { redirect?: boolean; error?: { message?: string } };
+type AuthReply = {
+  redirect?: boolean;
+  message?: string;
+  error?: { message?: string };
+};
 
 const verificationCallbackURL = "/login?verified=true";
 
@@ -21,7 +25,9 @@ async function auth(path: string, body: Record<string, string>) {
     if (!result.ok)
       throw new ApiError(
         "network_error",
-        data.error?.message ?? "We could not complete that request.",
+        data.error?.message ??
+          data.message ??
+          "We could not complete that request.",
       );
     return data;
   } catch (error) {

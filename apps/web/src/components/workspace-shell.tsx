@@ -2,28 +2,44 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import {
+  Building2,
+  FileStack,
+  KeyRound,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  Palette,
+  ScrollText,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Button } from "./ui/button";
 import { ApiError, workspaceApi } from "../lib/api-client";
 import { authClient } from "../lib/auth-client";
 import { ActiveCompanyProvider, useActiveCompany } from "./active-company";
 import { Select } from "./primitives";
 
 const navigationGroups = [
-  { label: "Workspace", links: [["/workspace", "Overview"]] },
+  {
+    label: "Workspace",
+    links: [{ href: "/workspace", label: "Overview", icon: LayoutDashboard }],
+  },
   {
     label: "Content",
     links: [
-      ["/workspace/companies", "Companies"],
-      ["/workspace/styles", "Styles"],
-      ["/workspace/documents", "Documents"],
+      { href: "/workspace/companies", label: "Companies", icon: Building2 },
+      { href: "/workspace/styles", label: "Styles", icon: Palette },
+      { href: "/workspace/documents", label: "Documents", icon: FileStack },
     ],
   },
   {
     label: "Administration",
     links: [
-      ["/workspace/members", "Members"],
-      ["/workspace/credentials", "MCP access"],
-      ["/workspace/audit", "Audit log"],
+      { href: "/workspace/members", label: "Members", icon: Users },
+      { href: "/workspace/credentials", label: "MCP access", icon: KeyRound },
+      { href: "/workspace/audit", label: "Audit log", icon: ScrollText },
     ],
   },
 ] as const;
@@ -76,14 +92,14 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
           Ask your workspace administrator to resolve the duplicate memberships,
           then try again.
         </p>
-        <button
+        <Button
           onClick={() => {
             setState("checking");
             setAttempt((value) => value + 1);
           }}
         >
           Try again
-        </button>
+        </Button>
       </main>
     );
   if (state === "error")
@@ -91,7 +107,7 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
       <main id="main-content" className="session-loading" role="alert">
         <p>{error ?? "We could not verify workspace access."}</p>
         <p>Please check your connection and try again.</p>
-        <button
+        <Button
           onClick={() => {
             setError(undefined);
             setState("checking");
@@ -99,8 +115,62 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
           }}
         >
           Try again
-        </button>
+        </Button>
       </main>
+    );
+  return <>{children}</>;
+}
+
+export function WorkspaceSetupBoundary({ children }: { children: ReactNode }) {
+  const router = useRouter();
+  const [state, setState] = useState<"checking" | "ready" | "error">(
+    "checking",
+  );
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    workspaceApi
+      .current()
+      .then(() => {
+        if (alive) router.replace("/workspace");
+      })
+      .catch((caught: unknown) => {
+        if (!alive) return;
+        if (caught instanceof ApiError && caught.code === "unauthenticated") {
+          router.replace("/login?next=%2Fsetup");
+          return;
+        }
+        if (caught instanceof ApiError && caught.code === "forbidden") {
+          setState("ready");
+          return;
+        }
+        if (caught instanceof ApiError && caught.code === "conflict") {
+          router.replace("/workspace");
+          return;
+        }
+        setState("error");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [attempt, router]);
+
+  if (state === "checking")
+    return <p role="status">Checking your secure session…</p>;
+  if (state === "error")
+    return (
+      <div className="space-y-4" role="alert">
+        <p>We could not verify whether this account needs a workspace.</p>
+        <Button
+          onClick={() => {
+            setState("checking");
+            setAttempt((value) => value + 1);
+          }}
+        >
+          Try again
+        </Button>
+      </div>
     );
   return <>{children}</>;
 }
@@ -190,18 +260,24 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
 
   return (
     <div className="workspace-shell">
-      <header className="workspace-top workspace-shell__header">
+      <header
+        className={`workspace-top workspace-shell__header ${open ? "workspace-top--menu-open" : ""}`}
+      >
         <Link
           href="/workspace"
-          className="wordmark"
+          className="wordmark workspace-brand"
           tabIndex={open ? -1 : undefined}
+          aria-label="HyperGenDoc overview"
         >
-          Hyper<span>Gen</span>Doc
+          <span className="workspace-brand__mark" aria-hidden="true">
+            H
+          </span>
+          <span className="workspace-brand__name">HyperGenDoc</span>
         </Link>
         <section
           className="workspace-context"
           aria-label="Active workspace context"
-          inert={open ? true : undefined}
+          hidden={open}
         >
           <div className="workspace-context__identity">
             <span className="workspace-label">Current workspace</span>
@@ -255,7 +331,8 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
           }
           onClick={() => (open ? closeMenu(true) : setOpen(true))}
         >
-          Menu
+          <Menu size={18} aria-hidden="true" />
+          <span>Menu</span>
         </button>
         <button
           className="avatar"
@@ -264,7 +341,11 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
           disabled={open || signOutState === "pending"}
           onClick={() => void signOut()}
         >
-          {signOutState === "pending" ? "…" : "HG"}
+          {signOutState === "pending" ? (
+            <span aria-hidden="true">…</span>
+          ) : (
+            <LogOut size={17} aria-hidden="true" />
+          )}
         </button>
         {signOutState === "error" ? (
           <p role="alert">Sign out failed. Please try again.</p>
@@ -281,14 +362,15 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
             <section className="workspace-navigation__group" key={group.label}>
               <h2 className="workspace-navigation__heading">{group.label}</h2>
               <ul>
-                {group.links.map(([href, label]) => (
+                {group.links.map(({ href, label, icon: Icon }) => (
                   <li key={href}>
                     <Link
                       href={href}
                       aria-current={pathname === href ? "page" : undefined}
                       onClick={() => closeMenu()}
                     >
-                      {label}
+                      <Icon size={17} strokeWidth={1.8} aria-hidden="true" />
+                      <span>{label}</span>
                     </Link>
                   </li>
                 ))}
@@ -296,10 +378,10 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
             </section>
           ))}
         </nav>
-        <p className="sidebar-note">
-          Membership and permissions are resolved by the server for every
-          request.
-        </p>
+        <div className="sidebar-note">
+          <ShieldCheck size={16} aria-hidden="true" />
+          <p>Permissions are verified by the server for every request.</p>
+        </div>
       </aside>
       <main
         id="main-content"

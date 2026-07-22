@@ -1,5 +1,7 @@
 "use client";
+
 import { useRef, useState } from "react";
+import { Filter, ScrollText, ShieldCheck } from "lucide-react";
 import { dashboardApi, type WorkspaceAuditEvent } from "../lib/dashboard-api";
 import { useActiveCompany } from "./active-company";
 import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
@@ -7,17 +9,24 @@ import { Button, Status, Table } from "./primitives";
 
 export function AuditDashboard() {
   const { context, loading, error, reload } = useActiveCompany();
-
   if (loading || error)
     return <LoadState loading={loading} error={error} reload={reload} />;
   if (context?.role !== "owner")
     return (
-      <section className="panel feature-state">
-        <p className="eyebrow">Audit log</p>
-        <h1>Owner access required.</h1>
-        <Status kind="warning">
-          Only workspace owners can review security and change events.
-        </Status>
+      <section className="panel feature-state border border-border bg-card p-5">
+        <div className="flex gap-3">
+          <ShieldCheck
+            className="mt-0.5 size-5 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <div>
+            <p className="eyebrow">Governance / audit log</p>
+            <h1 className="mt-1">Owner access required.</h1>
+            <Status kind="warning">
+              Only workspace owners can review security and change events.
+            </Status>
+          </div>
+        </div>
       </section>
     );
   return <OwnerAuditLog />;
@@ -71,21 +80,56 @@ function OwnerAuditLog() {
 
   return (
     <>
-      <section className="page-heading audit-dashboard">
-        <div>
-          <p className="eyebrow">Audit log</p>
-          <h1>A clear trail, without the secrets.</h1>
+      <section className="audit-dashboard page-heading flex flex-col gap-5 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="max-w-2xl">
+          <p className="eyebrow">Governance / audit log</p>
+          <h1 className="mt-1">Security activity</h1>
           <p>
             Review workspace changes and security-relevant actions. Request
             bodies, credentials, and document content are never displayed.
           </p>
         </div>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <ShieldCheck className="size-4 text-primary" aria-hidden="true" />
+          Append-only event trail
+        </div>
       </section>
-      <section className="panel dashboard-panel audit-dashboard__events">
+
+      <section
+        className="grid gap-3 sm:grid-cols-3"
+        aria-label="Audit log summary"
+      >
+        <SummaryCard
+          icon={<ScrollText className="size-4" />}
+          label="Loaded events"
+          value={firstPage.value ? events.length : "—"}
+        />
+        <SummaryCard
+          icon={<ShieldCheck className="size-4" />}
+          label="Showing"
+          value={firstPage.value ? filteredEvents.length : "—"}
+        />
+        <SummaryCard
+          icon={<ShieldCheck className="size-4" />}
+          label="Access"
+          value="Owners only"
+        />
+      </section>
+
+      <section className="panel dashboard-panel border border-border bg-card p-4 sm:p-5">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="eyebrow">Event register</p>
+            <h2 className="text-base font-semibold">Workspace audit events</h2>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Sensitive request data is intentionally excluded.
+          </p>
+        </div>
         <LoadState {...firstPage} />
         {firstPage.value && events.length > 0 && (
-          <div className="audit-dashboard__filters">
-            <label>
+          <div className="mb-4 grid gap-3 rounded-lg border border-border bg-muted/40 p-3 md:grid-cols-[minmax(0,1fr)_12rem]">
+            <label className="grid gap-1.5 text-sm font-medium">
               Filter events
               <input
                 className="input"
@@ -95,8 +139,11 @@ function OwnerAuditLog() {
                 placeholder="Action, target, or actor"
               />
             </label>
-            <label>
-              Outcome
+            <label className="grid gap-1.5 text-sm font-medium">
+              <span className="flex items-center gap-1.5">
+                <Filter className="size-3.5" aria-hidden="true" />
+                Outcome
+              </span>
               <select
                 className="input"
                 value={outcome}
@@ -110,9 +157,13 @@ function OwnerAuditLog() {
           </div>
         )}
         {announcement && (
-          <p className="audit-dashboard__announcement" aria-live="polite">
-            {announcement}
-          </p>
+          <div
+            className="mutation-feedback"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <Status kind="success">{announcement}</Status>
+          </div>
         )}
         {firstPage.value &&
           (events.length ? (
@@ -124,7 +175,9 @@ function OwnerAuditLog() {
                 {filteredEvents.map((event) => (
                   <tr key={event.id}>
                     <td>
-                      <strong>{event.action}</strong>
+                      <strong className="font-mono text-sm">
+                        {event.action}
+                      </strong>
                     </td>
                     <td>{event.targetType}</td>
                     <td>{event.actorType}</td>
@@ -147,7 +200,7 @@ function OwnerAuditLog() {
               )}
               {moreError && <Status kind="error">{moreError}</Status>}
               {offset !== undefined && (
-                <div className="audit-dashboard__pagination">
+                <div className="mt-4 flex justify-end border-t border-border pt-4">
                   <Button
                     disabled={loadingMore}
                     onClick={() => void loadMore()}
@@ -165,5 +218,25 @@ function OwnerAuditLog() {
           ))}
       </section>
     </>
+  );
+}
+
+function SummaryCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-card px-4 py-3">
+      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {icon}
+        {label}
+      </div>
+      <p className="mt-2 text-lg font-semibold text-foreground">{value}</p>
+    </div>
   );
 }

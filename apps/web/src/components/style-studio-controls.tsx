@@ -87,10 +87,25 @@ export function TypographyControls({
 
   return (
     <section
-      className="control-section style-studio__section"
+      className="control-section style-studio__section !rounded-lg !border-border !bg-card !p-4 !shadow-sm"
       aria-labelledby="typography-title"
     >
-      <h3 id="typography-title">Typography</h3>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h3
+            id="typography-title"
+            className="!mb-1 !font-sans !text-base !font-semibold !normal-case !tracking-normal text-foreground"
+          >
+            Typography
+          </h3>
+          <p className="text-xs font-normal normal-case tracking-normal text-muted-foreground">
+            Set the type scale and voice for every document role.
+          </p>
+        </div>
+        <span className="rounded bg-muted px-2 py-1 font-mono text-[10px] uppercase text-muted-foreground">
+          Type
+        </span>
+      </div>
       <FormField label="Upload company font">
         <Input
           type="file"
@@ -260,10 +275,25 @@ export function PageControls({
     }));
   return (
     <section
-      className="control-section style-studio__section"
+      className="control-section style-studio__section !rounded-lg !border-border !bg-card !p-4 !shadow-sm"
       aria-labelledby="page-layout-title"
     >
-      <h3 id="page-layout-title">Page layout</h3>
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h3
+            id="page-layout-title"
+            className="!mb-1 !font-sans !text-base !font-semibold !normal-case !tracking-normal text-foreground"
+          >
+            Page layout
+          </h3>
+          <p className="text-xs font-normal normal-case tracking-normal text-muted-foreground">
+            Choose the format and print-safe margins.
+          </p>
+        </div>
+        <span className="rounded bg-muted px-2 py-1 font-mono text-[10px] uppercase text-muted-foreground">
+          Layout
+        </span>
+      </div>
       <div
         className="segmented-control segmented-control--titled"
         role="radiogroup"
@@ -379,10 +409,25 @@ export function BrandControls({
   return (
     <>
       <section
-        className="control-section style-studio__section"
+        className="control-section style-studio__section !rounded-lg !border-border !bg-card !p-4 !shadow-sm"
         aria-labelledby="brand-assets-title"
       >
-        <h3 id="brand-assets-title">Brand assets</h3>
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h3
+              id="brand-assets-title"
+              className="!mb-1 !font-sans !text-base !font-semibold !normal-case !tracking-normal text-foreground"
+            >
+              Brand assets
+            </h3>
+            <p className="text-xs font-normal normal-case tracking-normal text-muted-foreground">
+              Use an uploaded logo in generated documents.
+            </p>
+          </div>
+          <span className="rounded bg-muted px-2 py-1 font-mono text-[10px] uppercase text-muted-foreground">
+            Assets
+          </span>
+        </div>
         <div
           className="logo-selector"
           role="radiogroup"
@@ -455,10 +500,20 @@ export function HeaderFooterControls({
 }) {
   return (
     <section
-      className="control-section style-studio__section"
+      className="control-section style-studio__section !rounded-lg !border-border !bg-card !p-4 !shadow-sm"
       aria-labelledby={`${label.toLowerCase()}-controls-title`}
     >
-      <h3 id={`${label.toLowerCase()}-controls-title`}>{label}</h3>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h3
+          id={`${label.toLowerCase()}-controls-title`}
+          className="!mb-0 !font-sans !text-base !font-semibold !normal-case !tracking-normal text-foreground"
+        >
+          {label}
+        </h3>
+        <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+          Running content
+        </span>
+      </div>
       <label className="toggle-row">
         <input
           type="checkbox"
