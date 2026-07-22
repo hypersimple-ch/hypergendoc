@@ -1248,6 +1248,42 @@ legend {
     monospace;
   text-align: center;
 }
+.layout-presets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.2rem;
+  padding: 0.5rem 0.2rem 0.2rem;
+  border: 1px solid #c8c0b1;
+  background: #f2ede3;
+}
+.layout-presets__title {
+  grid-column: 1 / -1;
+  padding: 0 0.2rem 0.25rem;
+  color: #3f4a45;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.layout-presets__option {
+  min-height: 2.55rem;
+  padding: 0.4rem 0.65rem;
+  border: 0;
+  background: transparent;
+  color: #59635d;
+  font:
+    700 0.74rem Manrope,
+    sans-serif;
+  cursor: pointer;
+}
+.layout-presets__option:hover {
+  background: #fffdf8;
+  color: var(--studio-forest);
+  box-shadow: 0 1px 3px #80766633;
+}
+.layout-presets__option:focus-visible {
+  outline: 3px solid #e49b4d;
+  outline-offset: 2px;
+}
 .margin-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

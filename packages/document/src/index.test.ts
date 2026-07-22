@@ -198,6 +198,29 @@ describe("document content foundation", () => {
     );
   });
 
+  it("embeds selected built-in Google Fonts without external requests", () => {
+    const output = renderDocumentHtml("Text", "markdown", {
+      ...style,
+      bodyFont: "Roboto",
+      headingFont: "DM Serif Display",
+    });
+
+    expect(output).toContain(
+      'font-family: "HypergendocBuiltIn_Roboto"; src: url("data:font/woff2;base64,',
+    );
+    expect(output).toContain(
+      'font-family: "HypergendocBuiltIn_DMSerifDisplay"; src: url("data:font/woff2;base64,',
+    );
+    expect(output).toContain(
+      'body { color: #17201c; font-family: "HypergendocBuiltIn_Roboto", Arial, sans-serif;',
+    );
+    expect(output).toContain(
+      'h1, h2, h3, h4, h5, h6 { color: #17201c; font-family: "HypergendocBuiltIn_DMSerifDisplay", Georgia, serif;',
+    );
+    expect(output).toContain("font-src data:");
+    expect(output).not.toContain("fonts.googleapis.com");
+  });
+
   it("keeps captions while applying existing sanitizer safeguards", () => {
     const output = renderDocumentHtml(
       '<table><caption onclick="x()"><img src="x">Quarterly <strong>results</strong></caption><tr><td>Value</td></tr></table>',

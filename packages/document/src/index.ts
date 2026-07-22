@@ -6,6 +6,7 @@ import type {
 } from "@hypergendoc/contracts";
 import { marked } from "marked";
 import sanitizeHtml from "sanitize-html";
+import { builtInFonts } from "./built-in-fonts.js";
 
 export const DOCUMENT_BODY_MAX_BYTES = 256 * 1024;
 export const DOCUMENT_MAX_PAGES = 100;
@@ -158,6 +159,16 @@ const font = (name: StyleDefinition["bodyFont"]) =>
     Lato: "Arial, sans-serif",
     Montserrat: "Arial, sans-serif",
     "Open Sans": "Arial, sans-serif",
+    Roboto: "Arial, sans-serif",
+    Poppins: "Arial, sans-serif",
+    "Nunito Sans": "Arial, sans-serif",
+    Ubuntu: "Arial, sans-serif",
+    Oswald: "Arial, sans-serif",
+    Raleway: "Arial, sans-serif",
+    Figtree: "Arial, sans-serif",
+    "Plus Jakarta Sans": "Arial, sans-serif",
+    Outfit: "Arial, sans-serif",
+    Rubik: "Arial, sans-serif",
     "Noto Serif": "Georgia, serif",
     "Libertinus Serif": "Georgia, serif",
     Fraunces: "Georgia, serif",
@@ -166,8 +177,20 @@ const font = (name: StyleDefinition["bodyFont"]) =>
     "Source Serif 4": "Georgia, serif",
     "Playfair Display": "Georgia, serif",
     "Libre Baskerville": "Georgia, serif",
+    "Roboto Slab": "Georgia, serif",
+    "PT Serif": "Georgia, serif",
+    "Crimson Pro": "Georgia, serif",
+    "Cormorant Garamond": "Georgia, serif",
+    "DM Serif Display": "Georgia, serif",
+    Alegreya: "Georgia, serif",
+    "EB Garamond": "Georgia, serif",
     "IBM Plex Mono": "Courier New, monospace",
     "Source Code Pro": "Courier New, monospace",
+    "JetBrains Mono": "Courier New, monospace",
+    "Fira Code": "Courier New, monospace",
+    "Space Mono": "Courier New, monospace",
+    "Roboto Mono": "Courier New, monospace",
+    Inconsolata: "Courier New, monospace",
   })[name];
 
 const uuidPattern =
@@ -207,6 +230,13 @@ const decodedAsset = (asset: {
 };
 
 const fontFamily = (id: string) => `HypergendocFont_${id.replaceAll("-", "")}`;
+const builtInFontFamily = (id: string) =>
+  `HypergendocBuiltIn_${id.replaceAll(/[^a-z0-9]/gi, "")}`;
+
+const builtInFontFaces = (id: string) =>
+  Object.hasOwn(builtInFonts, id)
+    ? builtInFonts[id as keyof typeof builtInFonts]
+    : undefined;
 
 function resolveAssets(
   style: StyleDefinition,
@@ -299,10 +329,19 @@ export function renderDocumentHtml(
   const fragment = sanitizeFragment(rendered);
   if (!semanticText(fragment)) fail("invalid_body");
 
+  const fontReferences = [
+    style.bodyFont,
+    style.headingFont,
+    ...Object.values(style.textStyles ?? {}).flatMap((textStyle) =>
+      textStyle ? [textStyle.fontFamily] : [],
+    ),
+  ];
   const renderedFont = (reference: StyleDefinition["bodyFont"]) =>
-    assetRendering?.fonts.has(reference)
-      ? `"${fontFamily(reference)}", sans-serif`
-      : font(reference);
+    builtInFontFaces(reference)
+      ? `"${builtInFontFamily(reference)}", ${font(reference)}`
+      : assetRendering?.fonts.has(reference)
+        ? `"${fontFamily(reference)}", sans-serif`
+        : font(reference);
   const legacyHeadingCss = `h1, h2, h3, h4, h5, h6 { color: ${style.colors.heading}; font-family: ${renderedFont(style.headingFont)}; line-height: 1.2; }
 h1 { font-size: ${(style.bodySizePt * style.headingScale).toFixed(2)}pt; } h2 { font-size: ${(style.bodySizePt * style.headingScale * 0.85).toFixed(2)}pt; }`;
   const textStyles = style.textStyles;
@@ -320,7 +359,15 @@ h1 { font-size: ${(style.bodySizePt * style.headingScale).toFixed(2)}pt; } h2 { 
     : `color: ${style.colors.text}; font-family: ${renderedFont(style.bodyFont)}; font-size: ${style.bodySizePt}pt; line-height: 1.5;`;
   const emphasis = style.italicStyle;
   const pageSize = style.page.size === "A4" ? "A4" : "letter";
-  const fontFaceCss = assetRendering
+  const builtInFontFaceCss = [...new Set(fontReferences)]
+    .flatMap((id) =>
+      (builtInFontFaces(id) ?? []).map(
+        (face) =>
+          `@font-face { font-family: "${builtInFontFamily(id)}"; src: url("data:font/woff2;base64,${face.base64}") format("woff2"); font-style: normal; font-weight: ${face.weight}; }`,
+      ),
+    )
+    .join("\n");
+  const customFontFaceCss = assetRendering
     ? [...assetRendering.fonts.entries()]
         .sort(([left], [right]) => left.localeCompare(right))
         .map(
@@ -329,13 +376,17 @@ h1 { font-size: ${(style.bodySizePt * style.headingScale).toFixed(2)}pt; } h2 { 
         )
         .join("\n")
     : "";
+  const fontFaceCss = [builtInFontFaceCss, customFontFaceCss]
+    .filter(Boolean)
+    .join("\n");
   const logo = assetRendering?.assets.logo;
   const logoMarkup = logo
     ? `<img class="document-logo" src="data:${logo.contentType};base64,${logo.base64}" alt="">`
     : "";
-  const csp = assetRendering
-    ? "default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'"
-    : "default-src 'none'; style-src 'unsafe-inline'";
+  const csp =
+    assetRendering || builtInFontFaceCss
+      ? "default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'"
+      : "default-src 'none'; style-src 'unsafe-inline'";
   return `<!doctype html>
 <html lang="en">
 <head>

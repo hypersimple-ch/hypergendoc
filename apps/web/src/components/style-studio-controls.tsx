@@ -189,6 +189,19 @@ export function TypographyControls({
   );
 }
 
+const marginPresets = [
+  { label: "Compact", marginMm: 12 },
+  { label: "Standard", marginMm: 20 },
+  { label: "Spacious", marginMm: 28 },
+] as const;
+
+const printPresets = [
+  { label: "A4 Standard", size: "A4", marginMm: 20 },
+  { label: "A4 Narrow", size: "A4", marginMm: 12 },
+  { label: "Letter Standard", size: "LETTER", marginMm: 25.4 },
+  { label: "Letter Narrow", size: "LETTER", marginMm: 12.7 },
+] as const;
+
 export function PageControls({
   definition,
   setDefinition,
@@ -202,6 +215,21 @@ export function PageControls({
     ["marginBottomMm", "Bottom"],
     ["marginLeftMm", "Left"],
   ] as const;
+  const applyPreset = (
+    marginMm: number,
+    size?: StyleDefinition["page"]["size"],
+  ) =>
+    setDefinition((draft) => ({
+      ...draft,
+      page: {
+        ...draft.page,
+        ...(size ? { size } : {}),
+        marginTopMm: marginMm,
+        marginRightMm: marginMm,
+        marginBottomMm: marginMm,
+        marginLeftMm: marginMm,
+      },
+    }));
   return (
     <section className="control-section" aria-labelledby="page-layout-title">
       <h3 id="page-layout-title">Page layout</h3>
@@ -228,6 +256,16 @@ export function PageControls({
           </label>
         ))}
       </div>
+      <PresetControls
+        label="Margin presets"
+        presets={marginPresets}
+        onSelect={(preset) => applyPreset(preset.marginMm)}
+      />
+      <PresetControls
+        label="Print standards"
+        presets={printPresets}
+        onSelect={(preset) => applyPreset(preset.marginMm, preset.size)}
+      />
       <div className="margin-grid">
         {margins.map(([key, label]) => (
           <label key={key}>
@@ -250,6 +288,32 @@ export function PageControls({
         ))}
       </div>
     </section>
+  );
+}
+
+function PresetControls<T extends { label: string }>({
+  label,
+  presets,
+  onSelect,
+}: {
+  label: string;
+  presets: readonly T[];
+  onSelect: (preset: T) => void;
+}) {
+  return (
+    <div className="layout-presets" role="group" aria-label={label}>
+      <span className="layout-presets__title">{label}</span>
+      {presets.map((preset) => (
+        <button
+          key={preset.label}
+          className="layout-presets__option"
+          type="button"
+          onClick={() => onSelect(preset)}
+        >
+          {preset.label}
+        </button>
+      ))}
+    </div>
   );
 }
 

@@ -512,6 +512,27 @@ describe("StylesDashboard", () => {
     ).toBeChecked();
   });
 
+  it("applies margin and print-standard page presets", async () => {
+    await openEditor();
+
+    const margins = () =>
+      ["Top", "Right", "Bottom", "Left"].map((side) =>
+        screen.getByRole("spinbutton", { name: `${side} margin value` }),
+      );
+
+    fireEvent.click(screen.getByRole("button", { name: "Compact" }));
+    for (const margin of margins()) expect(margin).toHaveValue(12);
+    expect(screen.getByRole("radio", { name: "A4" })).toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: "Letter Standard" }));
+    for (const margin of margins()) expect(margin).toHaveValue(25.4);
+    expect(screen.getByRole("radio", { name: "LETTER" })).toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: "A4 Narrow" }));
+    for (const margin of margins()) expect(margin).toHaveValue(12);
+    expect(screen.getByRole("radio", { name: "A4" })).toBeChecked();
+  });
+
   it("allows numeric values to be cleared and replaced without overflowing", async () => {
     await openEditor();
 
