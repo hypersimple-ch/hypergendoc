@@ -99,8 +99,8 @@ export function createStyleService(deps: {
     const references = [
       definition.bodyFont,
       definition.headingFont,
-      ...Object.values(definition.textStyles ?? {}).map(
-        (style) => style.fontFamily,
+      ...Object.values(definition.textStyles ?? {}).flatMap((style) =>
+        style ? [style.fontFamily] : [],
       ),
     ];
     for (const reference of references)
@@ -119,16 +119,16 @@ export function createStyleService(deps: {
     for (const reference of [
       definition.bodyFont,
       definition.headingFont,
-      ...Object.values(definition.textStyles ?? {}).map(
-        (style) => style.fontFamily,
+      ...Object.values(definition.textStyles ?? {}).flatMap((style) =>
+        style ? [style.fontFamily] : [],
       ),
     ])
       if (FontFamilySchema.safeParse(reference).success) fonts.add(reference);
     const colors = new Set(
       [
         ...Object.values(definition.colors),
-        ...Object.values(definition.textStyles ?? {}).map(
-          (style) => style.color,
+        ...Object.values(definition.textStyles ?? {}).flatMap((style) =>
+          style ? [style.color] : [],
         ),
       ].map((color) => color.toLowerCase()),
     );

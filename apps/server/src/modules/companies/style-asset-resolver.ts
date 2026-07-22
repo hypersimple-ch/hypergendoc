@@ -72,8 +72,8 @@ export function createCompanyStyleAssetResolver(
         [
           style.bodyFont,
           style.headingFont,
-          ...Object.values(style.textStyles ?? {}).map(
-            (textStyle) => textStyle.fontFamily,
+          ...Object.values(style.textStyles ?? {}).flatMap((textStyle) =>
+            textStyle ? [textStyle.fontFamily] : [],
           ),
         ].filter((reference) => !FontFamilySchema.safeParse(reference).success),
       );

@@ -237,23 +237,27 @@ function handleSocket(
   socket: Socket,
   renderJob: (request: unknown) => Promise<RendererResponse>,
 ): void {
-  let frame = "";
+  const chunks: string[] = [];
+  let frameBytes = 0;
+  let completeFrame = false;
   socket.setEncoding("utf8");
   socket.setTimeout(limits.renderTimeoutMs + 5_000, () => socket.destroy());
   socket.on("data", (chunk: string) => {
+    frameBytes += Buffer.byteLength(chunk, "utf8");
     if (
-      Buffer.byteLength(frame, "utf8") + Buffer.byteLength(chunk, "utf8") >
-      MAX_FRAME_BYTES
+      frameBytes > MAX_FRAME_BYTES ||
+      completeFrame ||
+      (chunk.includes("\n") && chunk.indexOf("\n") !== chunk.length - 1)
     )
       return socket.destroy();
-    frame += chunk;
-    if (frame.includes("\n") && frame.indexOf("\n") !== frame.length - 1)
-      socket.destroy();
+    chunks.push(chunk);
+    completeFrame = chunk.endsWith("\n");
   });
   socket.once("end", () => {
     void (async () => {
       try {
-        if (!frame.endsWith("\n")) return socket.destroy();
+        const frame = chunks.join("");
+        if (!completeFrame || !frame.endsWith("\n")) return socket.destroy();
         send(socket, await renderJob(JSON.parse(frame.slice(0, -1))));
       } catch {
         send(socket, {
