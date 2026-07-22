@@ -75,22 +75,29 @@ export function StyleStudioPreview({
   );
 
   return (
-    <aside className="style-preview-pane">
+    <aside
+      className="style-preview-pane style-preview-pane--responsive"
+      aria-labelledby="style-preview-title"
+    >
       {fontFaces && <style>{fontFaces}</style>}
       <div className="style-preview-pane__heading">
         <div>
           <p className="eyebrow">Instant canvas</p>
-          <h3>Sample document</h3>
+          <h3 id="style-preview-title">Sample document</h3>
         </div>
-        <small>
+        <small id="style-preview-note">
           Approximate browser preview — open the generated PDF for the exact
           server render.
         </small>
       </div>
-      <div className="style-preview-frame">
+      <div
+        className="style-preview-frame"
+        aria-describedby="style-preview-note"
+      >
         <article
           className="style-preview-page"
           data-page-size={page.size.toLowerCase()}
+          aria-label={`${page.size} document preview`}
           style={pageStyle}
         >
           {header.enabled && (

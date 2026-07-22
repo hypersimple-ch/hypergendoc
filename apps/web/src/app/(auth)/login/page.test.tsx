@@ -7,11 +7,17 @@ import LoginPage from "./page";
 afterEach(cleanup);
 
 describe("LoginPage", () => {
-  it("shows the fixed verification success message", async () => {
+  it("provides a clear sign-in heading, account link, and verification success message", async () => {
     render(
       await LoginPage({ searchParams: Promise.resolve({ verified: "true" }) }),
     );
 
+    expect(
+      screen.getByRole("heading", { name: "Sign in to your workspace." }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Create an account" }),
+    ).toHaveAttribute("href", "/register");
     expect(screen.getByRole("status")).toHaveTextContent(
       "Email verified. You can now sign in.",
     );

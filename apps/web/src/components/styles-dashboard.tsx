@@ -60,7 +60,19 @@ export function StylesDashboard() {
             if (stylesRequest.current === request) setAssets(next);
             return next;
           }}
-          onClose={() => setSelected(undefined)}
+          onClose={() => {
+            setStyles((current) =>
+              current
+                ? [
+                    ...current.filter(
+                      (currentStyle) => currentStyle.id !== selected.id,
+                    ),
+                    selected,
+                  ]
+                : [selected],
+            );
+            setSelected(undefined);
+          }}
         />
       </div>
     );
@@ -87,7 +99,21 @@ export function StylesDashboard() {
                 <h2>Create for {activeCompany.name}</h2>
               </div>
             </div>
-            <StyleCreate company={activeCompany} onCreated={setSelected} />
+            <StyleCreate
+              company={activeCompany}
+              existingNames={styles?.map((style) => style.name) ?? []}
+              onCreated={(created) => {
+                setStyles((current) =>
+                  current
+                    ? [
+                        ...current.filter((style) => style.id !== created.id),
+                        created,
+                      ]
+                    : [created],
+                );
+                setSelected(created);
+              }}
+            />
           </section>
           <section
             className="panel dashboard-panel"
@@ -175,18 +201,31 @@ export function StylesDashboard() {
 
 function StyleCreate({
   company,
+  existingNames,
   onCreated,
 }: {
   company: Company;
+  existingNames: string[];
   onCreated: (style: Style) => void;
 }) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (busy) return;
+    if (busyRef.current) return;
+    if (
+      existingNames.some(
+        (existing) =>
+          existing.trim().toLowerCase() === name.trim().toLowerCase(),
+      )
+    ) {
+      setError("A style with this name already exists for this company.");
+      return;
+    }
+    busyRef.current = true;
     setBusy(true);
     setError(undefined);
     try {
@@ -201,6 +240,7 @@ function StyleCreate({
     } catch (reason) {
       setError(safeError(reason));
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }

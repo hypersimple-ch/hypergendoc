@@ -2,20 +2,30 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError, workspaceApi } from "../lib/api-client";
 import { authClient } from "../lib/auth-client";
 import { ActiveCompanyProvider, useActiveCompany } from "./active-company";
 import { Select } from "./primitives";
 
-const links = [
-  ["/workspace", "Overview"],
-  ["/workspace/companies", "Companies"],
-  ["/workspace/styles", "Styles"],
-  ["/workspace/documents", "Documents"],
-  ["/workspace/members", "Members"],
-  ["/workspace/credentials", "MCP access"],
-  ["/workspace/audit", "Audit log"],
+const navigationGroups = [
+  { label: "Workspace", links: [["/workspace", "Overview"]] },
+  {
+    label: "Content",
+    links: [
+      ["/workspace/companies", "Companies"],
+      ["/workspace/styles", "Styles"],
+      ["/workspace/documents", "Documents"],
+    ],
+  },
+  {
+    label: "Administration",
+    links: [
+      ["/workspace/members", "Members"],
+      ["/workspace/credentials", "MCP access"],
+      ["/workspace/audit", "Audit log"],
+    ],
+  },
 ] as const;
 
 export function SessionBoundary({ children }: { children: ReactNode }) {
@@ -45,11 +55,7 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
           setState("ambiguous");
           return;
         }
-        setError(
-          caught instanceof Error
-            ? caught.message
-            : "We could not verify workspace access. Please try again.",
-        );
+        setError("We could not verify workspace access.");
         setState("error");
       });
     return () => {
@@ -58,13 +64,13 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
   }, [attempt, pathname, router]);
   if (state === "checking")
     return (
-      <main className="session-loading" aria-live="polite">
+      <main id="main-content" className="session-loading" aria-live="polite">
         Checking your secure session…
       </main>
     );
   if (state === "ambiguous")
     return (
-      <main className="session-loading" role="alert">
+      <main id="main-content" className="session-loading" role="alert">
         <p>Your account has memberships in multiple workspaces.</p>
         <p>
           Ask your workspace administrator to resolve the duplicate memberships,
@@ -82,8 +88,18 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
     );
   if (state === "error")
     return (
-      <main className="session-loading" role="alert">
-        {error}
+      <main id="main-content" className="session-loading" role="alert">
+        <p>{error ?? "We could not verify workspace access."}</p>
+        <p>Please check your connection and try again.</p>
+        <button
+          onClick={() => {
+            setError(undefined);
+            setState("checking");
+            setAttempt((value) => value + 1);
+          }}
+        >
+          Try again
+        </button>
       </main>
     );
   return <>{children}</>;
@@ -111,6 +127,8 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
   } = useActiveCompany();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const navigationRef = useRef<HTMLElement>(null);
   const [signOutState, setSignOutState] = useState<
     "idle" | "pending" | "error"
   >("idle");
@@ -123,17 +141,119 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
       setSignOutState("error");
     }
   }
+
+  function closeMenu(returnFocus = false) {
+    setOpen(false);
+    if (returnFocus) {
+      requestAnimationFrame(() => menuButtonRef.current?.focus());
+    }
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    const navigationControls = Array.from(
+      navigationRef.current?.querySelectorAll<HTMLElement>(
+        "a[href], button:not([disabled]), select:not([disabled])",
+      ) ?? [],
+    );
+    navigationControls[0]?.focus();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeMenu(true);
+        return;
+      }
+      if (event.key !== "Tab" || !navigationControls.length) return;
+      const first = navigationControls[0];
+      const last = navigationControls.at(-1);
+      if (!first || !last) return;
+      if (document.activeElement === menuButtonRef.current) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        menuButtonRef.current?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        menuButtonRef.current?.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
   return (
     <div className="workspace-shell">
-      <header className="workspace-top">
-        <Link href="/workspace" className="wordmark">
+      <header className="workspace-top workspace-shell__header">
+        <Link
+          href="/workspace"
+          className="wordmark"
+          tabIndex={open ? -1 : undefined}
+        >
           Hyper<span>Gen</span>Doc
         </Link>
+        <section
+          className="workspace-context"
+          aria-label="Active workspace context"
+          inert={open ? true : undefined}
+        >
+          <div className="workspace-context__identity">
+            <span className="workspace-label">Current workspace</span>
+            <strong>{context?.name ?? "Workspace"}</strong>
+          </div>
+          <div className="workspace-company-selector workspace-context__company">
+            <label htmlFor="active-company">Active company</label>
+            {loading ? <p role="status">Loading companies…</p> : null}
+            {error ? (
+              <div role="alert">
+                <p>We could not load companies. {error}</p>
+                <button onClick={reload}>Try again</button>
+              </div>
+            ) : null}
+            {noActiveCompany ? (
+              <p role="status">
+                No active companies are available. Create or restore a company
+                to continue.
+              </p>
+            ) : null}
+            {!loading && !error && !noActiveCompany ? (
+              <Select
+                id="active-company"
+                aria-label="Active company"
+                value={activeCompany?.id ?? ""}
+                onValueChange={setActiveCompany}
+                options={companies
+                  .filter((company) => !company.archivedAt)
+                  .map((company) => ({
+                    value: company.id,
+                    label: company.name,
+                  }))}
+                placeholder="Select a company"
+              />
+            ) : null}
+            <Link
+              className="workspace-context__action"
+              href="/workspace/companies"
+            >
+              Manage companies
+            </Link>
+          </div>
+        </section>
         <button
+          ref={menuButtonRef}
           className="menu-button"
           aria-expanded={open}
           aria-controls="workspace-navigation"
-          onClick={() => setOpen(!open)}
+          aria-label={
+            open ? "Close workspace navigation" : "Open workspace navigation"
+          }
+          onClick={() => (open ? closeMenu(true) : setOpen(true))}
         >
           Menu
         </button>
@@ -141,7 +261,7 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
           className="avatar"
           aria-label="Sign out"
           title="Sign out"
-          disabled={signOutState === "pending"}
+          disabled={open || signOutState === "pending"}
           onClick={() => void signOut()}
         >
           {signOutState === "pending" ? "…" : "HG"}
@@ -151,60 +271,43 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
         ) : null}
       </header>
       <aside
+        ref={navigationRef}
         id="workspace-navigation"
-        className={`sidebar ${open ? "sidebar--open" : ""}`}
+        className={`sidebar workspace-navigation ${open ? "sidebar--open" : ""}`}
+        aria-label="Workspace navigation"
       >
-        <p className="workspace-label">Current workspace</p>
-        <strong>{context?.name ?? "Workspace"}</strong>
-        <div className="workspace-company-selector">
-          <label htmlFor="active-company">Active company</label>
-          {loading ? <p role="status">Loading companies…</p> : null}
-          {error ? (
-            <div role="alert">
-              <p>We could not load companies. {error}</p>
-              <button onClick={reload}>Try again</button>
-            </div>
-          ) : null}
-          {noActiveCompany ? (
-            <p role="status">
-              No active companies are available. Create or restore a company to
-              continue.
-            </p>
-          ) : null}
-          {!loading && !error && !noActiveCompany ? (
-            <Select
-              id="active-company"
-              aria-label="Active company"
-              value={activeCompany?.id ?? ""}
-              onValueChange={setActiveCompany}
-              options={companies
-                .filter((company) => !company.archivedAt)
-                .map((company) => ({ value: company.id, label: company.name }))}
-              placeholder="Select a company"
-            />
-          ) : null}
-        </div>
-        <nav aria-label="Workspace">
-          <ul>
-            {links.map(([href, label]) => (
-              <li key={href}>
-                <Link
-                  href={href}
-                  aria-current={pathname === href ? "page" : undefined}
-                  onClick={() => setOpen(false)}
-                >
-                  {label}
-                </Link>
-              </li>
-            ))}
-          </ul>
+        <nav aria-label="Workspace sections">
+          {navigationGroups.map((group) => (
+            <section className="workspace-navigation__group" key={group.label}>
+              <h2 className="workspace-navigation__heading">{group.label}</h2>
+              <ul>
+                {group.links.map(([href, label]) => (
+                  <li key={href}>
+                    <Link
+                      href={href}
+                      aria-current={pathname === href ? "page" : undefined}
+                      onClick={() => closeMenu()}
+                    >
+                      {label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
         </nav>
         <p className="sidebar-note">
           Membership and permissions are resolved by the server for every
           request.
         </p>
       </aside>
-      <main className="workspace-main">{children}</main>
+      <main
+        id="main-content"
+        className="workspace-main workspace-shell__main"
+        inert={open ? true : undefined}
+      >
+        {children}
+      </main>
     </div>
   );
 }

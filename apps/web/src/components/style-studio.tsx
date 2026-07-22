@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   CompanyAssets,
   Style,
@@ -16,7 +16,7 @@ import { ColorControls } from "./style-studio-color-controls";
 import { initialStyleDefinition } from "./style-studio-definition";
 import { StyleStudioPreview } from "./style-studio-preview";
 import { LoadState, safeError, useLoaded } from "./dashboard-state";
-import { Button, Status } from "./primitives";
+import { Button, ConfirmDialog, Status } from "./primitives";
 
 export function StyleStudio({
   style,
@@ -35,14 +35,27 @@ export function StyleStudio({
   );
   const [message, setMessage] = useState<{ text: string; error: boolean }>();
   const [busy, setBusy] = useState(false);
+  const [savedDefinition, setSavedDefinition] = useState<StyleDefinition>();
+  const [confirmation, setConfirmation] = useState<"activate" | "discard">();
+  const actionPending = useRef(false);
+  const isDirty = useMemo(
+    () =>
+      savedDefinition !== undefined &&
+      JSON.stringify(definition) !== JSON.stringify(savedDefinition),
+    [definition, savedDefinition],
+  );
 
   useEffect(() => {
-    const latest = detail.value?.versions.at(-1);
-    if (latest) setDefinition(latest.definition);
+    if (!detail.value) return;
+    const saved =
+      detail.value.versions.at(-1)?.definition ?? initialStyleDefinition;
+    setDefinition(saved);
+    setSavedDefinition(saved);
   }, [detail.value]);
 
   async function save(activate: boolean) {
-    if (busy) return;
+    if (actionPending.current) return false;
+    actionPending.current = true;
     setBusy(true);
     setMessage(undefined);
     try {
@@ -51,6 +64,7 @@ export function StyleStudio({
         { ...definition, assetVersion: 1 },
         activate,
       );
+      setSavedDefinition(definition);
       detail.reload();
       setMessage({
         text: activate
@@ -58,18 +72,29 @@ export function StyleStudio({
           : "New inactive version saved.",
         error: false,
       });
+      return true;
     } catch (reason) {
       setMessage({ text: safeError(reason), error: true });
+      return false;
     } finally {
+      actionPending.current = false;
       setBusy(false);
     }
   }
 
   async function preview() {
-    if (busy) return;
+    if (actionPending.current) return;
+    actionPending.current = true;
     const previewWindow = window.open("", "_blank");
+    if (previewWindow?.document?.body) {
+      previewWindow.document.title = "Preparing PDF preview";
+      const pendingMessage = previewWindow.document.createElement("p");
+      pendingMessage.textContent = "Preparing your PDF preview…";
+      pendingMessage.setAttribute("role", "status");
+      previewWindow.document.body.replaceChildren(pendingMessage);
+    }
     setBusy(true);
-    setMessage(undefined);
+    setMessage({ text: "Preparing PDF preview…", error: false });
     try {
       const result = await dashboardApi.previewStyle(style.id, {
         ...definition,
@@ -77,6 +102,7 @@ export function StyleStudio({
       });
       if (result.url && previewWindow) {
         const response = await fetch(result.url);
+        if (!response.ok) throw new Error("Preview download failed");
         const pdfUrl = URL.createObjectURL(
           new Blob([await response.arrayBuffer()], {
             type: "application/pdf",
@@ -84,6 +110,7 @@ export function StyleStudio({
         );
         previewWindow.opener = null;
         previewWindow.location.replace(pdfUrl);
+        setMessage({ text: "PDF preview opened in a new tab.", error: false });
       } else {
         previewWindow?.close();
         setMessage({
@@ -97,6 +124,7 @@ export function StyleStudio({
       previewWindow?.close();
       setMessage({ text: safeError(reason), error: true });
     } finally {
+      actionPending.current = false;
       setBusy(false);
     }
   }
@@ -108,7 +136,10 @@ export function StyleStudio({
           <p className="eyebrow">Visual style studio</p>
           <h2 id="style-studio-title">{style.name}</h2>
         </div>
-        <Button tone="quiet" onClick={onClose}>
+        <Button
+          tone="quiet"
+          onClick={() => (isDirty ? setConfirmation("discard") : onClose())}
+        >
           Back to style library
         </Button>
       </header>
@@ -116,6 +147,18 @@ export function StyleStudio({
       {detail.value && (
         <div className="style-studio__layout">
           <div className="style-controls">
+            <nav
+              className="style-studio__section-nav"
+              aria-label="Studio sections"
+            >
+              <a href="#typography-title">Typography</a>
+              <a href="#color-palette-title">Colors</a>
+              <a href="#page-layout-title">Page</a>
+              <a href="#brand-assets-title">Brand</a>
+              <a href="#header-controls-title">Header</a>
+              <a href="#footer-controls-title">Footer</a>
+              <a href="#version-history">Versions</a>
+            </nav>
             <TypographyControls
               definition={definition}
               setDefinition={setDefinition}
@@ -146,12 +189,17 @@ export function StyleStudio({
                 setDefinition((draft) => ({ ...draft, footer }))
               }
             />
-            <div className="studio-actions">
-              <Button disabled={busy} onClick={() => void save(true)}>
-                Save & activate version
+            <div className="studio-actions studio-actions--pinned">
+              <Button
+                className="studio-actions__activate"
+                disabled={busy}
+                onClick={() => setConfirmation("activate")}
+              >
+                Review & activate version
               </Button>
               <Button
                 tone="quiet"
+                className="studio-actions__save"
                 disabled={busy}
                 onClick={() => void save(false)}
               >
@@ -159,6 +207,7 @@ export function StyleStudio({
               </Button>
               <Button
                 tone="quiet"
+                className="studio-actions__preview"
                 disabled={busy}
                 onClick={() => void preview()}
               >
@@ -180,6 +229,29 @@ export function StyleStudio({
           <StyleStudioPreview definition={definition} assets={assets} />
         </div>
       )}
+      <ConfirmDialog
+        open={confirmation === "activate"}
+        title="Review and activate version"
+        description="This saves a new immutable version and makes it the active style for future documents."
+        confirmLabel="Save and activate"
+        tone="primary"
+        pending={busy}
+        onClose={() => setConfirmation(undefined)}
+        onConfirm={() => {
+          void save(true).then((saved) => {
+            if (saved) setConfirmation(undefined);
+          });
+        }}
+      />
+      <ConfirmDialog
+        open={confirmation === "discard"}
+        title="Discard unsaved changes?"
+        description="Your edits have not been saved as a version. Leave the studio without saving?"
+        confirmLabel="Discard changes"
+        pending={busy}
+        onClose={() => setConfirmation(undefined)}
+        onConfirm={onClose}
+      />
     </section>
   );
 }

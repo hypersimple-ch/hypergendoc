@@ -68,6 +68,56 @@ describe("CredentialsDashboard", () => {
     );
   });
 
+  it("shows a token once and requires acknowledgement before dismissing it", async () => {
+    activeCompany.mockReturnValue(workspace("owner"));
+    api.credentials.mockResolvedValue([]);
+    api.createCredential.mockResolvedValue({ token: "one-time-secret" });
+    render(<CredentialsDashboard />);
+
+    fireEvent.click(await screen.findByLabelText("Acme"));
+    fireEvent.change(screen.getByLabelText("Credential name"), {
+      target: { value: "Agent" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create credential" }));
+
+    expect(await screen.findByText("one-time-secret")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Done" })).toBeDisabled();
+    fireEvent.click(
+      screen.getByLabelText(
+        "I have saved this one-time token in a secret manager.",
+      ),
+    );
+    expect(screen.getByRole("button", { name: "Done" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.queryByText("one-time-secret")).not.toBeInTheDocument();
+  });
+
+  it("confirms credential revocation before submitting", async () => {
+    activeCompany.mockReturnValue(workspace("owner"));
+    api.credentials.mockResolvedValue([
+      {
+        id: "credential-1",
+        name: "Agent",
+        prefix: "mcp_abc",
+        companyIds: ["company-a"],
+        actions: ["documents:read"],
+        lastUsedAt: null,
+        revokedAt: null,
+      },
+    ]);
+    api.revokeCredential.mockResolvedValue(undefined);
+    render(<CredentialsDashboard />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Revoke" }));
+    expect(await screen.findByRole("dialog")).toBeVisible();
+    expect(api.revokeCredential).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Revoke credential" }));
+    await waitFor(() =>
+      expect(api.revokeCredential).toHaveBeenCalledWith("credential-1"),
+    );
+  });
+
   it("keeps credentials owner-only", async () => {
     activeCompany.mockReturnValue(workspace("member"));
     api.credentials.mockResolvedValue([]);
@@ -75,5 +125,6 @@ describe("CredentialsDashboard", () => {
 
     expect(await screen.findByText("Owner access required.")).toBeVisible();
     expect(screen.queryByLabelText("Credential name")).not.toBeInTheDocument();
+    expect(api.credentials).not.toHaveBeenCalled();
   });
 });

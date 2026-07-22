@@ -217,6 +217,20 @@ describe("StylesDashboard", () => {
         expect.objectContaining({ companyId: companyB.id, name: "Beta style" }),
       ),
     );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Back to style library" }),
+    );
+    expect(
+      screen.getByRole("heading", { name: "Beta style", level: 3 }),
+    ).toBeVisible();
+    fireEvent.change(screen.getByLabelText("New style name"), {
+      target: { value: " beta STYLE " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create style" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "A style with this name already exists",
+    );
+    expect(createStyle).toHaveBeenCalledOnce();
   });
 
   it("shows company guidance without scoped API calls when no company is active", () => {
@@ -362,8 +376,12 @@ describe("StylesDashboard", () => {
     });
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Save & activate version" }),
+      screen.getByRole("button", { name: "Review & activate version" }),
     );
+    expect(
+      screen.getByRole("dialog", { name: "Review and activate version" }),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Save and activate" }));
     await waitFor(() => expect(createStyleVersion).toHaveBeenCalled());
     const saved = createStyleVersion.mock.calls.at(-1) as unknown as [
       string,
@@ -566,6 +584,89 @@ describe("StylesDashboard", () => {
     expect(rightMargin).toHaveValue(15);
   });
 
+  it("keeps keyboard selection and focus inside role, font, and color controls", async () => {
+    await openEditor();
+
+    const roleGroup = screen.getByRole("group", { name: "Text role" });
+    const roleButtons = within(roleGroup).getAllByRole("button");
+    expect(roleButtons.filter((button) => button.tabIndex === 0)).toHaveLength(
+      1,
+    );
+    const bodyRole = within(roleGroup).getByRole("button", { name: "Body" });
+    bodyRole.focus();
+    fireEvent.keyDown(bodyRole, { key: "ArrowRight" });
+    const h1Role = within(roleGroup).getByRole("button", { name: "H1" });
+    expect(h1Role).toHaveFocus();
+    expect(bodyRole).toHaveAttribute("tabindex", "-1");
+    fireEvent.keyDown(h1Role, { key: "ArrowLeft" });
+    expect(bodyRole).toHaveFocus();
+
+    fireEvent.click(screen.getByRole("button", { name: "Font family: Inter" }));
+    const search = await screen.findByLabelText("Search fonts");
+    fireEvent.change(search, { target: { value: "source" } });
+    fireEvent.keyDown(search, { key: "End" });
+    const sourceCode = screen.getByRole("button", {
+      name: "Source Code Pro",
+    });
+    expect(sourceCode).toHaveFocus();
+    fireEvent.keyDown(sourceCode, { key: "Enter" });
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Search fonts")).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("button", { name: "Font family: Source Code Pro" }),
+    ).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Primary color" }));
+    const hex = await screen.findByLabelText("Primary color hex");
+    expect(hex).toHaveFocus();
+    fireEvent.keyDown(hex, { key: "Escape" });
+    expect(
+      screen.getByRole("button", { name: "Edit Primary color" }),
+    ).toHaveFocus();
+  });
+
+  it("keeps a bounded unsaved-close confirmation", async () => {
+    await openEditor();
+    fireEvent.change(screen.getByRole("slider", { name: "Font size" }), {
+      target: { value: "12" },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Back to style library" }),
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Discard unsaved changes?" }),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("heading", { name: "Beta style" })).toBeVisible();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Back to style library" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(
+      screen.getByRole("heading", { name: "Structured brand systems." }),
+    ).toBeVisible();
+  });
+
+  it("orders section navigation before the accessible live preview", async () => {
+    await openEditor();
+    const navigation = screen.getByRole("navigation", {
+      name: "Studio sections",
+    });
+    const preview = screen.getByRole("complementary", {
+      name: "Sample document",
+    });
+    expect(
+      navigation.compareDocumentPosition(preview) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("article", { name: "A4 document preview" }),
+    ).toBeVisible();
+  });
+
   it("saves versions and opens exact PDFs safely", async () => {
     await openEditor();
     const freshStyle = { ...styleB, activeVersionId: "version-active" };
@@ -590,8 +691,9 @@ describe("StylesDashboard", () => {
       });
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Save & activate version" }),
+      screen.getByRole("button", { name: "Review & activate version" }),
     );
+    fireEvent.click(screen.getByRole("button", { name: "Save and activate" }));
     await waitFor(() =>
       expect(createStyleVersion).toHaveBeenCalledWith(
         styleB.id,
@@ -651,6 +753,9 @@ describe("StylesDashboard", () => {
       () => new Promise((_, reject) => (rejectPreview = reject)),
     );
     fireEvent.click(screen.getByRole("button", { name: "Open generated PDF" }));
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Preparing PDF preview",
+    );
     rejectPreview(new Error("Preview unavailable"));
     await waitFor(() => expect(failedPopup.close).toHaveBeenCalled());
     expect(

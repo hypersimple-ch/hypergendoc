@@ -75,24 +75,28 @@ describe("CompaniesDashboard", () => {
     expect(reload).toHaveBeenCalledTimes(2);
   });
 
-  it("reloads shared state when archiving the active company so selection reconciles", async () => {
+  it("confirms archiving and reloads shared state so active selection reconciles", async () => {
     const reload = vi.fn();
     activeCompany.mockReturnValue(
       workspace({ reload, activeCompany: company }),
     );
     api.archiveCompany.mockResolvedValue(undefined);
-    vi.stubGlobal(
-      "confirm",
-      vi.fn(() => true),
-    );
     render(<CompaniesDashboard />);
 
     fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "Existing documents remain available.",
+    );
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Archive company" }));
 
     await waitFor(() =>
       expect(api.archiveCompany).toHaveBeenCalledWith("company-1"),
     );
     expect(reload).toHaveBeenCalledOnce();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Rename" })).toHaveFocus(),
+    );
   });
 
   it("prevents duplicate uploads and reloads shared state after an uploaded logo", async () => {
@@ -113,6 +117,29 @@ describe("CompaniesDashboard", () => {
 
     finish();
     await waitFor(() => expect(reload).toHaveBeenCalledOnce());
-    expect(await screen.findByText("Logo uploaded.")).toBeVisible();
+    const announcement = await screen.findByText("Logo uploaded.");
+    expect(announcement).toBeVisible();
+    expect(announcement.parentElement).toHaveAttribute("aria-live", "polite");
+  });
+
+  it("prevents duplicate create requests while creation is pending", async () => {
+    activeCompany.mockReturnValue(workspace());
+    let finish!: () => void;
+    api.createCompany.mockImplementation(
+      () => new Promise<void>((resolve) => (finish = resolve)),
+    );
+    render(<CompaniesDashboard />);
+
+    fireEvent.change(screen.getByLabelText("Company name"), {
+      target: { value: "Globex" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add company" }));
+    fireEvent.click(screen.getByRole("button", { name: "Creating…" }));
+    expect(api.createCompany).toHaveBeenCalledOnce();
+
+    finish();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Add company" })).toBeEnabled(),
+    );
   });
 });

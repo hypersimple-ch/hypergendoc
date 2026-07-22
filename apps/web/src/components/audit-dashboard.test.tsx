@@ -61,8 +61,18 @@ describe("AuditDashboard", () => {
 
     await waitFor(() => expect(api.audit).toHaveBeenLastCalledWith(50));
     expect(screen.getAllByText("membership.role_changed")).toHaveLength(2);
+    expect(await screen.findByText("Loaded 1 more audit event.")).toBeVisible();
     expect(
       screen.queryByRole("button", { name: "Load more events" }),
     ).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter events" }), {
+      target: { value: "credential" },
+    });
+    expect(screen.getByText("No matching audit events")).toBeVisible();
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter events" }), {
+      target: { value: "membership" },
+    });
+    expect(screen.getAllByText("membership.role_changed")).toHaveLength(2);
   });
 });

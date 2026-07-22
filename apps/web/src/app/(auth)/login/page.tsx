@@ -23,8 +23,10 @@ export default async function LoginPage({
 
   return (
     <>
-      <p className="eyebrow">Welcome back</p>
-      <h1>Sign in to your workspace.</h1>
+      <header className="auth-card__header">
+        <p className="eyebrow">Welcome back</p>
+        <h1>Sign in to your workspace.</h1>
+      </header>
       {status && <Status kind={status.kind}>{status.message}</Status>}
       <LoginForm />
       <p className="form-foot">

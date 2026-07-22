@@ -1,9 +1,16 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { createElement as h, useState } from "react";
+import { createElement as h, useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Dialog, FormField, Input, Select } from "./primitives";
+import {
+  ConfirmDialog,
+  Dialog,
+  FormField,
+  Input,
+  Select,
+  Table,
+} from "./primitives";
 
 Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
   value: () => undefined,
@@ -104,6 +111,88 @@ describe("accessible primitives", () => {
     expect(
       screen.getByRole("combobox", { name: "Disabled company" }),
     ).toBeDisabled();
+  });
+
+  it("adds responsive labels to table cells without changing table semantics", () => {
+    render(
+      h(Table, {
+        caption: "Companies",
+        columns: ["Company", "Status"],
+        children: h(
+          "tr",
+          null,
+          h("td", null, "Northstar"),
+          h("td", null, "Active"),
+        ),
+      }),
+    );
+
+    expect(screen.getByRole("table", { name: "Companies" })).toBeVisible();
+    expect(screen.getByRole("cell", { name: "Northstar" })).toHaveAttribute(
+      "data-label",
+      "Company",
+    );
+    expect(screen.getByRole("cell", { name: "Active" })).toHaveAttribute(
+      "data-label",
+      "Status",
+    );
+  });
+
+  it("focuses the safe action in confirmation dialogs", () => {
+    const confirm = vi.fn();
+    const close = vi.fn();
+    render(
+      h(ConfirmDialog, {
+        open: true,
+        title: "Archive Northstar?",
+        description: "Existing documents remain available.",
+        confirmLabel: "Archive company",
+        onConfirm: confirm,
+        onClose: close,
+      }),
+    );
+
+    expect(
+      screen.getByRole("dialog", { name: "Archive Northstar?" }),
+    ).toHaveAccessibleDescription("Existing documents remain available.");
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    expect(document.body).toHaveStyle({ overflow: "hidden" });
+    fireEvent.click(screen.getByRole("button", { name: "Archive company" }));
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it("restores focus to an explicit fallback when the trigger is removed", () => {
+    function Example() {
+      const [open, setOpen] = useState(false);
+      const [archived, setArchived] = useState(false);
+      const fallback = useRef<HTMLButtonElement>(null);
+      return h(
+        "div",
+        null,
+        h("button", { ref: fallback }, "Rename"),
+        archived
+          ? null
+          : h("button", { onClick: () => setOpen(true) }, "Archive"),
+        h(ConfirmDialog, {
+          open,
+          title: "Archive company?",
+          description: "Existing documents remain available.",
+          confirmLabel: "Archive company",
+          finalFocusRef: fallback,
+          onClose: () => setOpen(false),
+          onConfirm: () => {
+            setArchived(true);
+            setOpen(false);
+          },
+        }),
+      );
+    }
+
+    render(h(Example));
+    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+    fireEvent.click(screen.getByRole("button", { name: "Archive company" }));
+    expect(screen.getByRole("button", { name: "Rename" })).toHaveFocus();
   });
 
   it("manages unique labels, focus, Escape, and click-only backdrop closing", () => {

@@ -1,9 +1,11 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
-import { describe, expect, it } from "vitest";
-import { useLoaded } from "./dashboard-state";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { Empty, LoadState, useLoaded } from "./dashboard-state";
+
+afterEach(cleanup);
 
 type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void };
 function deferred<T>(): Deferred<T> {
@@ -14,7 +16,30 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve };
 }
 
-describe("useLoaded", () => {
+describe("dashboard state", () => {
+  it("offers an explicit retry for load failures", () => {
+    const retry = vi.fn();
+    render(
+      <LoadState
+        loading={false}
+        error="We could not load this page."
+        onRetry={retry}
+      />,
+    );
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("We could not load this page.");
+    screen.getByRole("button", { name: "Try again" }).click();
+    expect(retry).toHaveBeenCalledOnce();
+  });
+
+  it("announces an empty result without presenting it as an error", () => {
+    render(<Empty>No matching documents.</Empty>);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "No matching documents.",
+    );
+  });
+
   it("keeps the latest request result when an earlier request resolves last", async () => {
     const requests: Deferred<string>[] = [];
     function Probe() {

@@ -142,6 +142,19 @@ describe("SessionBoundary", () => {
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByText("Dashboard")).toBeVisible();
   });
+
+  it("offers an explicit retry after a generic session failure", async () => {
+    current
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce({ id: "workspace-1" });
+    render(<SessionBoundary>Dashboard</SessionBoundary>);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "We could not verify workspace access.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Dashboard")).toBeVisible();
+  });
 });
 
 describe("WorkspaceShell", () => {
@@ -229,7 +242,7 @@ describe("WorkspaceShell", () => {
     ).toBeVisible();
   });
 
-  it("keeps mobile navigation and sign-out retry behavior", async () => {
+  it("groups navigation and manages mobile-menu focus, Escape, and sign-out retry", async () => {
     mockCompanies();
     signOut.mockRejectedValueOnce(new Error("offline"));
     render(
@@ -238,9 +251,41 @@ describe("WorkspaceShell", () => {
       </WorkspaceShell>,
     );
 
-    const menu = screen.getByRole("button", { name: "Menu" });
+    expect(
+      screen.getByRole("navigation", { name: "Workspace sections" }),
+    ).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Workspace" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Content" })).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Administration" }),
+    ).toBeVisible();
+    expect(screen.getByRole("link", { name: "Documents" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
+    const menu = screen.getByRole("button", {
+      name: "Open workspace navigation",
+    });
+    menu.focus();
     fireEvent.click(menu);
     expect(menu).toHaveAttribute("aria-expanded", "true");
+    expect(menu).toHaveAttribute("aria-controls", "workspace-navigation");
+    const overview = screen.getByRole("link", { name: "Overview" });
+    await waitFor(() => expect(overview).toHaveFocus());
+    expect(screen.getByRole("main")).toHaveAttribute("inert");
+    expect(document.body).toHaveStyle({ overflow: "hidden" });
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(menu).toHaveFocus();
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(overview).toHaveFocus();
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(menu).toHaveFocus());
+    expect(menu).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("main")).not.toHaveAttribute("inert");
+    expect(document.body).not.toHaveStyle({ overflow: "hidden" });
+
+    fireEvent.click(menu);
     fireEvent.click(screen.getByRole("link", { name: "Documents" }), {
       button: 1,
     });

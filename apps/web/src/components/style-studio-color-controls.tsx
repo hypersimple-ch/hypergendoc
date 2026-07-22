@@ -15,7 +15,10 @@ export function ColorControls({
   savedColors?: string[] | undefined;
 }) {
   return (
-    <section className="control-section" aria-labelledby="color-palette-title">
+    <section
+      className="control-section style-studio__section"
+      aria-labelledby="color-palette-title"
+    >
       <h3 id="color-palette-title">Color palette</h3>
       <div className="color-grid">
         {colorKeys.map((key) => (
@@ -71,6 +74,8 @@ export function ColorControl({
   const [open, setOpen] = useState(false);
   const id = useId();
   const control = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const popover = useRef<HTMLDivElement>(null);
   const displayName = name.endsWith("color")
     ? name
     : `${name.charAt(0).toUpperCase()}${name.slice(1)} color`;
@@ -81,6 +86,11 @@ export function ColorControl({
 
   useEffect(() => {
     if (!open) return;
+    popover.current
+      ?.querySelector<HTMLInputElement>(
+        `input[aria-label="${displayName} hex"]`,
+      )
+      ?.focus();
     const closeOutside = (event: PointerEvent | FocusEvent) => {
       if (!control.current?.contains(event.target as Node)) setOpen(false);
     };
@@ -92,17 +102,29 @@ export function ColorControl({
     };
   }, [open]);
 
+  const close = (restoreFocus = true) => {
+    setOpen(false);
+    if (restoreFocus) trigger.current?.focus();
+  };
+
   return (
     <div
       ref={control}
       className="color-control"
-      onKeyDown={(event) => event.key === "Escape" && setOpen(false)}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          close();
+        }
+      }}
     >
       <span>{displayName}</span>
       <button
+        ref={trigger}
         className="color-trigger"
         type="button"
         aria-label={`Edit ${displayName}`}
+        aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={id}
         onClick={() => setOpen((shown) => !shown)}
@@ -111,7 +133,13 @@ export function ColorControl({
         <span>{value}</span>
       </button>
       {open && (
-        <div className="color-popover" id={id}>
+        <div
+          ref={popover}
+          className="color-popover"
+          id={id}
+          role="dialog"
+          aria-label={`${displayName} picker`}
+        >
           <div role="group" aria-label={`${displayName} picker`}>
             <HexColorPicker color={value} onChange={update} />
           </div>
@@ -142,7 +170,7 @@ export function ColorControl({
               aria-label={`${displayName} hex`}
             />
           </label>
-          <button type="button" onClick={() => setOpen(false)}>
+          <button type="button" onClick={() => close()}>
             Close {displayName} picker
           </button>
         </div>

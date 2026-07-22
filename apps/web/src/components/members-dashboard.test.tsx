@@ -46,10 +46,6 @@ describe("MembersDashboard", () => {
     api.members.mockResolvedValue([member]);
     api.changeMemberRole.mockResolvedValue({ ...member, role: "owner" });
     api.removeMember.mockResolvedValue(undefined);
-    vi.stubGlobal(
-      "confirm",
-      vi.fn(() => true),
-    );
 
     render(<MembersDashboard />);
 
@@ -60,9 +56,66 @@ describe("MembersDashboard", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("Remove Member from this workspace?");
+    expect(api.removeMember).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove member" }));
     await waitFor(() =>
       expect(api.removeMember).toHaveBeenCalledWith("member"),
     );
+  });
+
+  it("prevents the final owner from demoting or removing themselves", async () => {
+    const owner = {
+      ...member,
+      id: "membership-owner",
+      userId: "owner",
+      email: "owner@example.test",
+      name: "Owner",
+      role: "owner",
+    };
+    activeCompany.mockReturnValue({
+      context: { role: "owner", userId: "owner" },
+      loading: false,
+      reload: vi.fn(),
+    });
+    api.members.mockResolvedValue([owner]);
+
+    render(<MembersDashboard />);
+
+    expect(await screen.findByLabelText("Role for Owner")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
+    expect(screen.getByText("At least one owner is required.")).toBeVisible();
+  });
+
+  it("prevents duplicate member invitations while one is pending", async () => {
+    let resolveInvite: () => void;
+    activeCompany.mockReturnValue({
+      context: { role: "owner", userId: "owner" },
+      loading: false,
+      reload: vi.fn(),
+    });
+    api.members.mockResolvedValue([member]);
+    api.invite.mockImplementation(
+      () => new Promise<void>((resolve) => (resolveInvite = resolve)),
+    );
+    render(<MembersDashboard />);
+
+    fireEvent.change(await screen.findByLabelText("Verified account email"), {
+      target: { value: "new@example.test" },
+    });
+    fireEvent.submit(
+      screen
+        .getByRole("button", { name: "Add verified member" })
+        .closest("form")!,
+    );
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Adding…" }).closest("form")!,
+    );
+    expect(api.invite).toHaveBeenCalledTimes(1);
+    resolveInvite!();
   });
 
   it("keeps member management controls owner-only", async () => {

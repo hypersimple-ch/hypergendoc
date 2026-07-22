@@ -24,6 +24,7 @@ export function FontPicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const search = useRef<HTMLInputElement>(null);
+  const content = useRef<HTMLDivElement>(null);
   const normalizedQuery = query.trim().toLowerCase();
   const groups = fontGroups
     .map((group) => ({
@@ -42,6 +43,25 @@ export function FontPicker({
       option.label.toLowerCase().includes(normalizedQuery),
   );
 
+  const moveOptionFocus = (direction: 1 | -1 | "start" | "end") => {
+    const options = Array.from(
+      content.current?.querySelectorAll<HTMLButtonElement>(
+        ".font-picker-option",
+      ) ?? [],
+    );
+    if (!options.length) return;
+    const current = options.indexOf(
+      document.activeElement as HTMLButtonElement,
+    );
+    const next =
+      direction === "start"
+        ? 0
+        : direction === "end"
+          ? options.length - 1
+          : (current + direction + options.length) % options.length;
+    options[next]?.focus();
+  };
+
   return (
     <Popover.Root
       open={open}
@@ -57,19 +77,46 @@ export function FontPicker({
         aria-label={`Font family: ${value}`}
         aria-describedby={ariaDescribedBy}
         aria-invalid={ariaInvalid}
+        aria-haspopup="dialog"
+        aria-expanded={open}
       >
         <span style={{ fontFamily: value }}>{value}</span>
         <span aria-hidden="true">⌄</span>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
+          ref={content}
           className="font-picker-content"
+          role="dialog"
+          aria-label="Font family options"
           side="bottom"
           align="start"
           collisionPadding={16}
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             search.current?.focus();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              moveOptionFocus(1);
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              moveOptionFocus(-1);
+            } else if (event.key === "Home") {
+              event.preventDefault();
+              moveOptionFocus("start");
+            } else if (event.key === "End") {
+              event.preventDefault();
+              moveOptionFocus("end");
+            } else if (
+              (event.key === "Enter" || event.key === " ") &&
+              event.target instanceof HTMLButtonElement &&
+              event.target.classList.contains("font-picker-option")
+            ) {
+              event.preventDefault();
+              event.target.click();
+            }
           }}
         >
           <label className="font-picker-search">

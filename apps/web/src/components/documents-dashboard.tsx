@@ -1,10 +1,17 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Document, DocumentCommit } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
 import { useActiveCompany } from "./active-company";
 import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
-import { Button, FormField, Input, Status, Table } from "./primitives";
+import {
+  Button,
+  ConfirmDialog,
+  FormField,
+  Input,
+  Status,
+  Table,
+} from "./primitives";
 
 const formatLabel = (format: DocumentCommit["format"]) =>
   format === "markdown" ? "Markdown" : "HTML";
@@ -23,6 +30,7 @@ export function DocumentsDashboard() {
   );
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Document>();
+  const historyTrigger = useRef<HTMLButtonElement | null>(null);
   const visible = useMemo(
     () =>
       data.value?.filter(
@@ -38,6 +46,15 @@ export function DocumentsDashboard() {
     setSelected(undefined);
   }, [activeCompany?.id]);
 
+  useEffect(() => {
+    if (!selected) historyTrigger.current?.focus();
+  }, [selected]);
+
+  function openHistory(document: Document, trigger: HTMLButtonElement) {
+    historyTrigger.current = trigger;
+    setSelected(document);
+  }
+
   return (
     <>
       <section className="page-heading">
@@ -45,24 +62,27 @@ export function DocumentsDashboard() {
           <p className="eyebrow">Documents</p>
           <h1>Immutable commit history.</h1>
           <p>
-            Documents are created by authorized agents. Inspect their source and
-            commit metadata, or revert a prior commit as a new revision.
+            Documents are created by authorized agents. Inspect a company’s
+            source and commit metadata, or revert a prior commit as a new
+            revision.
           </p>
         </div>
       </section>
       {activeCompany && (
-        <section className="panel dashboard-panel filters">
-          <p className="subtle">Showing documents for {activeCompany.name}.</p>
-          <FormField label="Search documents">
+        <section className="panel dashboard-panel filters document-filters">
+          <p className="subtle">
+            Showing documents for {activeCompany.name} only.
+          </p>
+          <FormField label="Search documents in this company">
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Title"
+              placeholder="Search by title"
             />
           </FormField>
         </section>
       )}
-      <section className="panel dashboard-panel">
+      <section className="panel dashboard-panel document-directory-panel">
         <LoadState loading={companyLoading} error={companyError} />
         {noActiveCompany ? (
           <NoActiveCompany />
@@ -72,19 +92,19 @@ export function DocumentsDashboard() {
             {data.value &&
               (visible.length ? (
                 <Table
-                  caption="Documents"
+                  caption={`Documents for ${activeCompany.name}`}
                   columns={["Document", "Updated", "Open"]}
                 >
                   {visible.map((document) => (
                     <DocumentRow
                       key={document.id}
                       document={document}
-                      onOpen={() => setSelected(document)}
+                      onOpen={openHistory}
                     />
                   ))}
                 </Table>
               ) : query ? (
-                <NoMatchingDocuments />
+                <NoMatchingDocuments onClear={() => setQuery("")} />
               ) : (
                 <NoDocumentsForCompany companyName={activeCompany.name} />
               ))}
@@ -100,6 +120,7 @@ export function DocumentsDashboard() {
     </>
   );
 }
+
 function NoActiveCompany() {
   return (
     <Empty>
@@ -116,11 +137,14 @@ function NoDocumentsForCompany({ companyName }: { companyName: string }) {
     </Empty>
   );
 }
-function NoMatchingDocuments() {
+function NoMatchingDocuments({ onClear }: { onClear: () => void }) {
   return (
     <Empty>
       <strong>No matching documents</strong>
       <p>Try another search, or wait for an authorized agent to create one.</p>
+      <Button tone="quiet" onClick={onClear}>
+        Clear search
+      </Button>
     </Empty>
   );
 }
@@ -129,22 +153,28 @@ function DocumentRow({
   onOpen,
 }: {
   document: Document;
-  onOpen: () => void;
+  onOpen: (document: Document, trigger: HTMLButtonElement) => void;
 }) {
   return (
-    <tr>
-      <td>
+    <tr className="document-record">
+      <td data-label="Document">
         <strong>{document.title}</strong>
       </td>
-      <td>{new Date(document.updatedAt).toLocaleDateString()}</td>
-      <td>
-        <Button tone="quiet" onClick={onOpen}>
+      <td data-label="Updated">
+        {new Date(document.updatedAt).toLocaleDateString()}
+      </td>
+      <td data-label="Open">
+        <Button
+          tone="quiet"
+          onClick={(event) => onOpen(document, event.currentTarget)}
+        >
           View history
         </Button>
       </td>
     </tr>
   );
 }
+
 function DocumentDetail({
   document,
   onClose,
@@ -159,10 +189,18 @@ function DocumentDetail({
   const [active, setActive] = useState<DocumentCommit>();
   const [showPdf, setShowPdf] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [revertDialogOpen, setRevertDialogOpen] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean }>();
+  const heading = useRef<HTMLHeadingElement | null>(null);
+  const reverting = useRef(false);
+
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
   useEffect(() => {
     if (detail.value) setActive(detail.value.current.commit);
   }, [detail.value]);
+
   const source = useLoaded(() => {
     if (!detail.value || !active) return Promise.resolve(undefined);
     return active.commitSha === detail.value.current.commit.commitSha
@@ -175,15 +213,10 @@ function DocumentDetail({
     source.value?.commit.commitSha === active?.commitSha
       ? source.value
       : undefined;
+
   async function revert() {
-    if (
-      !active ||
-      busy ||
-      !confirm(
-        `Revert to commit ${shortSha(active.commitSha)}? This creates a new commit.`,
-      )
-    )
-      return;
+    if (!active || reverting.current) return;
+    reverting.current = true;
     setBusy(true);
     setMessage(undefined);
     try {
@@ -198,15 +231,23 @@ function DocumentDetail({
     } catch (error) {
       setMessage({ text: safeError(error), error: true });
     } finally {
+      reverting.current = false;
       setBusy(false);
+      setRevertDialogOpen(false);
     }
   }
+
   return (
-    <section className="panel dashboard-panel">
+    <section
+      className="panel dashboard-panel document-detail"
+      aria-labelledby="document-detail-title"
+    >
       <div className="panel-heading">
         <div>
           <p className="eyebrow">Document detail</p>
-          <h2>{document.title}</h2>
+          <h2 id="document-detail-title" ref={heading} tabIndex={-1}>
+            {document.title}
+          </h2>
         </div>
         <Button tone="quiet" onClick={onClose}>
           Close
@@ -227,6 +268,8 @@ function DocumentDetail({
                         : "timeline-button"
                     }
                     aria-label={`Commit ${shortSha(commit.commitSha)}`}
+                    aria-pressed={active?.commitSha === commit.commitSha}
+                    disabled={busy}
                     onClick={() => {
                       setActive(commit);
                       setShowPdf(false);
@@ -244,7 +287,7 @@ function DocumentDetail({
             </ol>
           </div>
           {active && (
-            <div>
+            <div className="document-history-content">
               <h3>{isCurrent ? "Current source" : "Historical source"}</h3>
               <LoadState {...source} />
               {activeSource && (
@@ -252,7 +295,7 @@ function DocumentDetail({
                   <pre className="document-source">
                     {activeSource.snapshot.body}
                   </pre>
-                  <div className="row-actions">
+                  <div className="row-actions document-actions">
                     <a
                       className="button button--quiet"
                       href={dashboardApi.sourceUrl(
@@ -267,14 +310,18 @@ function DocumentDetail({
                       <Button
                         tone="quiet"
                         disabled={busy}
-                        onClick={() => void revert()}
+                        onClick={() => setRevertDialogOpen(true)}
                       >
                         Revert as new commit
                       </Button>
                     )}
                     {isCurrent && (
                       <>
-                        <Button tone="quiet" onClick={() => setShowPdf(true)}>
+                        <Button
+                          tone="quiet"
+                          disabled={busy}
+                          onClick={() => setShowPdf(true)}
+                        >
                           Preview PDF
                         </Button>
                         <a
@@ -298,9 +345,15 @@ function DocumentDetail({
                 </>
               )}
               {message && (
-                <Status kind={message.error ? "error" : "success"}>
-                  {message.text}
-                </Status>
+                <div
+                  aria-live="polite"
+                  aria-atomic="true"
+                  className="mutation-feedback"
+                >
+                  <Status kind={message.error ? "error" : "success"}>
+                    {message.text}
+                  </Status>
+                </div>
               )}
               <h3>Commit metadata</h3>
               <dl className="metadata">
@@ -323,6 +376,22 @@ function DocumentDetail({
           )}
         </div>
       )}
+      <ConfirmDialog
+        open={revertDialogOpen}
+        title="Revert this commit?"
+        description={
+          active
+            ? `Reverting to commit ${shortSha(active.commitSha)} creates a new commit; existing history remains unchanged.`
+            : ""
+        }
+        confirmLabel="Revert as new commit"
+        tone="danger"
+        pending={busy}
+        onConfirm={() => void revert()}
+        onClose={() => {
+          if (!busy) setRevertDialogOpen(false);
+        }}
+      />
     </section>
   );
 }

@@ -86,7 +86,10 @@ export function TypographyControls({
     });
 
   return (
-    <section className="control-section" aria-labelledby="typography-title">
+    <section
+      className="control-section style-studio__section"
+      aria-labelledby="typography-title"
+    >
       <h3 id="typography-title">Typography</h3>
       <FormField label="Upload company font">
         <Input
@@ -100,11 +103,36 @@ export function TypographyControls({
       <div className="role-editor" aria-labelledby="text-role-title">
         <h4 id="text-role-title">Text roles</h4>
         <div className="role-tabs" role="group" aria-label="Text role">
-          {textStyleRoles.map((item) => (
+          {textStyleRoles.map((item, index) => (
             <button
               key={item.value}
               type="button"
               aria-pressed={role === item.value}
+              tabIndex={role === item.value ? 0 : -1}
+              onKeyDown={(event) => {
+                if (
+                  !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
+                    event.key,
+                  )
+                )
+                  return;
+                event.preventDefault();
+                const nextIndex =
+                  event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? textStyleRoles.length - 1
+                      : (index +
+                          (event.key === "ArrowRight" ? 1 : -1) +
+                          textStyleRoles.length) %
+                        textStyleRoles.length;
+                const next = textStyleRoles[nextIndex];
+                if (!next) return;
+                setRole(next.value);
+                event.currentTarget.parentElement
+                  ?.querySelectorAll<HTMLButtonElement>("[aria-pressed]")
+                  [nextIndex]?.focus();
+              }}
               onClick={() => setRole(item.value)}
             >
               {item.label}
@@ -231,7 +259,10 @@ export function PageControls({
       },
     }));
   return (
-    <section className="control-section" aria-labelledby="page-layout-title">
+    <section
+      className="control-section style-studio__section"
+      aria-labelledby="page-layout-title"
+    >
       <h3 id="page-layout-title">Page layout</h3>
       <div
         className="segmented-control segmented-control--titled"
@@ -347,7 +378,10 @@ export function BrandControls({
   };
   return (
     <>
-      <section className="control-section" aria-labelledby="brand-assets-title">
+      <section
+        className="control-section style-studio__section"
+        aria-labelledby="brand-assets-title"
+      >
         <h3 id="brand-assets-title">Brand assets</h3>
         <div
           className="logo-selector"
@@ -421,7 +455,7 @@ export function HeaderFooterControls({
 }) {
   return (
     <section
-      className="control-section"
+      className="control-section style-studio__section"
       aria-labelledby={`${label.toLowerCase()}-controls-title`}
     >
       <h3 id={`${label.toLowerCase()}-controls-title`}>{label}</h3>

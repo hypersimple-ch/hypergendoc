@@ -63,21 +63,24 @@ export function WorkspaceOverview() {
   const retry = workspace.error ? workspace.reload : overview.reload;
 
   return (
-    <>
-      <section className="page-heading">
+    <div className="workspace-overview">
+      <section className="page-heading workspace-overview__heading">
         <div>
           <p className="eyebrow">Workspace overview</p>
-          <h1>The document desk.</h1>
+          <h1>{workspace.activeCompany?.name ?? "Your document desk"}</h1>
           <p>
-            Set up companies and their visual systems before agents create
-            documents with immutable commit history.
+            Review the latest documents for your active company, then manage its
+            visual system before authorized agents create the next version.
           </p>
         </div>
         <Link className="button button--primary" href="/workspace/companies">
-          Add a company
+          Manage companies
         </Link>
       </section>
-      <section className="metric-grid" aria-label="Workspace status">
+      <section
+        className="metric-grid workspace-overview__metrics"
+        aria-label="Workspace status"
+      >
         <Metric
           label="Company directory (workspace-wide)"
           value={
@@ -97,11 +100,14 @@ export function WorkspaceOverview() {
           unavailable={workspace.context?.role === "member"}
         />
       </section>
-      <section className="panel">
-        <div className="panel-heading">
+      <section
+        className="panel workspace-overview__activity"
+        aria-labelledby="recent-activity-heading"
+      >
+        <div className="panel-heading workspace-overview__activity-heading">
           <div>
-            <p className="eyebrow">Recent documents</p>
-            <h2>Immutable by design</h2>
+            <p className="eyebrow">Recent activity</p>
+            <h2 id="recent-activity-heading">Recently updated documents</h2>
           </div>
           {data && !error && <Status>Workspace data is up to date</Status>}
         </div>
@@ -113,8 +119,8 @@ export function WorkspaceOverview() {
             <Empty>
               <strong>Select or add an active company</strong>
               <p>
-                Choose an active company to view its documents, or add a company
-                to begin creating documents.
+                Choose an active company to review its latest document activity,
+                or add a company to begin creating documents.
               </p>
             </Empty>
           ) : recentDocuments.length ? (
@@ -152,7 +158,7 @@ export function WorkspaceOverview() {
             </Empty>
           ))}
       </section>
-    </>
+    </div>
   );
 }
 

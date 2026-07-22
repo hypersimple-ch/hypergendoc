@@ -59,7 +59,7 @@ export function LoadState({
       <Status kind="error">
         {error}{" "}
         {retry && (
-          <button className="inline-button" onClick={retry}>
+          <button type="button" className="inline-button" onClick={retry}>
             Try again
           </button>
         )}
@@ -68,5 +68,9 @@ export function LoadState({
   return null;
 }
 export function Empty({ children }: { children: React.ReactNode }) {
-  return <div className="empty-state">{children}</div>;
+  return (
+    <div className="empty-state" role="status" aria-live="polite">
+      {children}
+    </div>
+  );
 }

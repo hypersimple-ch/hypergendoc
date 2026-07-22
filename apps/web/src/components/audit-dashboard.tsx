@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { dashboardApi, type WorkspaceAuditEvent } from "../lib/dashboard-api";
 import { useActiveCompany } from "./active-company";
 import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
@@ -30,11 +30,25 @@ function OwnerAuditLog() {
   const [loadedMore, setLoadedMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState<string>();
+  const [outcome, setOutcome] = useState("all");
+  const [query, setQuery] = useState("");
+  const [announcement, setAnnouncement] = useState<string>();
+  const loadingMoreRef = useRef(false);
   const events = [...(firstPage.value?.items ?? []), ...additional];
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredEvents = events.filter(
+    (event) =>
+      (outcome === "all" || event.outcome === outcome) &&
+      (!normalizedQuery ||
+        `${event.action} ${event.targetType} ${event.actorType}`
+          .toLowerCase()
+          .includes(normalizedQuery)),
+  );
   const offset = loadedMore ? nextOffset : firstPage.value?.nextOffset;
 
   async function loadMore() {
-    if (loadingMore || offset === undefined) return;
+    if (loadingMoreRef.current || offset === undefined) return;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     setMoreError(undefined);
     try {
@@ -42,16 +56,22 @@ function OwnerAuditLog() {
       setAdditional((current) => [...current, ...page.items]);
       setNextOffset(page.nextOffset);
       setLoadedMore(true);
+      setAnnouncement(
+        page.items.length
+          ? `Loaded ${page.items.length} more audit event${page.items.length === 1 ? "" : "s"}.`
+          : "No more audit events were returned.",
+      );
     } catch (error) {
       setMoreError(safeError(error));
     } finally {
+      loadingMoreRef.current = false;
       setLoadingMore(false);
     }
   }
 
   return (
     <>
-      <section className="page-heading">
+      <section className="page-heading audit-dashboard">
         <div>
           <p className="eyebrow">Audit log</p>
           <h1>A clear trail, without the secrets.</h1>
@@ -61,8 +81,39 @@ function OwnerAuditLog() {
           </p>
         </div>
       </section>
-      <section className="panel dashboard-panel">
+      <section className="panel dashboard-panel audit-dashboard__events">
         <LoadState {...firstPage} />
+        {firstPage.value && events.length > 0 && (
+          <div className="audit-dashboard__filters">
+            <label>
+              Filter events
+              <input
+                className="input"
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Action, target, or actor"
+              />
+            </label>
+            <label>
+              Outcome
+              <select
+                className="input"
+                value={outcome}
+                onChange={(event) => setOutcome(event.target.value)}
+              >
+                <option value="all">All outcomes</option>
+                <option value="success">Success</option>
+                <option value="failure">Failure</option>
+              </select>
+            </label>
+          </div>
+        )}
+        {announcement && (
+          <p className="audit-dashboard__announcement" aria-live="polite">
+            {announcement}
+          </p>
+        )}
         {firstPage.value &&
           (events.length ? (
             <>
@@ -70,7 +121,7 @@ function OwnerAuditLog() {
                 caption="Workspace audit events"
                 columns={["Event", "Target", "Actor", "Outcome", "Time"]}
               >
-                {events.map((event) => (
+                {filteredEvents.map((event) => (
                   <tr key={event.id}>
                     <td>
                       <strong>{event.action}</strong>
@@ -88,11 +139,22 @@ function OwnerAuditLog() {
                   </tr>
                 ))}
               </Table>
+              {filteredEvents.length === 0 && (
+                <Empty>
+                  <strong>No matching audit events</strong>
+                  <p>Change or clear the filters to see loaded events.</p>
+                </Empty>
+              )}
               {moreError && <Status kind="error">{moreError}</Status>}
               {offset !== undefined && (
-                <Button disabled={loadingMore} onClick={() => void loadMore()}>
-                  {loadingMore ? "Loading…" : "Load more events"}
-                </Button>
+                <div className="audit-dashboard__pagination">
+                  <Button
+                    disabled={loadingMore}
+                    onClick={() => void loadMore()}
+                  >
+                    {loadingMore ? "Loading…" : "Load more events"}
+                  </Button>
+                </div>
               )}
             </>
           ) : (

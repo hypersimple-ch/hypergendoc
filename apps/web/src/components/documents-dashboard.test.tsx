@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -146,7 +147,7 @@ describe("DocumentsDashboard", () => {
     expect(await screen.findByText("Proposal")).toBeVisible();
     expect(screen.queryByText("Beta brief")).not.toBeInTheDocument();
     expect(
-      screen.getByText("Showing documents for Acme Studio."),
+      screen.getByText("Showing documents for Acme Studio only."),
     ).toBeVisible();
     expect(
       screen.queryByRole("columnheader", { name: "Company" }),
@@ -181,10 +182,17 @@ describe("DocumentsDashboard", () => {
     expect(
       await screen.findByText("No documents for Acme Studio"),
     ).toBeVisible();
-    fireEvent.change(screen.getByLabelText("Search documents"), {
-      target: { value: "missing" },
-    });
+    fireEvent.change(
+      screen.getByLabelText("Search documents in this company"),
+      {
+        target: { value: "missing" },
+      },
+    );
     expect(await screen.findByText("No matching documents")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(
+      await screen.findByText("No documents for Acme Studio"),
+    ).toBeVisible();
   });
 
   it("shows commit metadata and loads historical source when a commit is selected", async () => {
@@ -238,10 +246,6 @@ describe("DocumentsDashboard", () => {
 
   it("confirms a revert, creates a new commit, and refreshes history", async () => {
     mockDashboard();
-    vi.stubGlobal(
-      "confirm",
-      vi.fn(() => true),
-    );
     const revertedCommit = commit("c".repeat(40), currentSha);
     revertDocument.mockResolvedValue(source(revertedCommit, "Reverted source"));
     document.mockResolvedValueOnce(detail()).mockResolvedValueOnce({
@@ -258,6 +262,15 @@ describe("DocumentsDashboard", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Revert as new commit" }),
     );
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "creates a new commit; existing history remains unchanged.",
+    );
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Revert as new commit",
+      }),
+    );
 
     await waitFor(() =>
       expect(revertDocument).toHaveBeenCalledWith(documentId, oldSha),
@@ -268,14 +281,60 @@ describe("DocumentsDashboard", () => {
     await waitFor(() => expect(document).toHaveBeenCalledTimes(2));
   });
 
+  it("prevents duplicate revert requests while the confirmed mutation is pending", async () => {
+    mockDashboard();
+    let finish!: (value: DocumentCurrentSource) => void;
+    revertDocument.mockImplementation(
+      () => new Promise<DocumentCurrentSource>((resolve) => (finish = resolve)),
+    );
+    await openHistory();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: `Commit ${oldSha.slice(0, 8)}` }),
+    );
+    await screen.findByText("# Historical source");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Revert as new commit" }),
+    );
+    const dialog = screen.getByRole("dialog");
+    const confirm = within(dialog).getByRole("button", {
+      name: "Revert as new commit",
+    });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(revertDocument).toHaveBeenCalledOnce();
+    expect(confirm).toBeDisabled();
+
+    finish(source(currentCommit, "<h1>Current source</h1>"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("moves focus into document detail and returns it to the history trigger on close", async () => {
+    mockDashboard();
+    render(<DocumentsDashboard />);
+
+    const trigger = await screen.findByRole("button", { name: "View history" });
+    fireEvent.click(trigger);
+    expect(
+      await screen.findByRole("heading", { name: "Proposal" }),
+    ).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
   it("shows a no-match state without an empty table when text filtering removes every row", async () => {
     mockDashboard();
     render(<DocumentsDashboard />);
 
     await screen.findByRole("button", { name: "View history" });
-    fireEvent.change(screen.getByLabelText("Search documents"), {
-      target: { value: "missing" },
-    });
+    fireEvent.change(
+      screen.getByLabelText("Search documents in this company"),
+      {
+        target: { value: "missing" },
+      },
+    );
 
     expect(await screen.findByText("No matching documents")).toBeVisible();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();

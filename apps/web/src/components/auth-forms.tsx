@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { authClient } from "../lib/auth-client";
 import { ApiError } from "../lib/api-client";
 import { Button, FormField, Input, Status } from "./primitives";
@@ -11,13 +11,17 @@ function useSubmit(action: () => Promise<unknown>) {
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
+  const pendingRef = useRef(false);
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void submitAction();
   }
   async function submitAction() {
+    if (pendingRef.current) return;
+    pendingRef.current = true;
     setPending(true);
     setError(undefined);
+    setMessage(undefined);
     try {
       await action();
       setMessage("Check your email for the next step.");
@@ -26,6 +30,7 @@ function useSubmit(action: () => Promise<unknown>) {
         reason instanceof ApiError ? reason.message : "Something went wrong.",
       );
     } finally {
+      pendingRef.current = false;
       setPending(false);
     }
   }
@@ -40,7 +45,12 @@ export function LoginForm() {
     window.location.assign("/workspace");
   });
   return (
-    <form onSubmit={state.submit} className="auth-form">
+    <form
+      onSubmit={state.submit}
+      className="auth-form"
+      aria-busy={state.pending}
+      aria-label="Sign in"
+    >
       <FormField label="Email">
         <Input
           type="email"
@@ -63,17 +73,25 @@ export function LoginForm() {
       <Button type="submit" disabled={state.pending}>
         {state.pending ? "Signing in…" : "Sign in"}
       </Button>
-      <Link href="/forgot-password">Forgot password?</Link>
+      <Link className="auth-form__recovery-link" href="/forgot-password">
+        Forgot password?
+      </Link>
     </form>
   );
 }
+
 export function RegisterForm() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const state = useSubmit(() => authClient.register(name, email, password));
   return (
-    <form onSubmit={state.submit} className="auth-form">
+    <form
+      onSubmit={state.submit}
+      className="auth-form"
+      aria-busy={state.pending}
+      aria-label="Create account"
+    >
       <FormField label="Name">
         <Input
           autoComplete="name"
@@ -109,6 +127,7 @@ export function RegisterForm() {
     </form>
   );
 }
+
 export function EmailActionForm({ kind }: { kind: "forgot" | "verify" }) {
   const [email, setEmail] = useState("");
   const state = useSubmit(() =>
@@ -117,7 +136,16 @@ export function EmailActionForm({ kind }: { kind: "forgot" | "verify" }) {
       : authClient.sendVerification(email),
   );
   return (
-    <form onSubmit={state.submit} className="auth-form">
+    <form
+      onSubmit={state.submit}
+      className="auth-form"
+      aria-busy={state.pending}
+      aria-label={
+        kind === "forgot"
+          ? "Request password reset"
+          : "Resend email verification"
+      }
+    >
       <FormField label="Email">
         <Input
           type="email"
@@ -130,19 +158,42 @@ export function EmailActionForm({ kind }: { kind: "forgot" | "verify" }) {
       {state.error && <Status kind="error">{state.error}</Status>}
       {state.message && <Status kind="success">{state.message}</Status>}
       <Button type="submit" disabled={state.pending}>
-        {kind === "forgot" ? "Email reset link" : "Resend verification"}
+        {state.pending
+          ? kind === "forgot"
+            ? "Sending reset link…"
+            : "Sending verification…"
+          : kind === "forgot"
+            ? "Email reset link"
+            : "Resend verification"}
       </Button>
     </form>
   );
 }
+
 export function ResetForm() {
   const params = useSearchParams();
+  const token = params.get("token");
   const [password, setPassword] = useState("");
   const state = useSubmit(() =>
-    authClient.resetPassword(password, params.get("token") ?? ""),
+    authClient.resetPassword(password, token ?? ""),
   );
+  if (!token)
+    return (
+      <div className="auth-form">
+        <Status kind="warning">
+          This password-reset link is missing or incomplete. Request a new one
+          before continuing.
+        </Status>
+        <Link href="/forgot-password">Request a new reset link</Link>
+      </div>
+    );
   return (
-    <form onSubmit={state.submit} className="auth-form">
+    <form
+      onSubmit={state.submit}
+      className="auth-form"
+      aria-busy={state.pending}
+      aria-label="Set new password"
+    >
       <FormField label="New password">
         <Input
           type="password"
@@ -158,11 +209,12 @@ export function ResetForm() {
         <Status kind="success">Password changed. You can now sign in.</Status>
       )}
       <Button type="submit" disabled={state.pending}>
-        Set new password
+        {state.pending ? "Saving password…" : "Set new password"}
       </Button>
     </form>
   );
 }
+
 export function WorkspaceForm() {
   const [name, setName] = useState("");
   const state = useSubmit(async () => {
@@ -170,7 +222,12 @@ export function WorkspaceForm() {
     window.location.assign("/workspace");
   });
   return (
-    <form onSubmit={state.submit} className="auth-form">
+    <form
+      onSubmit={state.submit}
+      className="auth-form"
+      aria-busy={state.pending}
+      aria-label="Create workspace"
+    >
       <FormField label="Workspace name">
         <Input
           autoComplete="organization"
@@ -181,19 +238,36 @@ export function WorkspaceForm() {
       </FormField>
       {state.error && <Status kind="error">{state.error}</Status>}
       <Button type="submit" disabled={state.pending}>
-        Create workspace
+        {state.pending ? "Creating workspace…" : "Create workspace"}
       </Button>
     </form>
   );
 }
+
 export function InvitationForm() {
   const params = useSearchParams();
+  const invitationId = params.get("invitationId");
   const state = useSubmit(() =>
-    authClient.acceptInvitation(params.get("invitationId") ?? ""),
+    authClient.acceptInvitation(invitationId ?? ""),
   );
+  if (!invitationId)
+    return (
+      <div className="auth-form">
+        <Status kind="warning">
+          This invitation link is missing or incomplete. Ask a workspace owner
+          for a valid invitation.
+        </Status>
+        <Link href="/login">Return to sign in</Link>
+      </div>
+    );
   return (
-    <form onSubmit={state.submit} className="auth-form">
-      <p>
+    <form
+      onSubmit={state.submit}
+      className="auth-form"
+      aria-busy={state.pending}
+      aria-label="Accept workspace invitation"
+    >
+      <p className="auth-form__intro">
         Accepting an invitation joins the workspace named in your secure
         invitation.
       </p>
@@ -204,7 +278,7 @@ export function InvitationForm() {
         </Status>
       )}
       <Button type="submit" disabled={state.pending}>
-        Accept invitation
+        {state.pending ? "Accepting invitation…" : "Accept invitation"}
       </Button>
     </form>
   );

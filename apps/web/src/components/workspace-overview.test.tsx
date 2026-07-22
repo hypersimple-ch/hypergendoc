@@ -83,6 +83,19 @@ afterEach(() => {
 });
 
 describe("WorkspaceOverview", () => {
+  it("keeps the active-company context and recent activity action-oriented", () => {
+    render(<WorkspaceOverview />);
+
+    expect(screen.getByRole("heading", { name: "Acme" })).toBeVisible();
+    expect(screen.getByText("Recent activity")).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Recently updated documents" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "Manage companies" }),
+    ).toHaveAttribute("href", "/workspace/companies");
+  });
+
   it("uses shared workspace loading and errors, including shared retry", async () => {
     workspace.loading = true;
     const { rerender } = render(<WorkspaceOverview />);

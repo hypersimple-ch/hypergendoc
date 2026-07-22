@@ -1,7 +1,9 @@
 "use client";
 
 import * as SelectPrimitive from "@radix-ui/react-select";
+import { createPortal } from "react-dom";
 import {
+  Children,
   cloneElement,
   forwardRef,
   isValidElement,
@@ -13,6 +15,7 @@ import {
   type KeyboardEvent,
   type ReactElement,
   type ReactNode,
+  type RefObject,
 } from "react";
 
 export const Button = forwardRef<
@@ -183,6 +186,23 @@ export function Table({
   columns: string[];
   children: ReactNode;
 }) {
+  const labelledRows = Children.map(children, (row) => {
+    if (!isValidElement(row)) return row;
+    const rowElement = row as ReactElement<{ children?: ReactNode }>;
+    const labelledCells = Children.map(
+      rowElement.props.children,
+      (cell, index) => {
+        if (!isValidElement(cell) || cell.type !== "td") return cell;
+        const label = columns[index];
+        return cloneElement(
+          cell as ReactElement<{ "data-label"?: string }>,
+          label ? { "data-label": label } : {},
+        );
+      },
+    );
+    return cloneElement(rowElement, undefined, labelledCells);
+  });
+
   return (
     <div className="table-wrap">
       <table>
@@ -196,7 +216,7 @@ export function Table({
             ))}
           </tr>
         </thead>
-        <tbody>{children}</tbody>
+        <tbody>{labelledRows}</tbody>
       </table>
     </div>
   );
@@ -205,19 +225,30 @@ export function Table({
 export function Dialog({
   open,
   title,
+  description,
   children,
+  initialFocusRef,
+  finalFocusRef,
+  closeDisabled = false,
   onClose,
 }: {
   open: boolean;
   title: string;
+  description?: ReactNode;
   children: ReactNode;
+  initialFocusRef?: RefObject<HTMLElement | null>;
+  finalFocusRef?: RefObject<HTMLElement | null>;
+  closeDisabled?: boolean;
   onClose: () => void;
 }) {
   const titleId = useId();
+  const descriptionId = useId();
   const closeButton = useRef<HTMLButtonElement>(null);
   const previousFocus = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
+  const closeDisabledRef = useRef(closeDisabled);
   onCloseRef.current = onClose;
+  closeDisabledRef.current = closeDisabled;
 
   useEffect(() => {
     if (!open) return;
@@ -225,9 +256,11 @@ export function Dialog({
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
-    closeButton.current?.focus();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    (initialFocusRef?.current ?? closeButton.current)?.focus();
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !closeDisabledRef.current) {
         event.preventDefault();
         onCloseRef.current();
       }
@@ -235,9 +268,11 @@ export function Dialog({
     document.addEventListener("keydown", closeOnEscape);
     return () => {
       document.removeEventListener("keydown", closeOnEscape);
-      previousFocus.current?.focus();
+      document.body.style.overflow = previousOverflow;
+      const focusTarget = finalFocusRef?.current ?? previousFocus.current;
+      if (focusTarget?.isConnected) focusTarget.focus();
     };
-  }, [open]);
+  }, [finalFocusRef, initialFocusRef, open]);
 
   function trapFocus(event: KeyboardEvent<HTMLElement>) {
     if (event.key !== "Tab") return;
@@ -258,13 +293,13 @@ export function Dialog({
     }
   }
 
-  if (!open) return null;
-  return (
+  if (!open || typeof document === "undefined") return null;
+  return createPortal(
     <div
       className="dialog-backdrop"
       role="presentation"
       onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget && !closeDisabled) onClose();
       }}
     >
       <section
@@ -272,6 +307,7 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
         onKeyDown={trapFocus}
       >
         <div className="dialog__head">
@@ -280,14 +316,70 @@ export function Dialog({
             ref={closeButton}
             tone="quiet"
             aria-label="Close dialog"
+            disabled={closeDisabled}
             onClick={onClose}
           >
             ×
           </Button>
         </div>
+        {description ? (
+          <p id={descriptionId} className="dialog__description">
+            {description}
+          </p>
+        ) : null}
         {children}
       </section>
-    </div>
+    </div>,
+    document.body,
+  );
+}
+
+export function ConfirmDialog({
+  open,
+  title,
+  description,
+  confirmLabel,
+  pending = false,
+  tone = "danger",
+  finalFocusRef,
+  onConfirm,
+  onClose,
+}: {
+  open: boolean;
+  title: string;
+  description: ReactNode;
+  confirmLabel: string;
+  pending?: boolean;
+  tone?: "primary" | "danger";
+  finalFocusRef?: RefObject<HTMLElement | null>;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  const cancelButton = useRef<HTMLButtonElement>(null);
+  return (
+    <Dialog
+      open={open}
+      title={title}
+      description={description}
+      initialFocusRef={cancelButton}
+      {...(finalFocusRef ? { finalFocusRef } : {})}
+      closeDisabled={pending}
+      onClose={onClose}
+    >
+      <div className="dialog__actions">
+        <Button
+          ref={cancelButton}
+          tone="quiet"
+          disabled={pending}
+          onClick={onClose}
+        >
+          Cancel
+        </Button>
+        <Button tone={tone} disabled={pending} onClick={onConfirm}>
+          {pending ? "Working…" : confirmLabel}
+        </Button>
+      </div>
+    </Dialog>
   );
 }
 
