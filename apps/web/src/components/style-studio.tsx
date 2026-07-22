@@ -10,9 +10,9 @@ import { dashboardApi } from "../lib/dashboard-api";
 import {
   BrandControls,
   HeaderFooterControls,
-  PageControls,
   TypographyControls,
 } from "./style-studio-controls";
+import { PageControls } from "./style-studio-page-controls";
 import { ColorControls } from "./style-studio-color-controls";
 import { initialStyleDefinition } from "./style-studio-definition";
 import { StyleStudioPreview } from "./style-studio-preview";

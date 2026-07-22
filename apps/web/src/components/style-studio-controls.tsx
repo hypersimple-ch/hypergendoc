@@ -15,7 +15,7 @@ import { FormField, Input, Select, Status } from "./primitives";
 import { dashboardApi } from "../lib/dashboard-api";
 import { safeError } from "./dashboard-state";
 import { ColorControl } from "./style-studio-color-controls";
-import { NumberField, Range } from "./style-studio-number-controls";
+import { Range } from "./style-studio-number-controls";
 
 type SetDefinition = React.Dispatch<React.SetStateAction<StyleDefinition>>;
 
@@ -66,6 +66,8 @@ export function TypographyControls({
   const [role, setRole] = useState<TextStyleRole>("body");
   const textStyles = resolveTextStyles(definition);
   const style = textStyles[role];
+  const roleLabel =
+    textStyleRoles.find((item) => item.value === role)?.label ?? "Text";
   const updateRole = (
     change: Partial<NonNullable<TextStyles[TextStyleRole]>>,
   ) =>
@@ -106,275 +108,142 @@ export function TypographyControls({
           Type
         </span>
       </div>
-      <FormField label="Upload company font">
-        <Input
-          type="file"
-          accept=".ttf,.otf,.woff2,font/ttf,font/otf,font/woff2"
-          disabled={uploading}
-          onChange={(event) => void uploadFont(event.target.files?.[0])}
-        />
-      </FormField>
-      {uploadError && <Status kind="error">{uploadError}</Status>}
-      <div className="role-editor" aria-labelledby="text-role-title">
-        <h4 id="text-role-title">Text roles</h4>
-        <div className="role-tabs" role="group" aria-label="Text role">
-          {textStyleRoles.map((item, index) => (
-            <button
-              key={item.value}
-              type="button"
-              aria-pressed={role === item.value}
-              tabIndex={role === item.value ? 0 : -1}
-              onKeyDown={(event) => {
-                if (
-                  !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
-                    event.key,
+      <div className="typography-stack">
+        <div className="typography-upload">
+          <div className="typography-upload__heading">
+            <span>Company fonts</span>
+            <small>TTF, OTF or WOFF2</small>
+          </div>
+          <FormField label="Upload company font">
+            <Input
+              type="file"
+              accept=".ttf,.otf,.woff2,font/ttf,font/otf,font/woff2"
+              disabled={uploading}
+              onChange={(event) => void uploadFont(event.target.files?.[0])}
+            />
+          </FormField>
+          {uploadError && <Status kind="error">{uploadError}</Status>}
+        </div>
+        <div className="role-editor" aria-labelledby="text-role-title">
+          <div className="role-editor__heading">
+            <h4 id="text-role-title">Text roles</h4>
+            <p>Editing {roleLabel}</p>
+          </div>
+          <div className="role-tabs" role="group" aria-label="Text role">
+            {textStyleRoles.map((item, index) => (
+              <button
+                key={item.value}
+                type="button"
+                aria-pressed={role === item.value}
+                tabIndex={role === item.value ? 0 : -1}
+                onKeyDown={(event) => {
+                  if (
+                    !["ArrowLeft", "ArrowRight", "Home", "End"].includes(
+                      event.key,
+                    )
                   )
-                )
-                  return;
-                event.preventDefault();
-                const nextIndex =
-                  event.key === "Home"
-                    ? 0
-                    : event.key === "End"
-                      ? textStyleRoles.length - 1
-                      : (index +
-                          (event.key === "ArrowRight" ? 1 : -1) +
-                          textStyleRoles.length) %
-                        textStyleRoles.length;
-                const next = textStyleRoles[nextIndex];
-                if (!next) return;
-                setRole(next.value);
-                event.currentTarget.parentElement
-                  ?.querySelectorAll<HTMLButtonElement>("[aria-pressed]")
-                  [nextIndex]?.focus();
-              }}
-              onClick={() => setRole(item.value)}
-            >
-              {item.label}
-            </button>
+                    return;
+                  event.preventDefault();
+                  const nextIndex =
+                    event.key === "Home"
+                      ? 0
+                      : event.key === "End"
+                        ? textStyleRoles.length - 1
+                        : (index +
+                            (event.key === "ArrowRight" ? 1 : -1) +
+                            textStyleRoles.length) %
+                          textStyleRoles.length;
+                  const next = textStyleRoles[nextIndex];
+                  if (!next) return;
+                  setRole(next.value);
+                  event.currentTarget.parentElement
+                    ?.querySelectorAll<HTMLButtonElement>("[aria-pressed]")
+                    [nextIndex]?.focus();
+                }}
+                onClick={() => setRole(item.value)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <div className="typography-fields">
+            <FormField label="Font family">
+              <FontPicker
+                value={style.fontFamily}
+                onValueChange={(fontFamily) => updateRole({ fontFamily })}
+                options={fontOptions.map((font) => ({
+                  value: font.id,
+                  label: font.displayName,
+                }))}
+              />
+            </FormField>
+            <Range
+              label="Font size"
+              value={style.fontSizePt}
+              min={role === "body" ? 8 : 6}
+              max={role === "body" ? 16 : 72}
+              step={role === "body" ? 0.5 : 1}
+              unit="pt"
+              onChange={(fontSizePt) =>
+                updateRole({ fontSizePt: Number(fontSizePt) })
+              }
+            />
+            <FormField label="Weight">
+              <Select
+                value={String(style.fontWeight)}
+                onValueChange={(fontWeight) =>
+                  updateRole({
+                    fontWeight: Number(fontWeight) as 400 | 500 | 600 | 700,
+                  })
+                }
+                options={[400, 500, 600, 700].map((weight) => ({
+                  value: String(weight),
+                  label: String(weight),
+                }))}
+                placeholder="Choose a weight"
+                aria-label="Weight"
+              />
+            </FormField>
+            <Range
+              label="Line height"
+              value={style.lineHeight}
+              min={1}
+              max={2}
+              step={0.05}
+              unit=""
+              onChange={(lineHeight) =>
+                updateRole({ lineHeight: Number(lineHeight) })
+              }
+            />
+            <ColorControl
+              name={`${roleLabel} color`}
+              value={style.color}
+              onChange={(color) => updateRole({ color })}
+            />
+          </div>
+        </div>
+        <div
+          className="segmented-control segmented-control--titled typography-italic"
+          role="radiogroup"
+          aria-label="Italic style"
+        >
+          <span className="segmented-control__title">Italic style</span>
+          {(["italic", "oblique"] as const).map((value) => (
+            <label key={value}>
+              <input
+                type="radio"
+                name="italicStyle"
+                checked={definition.italicStyle === value}
+                onChange={() =>
+                  setDefinition((draft) => ({ ...draft, italicStyle: value }))
+                }
+              />
+              {value}
+            </label>
           ))}
         </div>
-        <FormField label="Font family">
-          <FontPicker
-            value={style.fontFamily}
-            onValueChange={(fontFamily) => updateRole({ fontFamily })}
-            options={fontOptions.map((font) => ({
-              value: font.id,
-              label: font.displayName,
-            }))}
-          />
-        </FormField>
-        <Range
-          label="Font size"
-          value={style.fontSizePt}
-          min={role === "body" ? 8 : 6}
-          max={role === "body" ? 16 : 72}
-          step={role === "body" ? 0.5 : 1}
-          unit="pt"
-          onChange={(fontSizePt) =>
-            updateRole({ fontSizePt: Number(fontSizePt) })
-          }
-        />
-        <FormField label="Weight">
-          <Select
-            value={String(style.fontWeight)}
-            onValueChange={(fontWeight) =>
-              updateRole({
-                fontWeight: Number(fontWeight) as 400 | 500 | 600 | 700,
-              })
-            }
-            options={[400, 500, 600, 700].map((weight) => ({
-              value: String(weight),
-              label: String(weight),
-            }))}
-            placeholder="Choose a weight"
-            aria-label="Weight"
-          />
-        </FormField>
-        <Range
-          label="Line height"
-          value={style.lineHeight}
-          min={1}
-          max={2}
-          step={0.05}
-          unit=""
-          onChange={(lineHeight) =>
-            updateRole({ lineHeight: Number(lineHeight) })
-          }
-        />
-        <ColorControl
-          name={`${textStyleRoles.find((item) => item.value === role)?.label} color`}
-          value={style.color}
-          onChange={(color) => updateRole({ color })}
-        />
-      </div>
-      <div
-        className="segmented-control segmented-control--titled"
-        role="radiogroup"
-        aria-label="Italic style"
-      >
-        <span className="segmented-control__title">Italic style</span>
-        {(["italic", "oblique"] as const).map((value) => (
-          <label key={value}>
-            <input
-              type="radio"
-              name="italicStyle"
-              checked={definition.italicStyle === value}
-              onChange={() =>
-                setDefinition((draft) => ({ ...draft, italicStyle: value }))
-              }
-            />
-            {value}
-          </label>
-        ))}
       </div>
     </section>
-  );
-}
-
-const marginPresets = [
-  { label: "Compact", marginMm: 12 },
-  { label: "Standard", marginMm: 20 },
-  { label: "Spacious", marginMm: 28 },
-] as const;
-
-const printPresets = [
-  { label: "A4 Standard", size: "A4", marginMm: 20 },
-  { label: "A4 Narrow", size: "A4", marginMm: 12 },
-  { label: "Letter Standard", size: "LETTER", marginMm: 25.4 },
-  { label: "Letter Narrow", size: "LETTER", marginMm: 12.7 },
-] as const;
-
-export function PageControls({
-  definition,
-  setDefinition,
-}: {
-  definition: StyleDefinition;
-  setDefinition: SetDefinition;
-}) {
-  const margins = [
-    ["marginTopMm", "Top"],
-    ["marginRightMm", "Right"],
-    ["marginBottomMm", "Bottom"],
-    ["marginLeftMm", "Left"],
-  ] as const;
-  const applyPreset = (
-    marginMm: number,
-    size?: StyleDefinition["page"]["size"],
-  ) =>
-    setDefinition((draft) => ({
-      ...draft,
-      page: {
-        ...draft.page,
-        ...(size ? { size } : {}),
-        marginTopMm: marginMm,
-        marginRightMm: marginMm,
-        marginBottomMm: marginMm,
-        marginLeftMm: marginMm,
-      },
-    }));
-  return (
-    <section
-      className="control-section style-studio__section !rounded-lg !border-border !bg-card !p-4 !shadow-sm"
-      aria-labelledby="page-layout-title"
-    >
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <h3
-            id="page-layout-title"
-            className="!mb-1 !font-sans !text-base !font-semibold !normal-case !tracking-normal text-foreground"
-          >
-            Page layout
-          </h3>
-          <p className="text-xs font-normal normal-case tracking-normal text-muted-foreground">
-            Choose the format and print-safe margins.
-          </p>
-        </div>
-        <span className="rounded bg-muted px-2 py-1 font-mono text-[10px] uppercase text-muted-foreground">
-          Layout
-        </span>
-      </div>
-      <div
-        className="segmented-control segmented-control--titled"
-        role="radiogroup"
-        aria-label="Page size"
-      >
-        <span className="segmented-control__title">Page size</span>
-        {(["A4", "LETTER"] as const).map((size) => (
-          <label key={size}>
-            <input
-              type="radio"
-              name="page-size"
-              checked={definition.page.size === size}
-              onChange={() =>
-                setDefinition((draft) => ({
-                  ...draft,
-                  page: { ...draft.page, size },
-                }))
-              }
-            />
-            {size}
-          </label>
-        ))}
-      </div>
-      <PresetControls
-        label="Margin presets"
-        presets={marginPresets}
-        onSelect={(preset) => applyPreset(preset.marginMm)}
-      />
-      <PresetControls
-        label="Print standards"
-        presets={printPresets}
-        onSelect={(preset) => applyPreset(preset.marginMm, preset.size)}
-      />
-      <div className="margin-grid">
-        {margins.map(([key, label]) => (
-          <label key={key}>
-            {label}{" "}
-            <NumberField
-              label={`${label} margin`}
-              value={definition.page[key]}
-              min={0}
-              max={80}
-              step={1}
-              unit="mm"
-              onChange={(value) =>
-                setDefinition((draft) => ({
-                  ...draft,
-                  page: { ...draft.page, [key]: Number(value) },
-                }))
-              }
-            />
-          </label>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function PresetControls<T extends { label: string }>({
-  label,
-  presets,
-  onSelect,
-}: {
-  label: string;
-  presets: readonly T[];
-  onSelect: (preset: T) => void;
-}) {
-  return (
-    <div className="layout-presets" role="group" aria-label={label}>
-      <span className="layout-presets__title">{label}</span>
-      {presets.map((preset) => (
-        <button
-          key={preset.label}
-          className="layout-presets__option"
-          type="button"
-          onClick={() => onSelect(preset)}
-        >
-          {preset.label}
-        </button>
-      ))}
-    </div>
   );
 }
 

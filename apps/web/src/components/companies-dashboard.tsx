@@ -117,7 +117,7 @@ export function CompaniesDashboard() {
         className="rounded-lg border border-border bg-card shadow-sm"
       >
         <div className="flex flex-col gap-4 border-b border-border p-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
               Directory
             </p>

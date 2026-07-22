@@ -311,7 +311,7 @@ function MemberRow({
         <td data-label="Role">
           {owner ? (
             <select
-              className="input max-w-32"
+              className="input max-w-32 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60"
               aria-label={`Role for ${member.name || member.email}`}
               value={member.role}
               disabled={pending || lastOwner}
@@ -343,6 +343,7 @@ function MemberRow({
             <div className="flex flex-col items-start gap-1">
               <Button
                 tone="danger"
+                className="disabled:cursor-not-allowed disabled:border-muted disabled:bg-muted disabled:text-muted-foreground"
                 disabled={pending || lastOwner}
                 title={
                   lastOwner

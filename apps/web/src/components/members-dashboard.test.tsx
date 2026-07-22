@@ -85,8 +85,29 @@ describe("MembersDashboard", () => {
 
     render(<MembersDashboard />);
 
-    expect(await screen.findByLabelText("Role for Owner")).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
+    const role = await screen.findByLabelText("Role for Owner");
+    const remove = screen.getByRole("button", { name: "Remove" });
+
+    expect(role).toBeDisabled();
+    expect(role).toHaveAttribute(
+      "title",
+      "Add another owner before changing this role.",
+    );
+    expect(role).toHaveClass(
+      "disabled:cursor-not-allowed",
+      "disabled:bg-muted",
+      "disabled:text-muted-foreground",
+    );
+    expect(remove).toBeDisabled();
+    expect(remove).toHaveAttribute(
+      "title",
+      "Add another owner before removing this account.",
+    );
+    expect(remove).toHaveClass(
+      "disabled:cursor-not-allowed",
+      "disabled:bg-muted",
+      "disabled:text-muted-foreground",
+    );
     expect(screen.getByText("At least one owner is required.")).toBeVisible();
   });
 
