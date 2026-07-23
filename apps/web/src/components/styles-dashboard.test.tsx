@@ -520,6 +520,28 @@ describe("StylesDashboard", () => {
     expect(stack?.querySelector(".margin-grid")).toBeInTheDocument();
   });
 
+  it("keeps matching page presets pressed and clears them after manual margin edits", async () => {
+    await openEditor();
+
+    const compact = screen.getByRole("button", { name: "Compact" });
+    const standard = screen.getByRole("button", { name: "Standard" });
+    const a4Standard = screen.getByRole("button", { name: "A4 Standard" });
+
+    expect(compact).toHaveAttribute("aria-pressed", "false");
+    expect(standard).toHaveAttribute("aria-pressed", "true");
+    expect(a4Standard).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(compact);
+    expect(compact).toHaveAttribute("aria-pressed", "true");
+    expect(standard).toHaveAttribute("aria-pressed", "false");
+    expect(a4Standard).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.change(screen.getByLabelText("Top margin value"), {
+      target: { value: "13" },
+    });
+    expect(compact).toHaveAttribute("aria-pressed", "false");
+  });
+
   it("updates representative page, typography, header, and footer controls in the live sample", async () => {
     await openEditor();
 
@@ -706,6 +728,10 @@ describe("StylesDashboard", () => {
     fireEvent.click(within(view).getByRole("button", { name: "Split" }));
     expect(typography).toBeVisible();
     expect(preview).toBeVisible();
+    expect(document.querySelector(".style-studio__layout")).toHaveClass(
+      "style-studio__layout--split",
+    );
+    expect(preview.parentElement).toHaveClass("style-studio__preview");
   });
 
   it("orders section navigation before the accessible live preview", async () => {

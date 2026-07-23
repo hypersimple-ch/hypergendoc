@@ -29,6 +29,8 @@ export function PageControls({
     ["marginBottomMm", "Bottom"],
     ["marginLeftMm", "Left"],
   ] as const;
+  const hasUniformMargins = (marginMm: number) =>
+    margins.every(([key]) => definition.page[key] === marginMm);
   const applyPreset = (
     marginMm: number,
     size?: StyleDefinition["page"]["size"],
@@ -93,11 +95,16 @@ export function PageControls({
         <PresetControls
           label="Margin presets"
           presets={marginPresets}
+          isSelected={(preset) => hasUniformMargins(preset.marginMm)}
           onSelect={(preset) => applyPreset(preset.marginMm)}
         />
         <PresetControls
           label="Print standards"
           presets={printPresets}
+          isSelected={(preset) =>
+            definition.page.size === preset.size &&
+            hasUniformMargins(preset.marginMm)
+          }
           onSelect={(preset) => applyPreset(preset.marginMm, preset.size)}
         />
         <div className="margin-grid">
@@ -129,10 +136,12 @@ export function PageControls({
 function PresetControls<T extends { label: string }>({
   label,
   presets,
+  isSelected,
   onSelect,
 }: {
   label: string;
   presets: readonly T[];
+  isSelected: (preset: T) => boolean;
   onSelect: (preset: T) => void;
 }) {
   return (
@@ -143,6 +152,7 @@ function PresetControls<T extends { label: string }>({
           key={preset.label}
           className="layout-presets__option"
           type="button"
+          aria-pressed={isSelected(preset)}
           onClick={() => onSelect(preset)}
         >
           {preset.label}
