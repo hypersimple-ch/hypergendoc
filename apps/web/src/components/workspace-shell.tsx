@@ -263,28 +263,28 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
       <header
         className={`workspace-top workspace-shell__header ${open ? "workspace-top--menu-open" : ""}`}
       >
-        <Link
-          href="/workspace"
-          className="wordmark workspace-brand"
-          tabIndex={open ? -1 : undefined}
-          aria-label="HyperGenDoc overview"
-        >
-          <span className="workspace-brand__mark" aria-hidden="true">
-            H
+        <div className="workspace-brand-group">
+          <Link
+            href="/workspace"
+            className="wordmark workspace-brand"
+            tabIndex={open ? -1 : undefined}
+            aria-label="HyperGenDoc overview"
+          >
+            <span className="workspace-brand__mark" aria-hidden="true">
+              H
+            </span>
+            <span className="workspace-brand__name">HyperGenDoc</span>
+          </Link>
+          <span className="workspace-context__identity">
+            {context?.name ?? "Workspace"}
           </span>
-          <span className="workspace-brand__name">HyperGenDoc</span>
-        </Link>
+        </div>
         <section
           className="workspace-context"
           aria-label="Active workspace context"
           hidden={open}
         >
-          <div className="workspace-context__identity">
-            <span className="workspace-label">Current workspace</span>
-            <strong>{context?.name ?? "Workspace"}</strong>
-          </div>
           <div className="workspace-company-selector workspace-context__company">
-            <label htmlFor="active-company">Active company</label>
             {loading ? <p role="status">Loading companies…</p> : null}
             {error ? (
               <div role="alert">
@@ -313,12 +313,6 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
                 placeholder="Select a company"
               />
             ) : null}
-            <Link
-              className="workspace-context__action"
-              href="/workspace/companies"
-            >
-              Manage companies
-            </Link>
           </div>
         </section>
         <button
@@ -334,19 +328,21 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
           <Menu size={18} aria-hidden="true" />
           <span>Menu</span>
         </button>
-        <button
-          className="avatar"
-          aria-label="Sign out"
-          title="Sign out"
-          disabled={open || signOutState === "pending"}
-          onClick={() => void signOut()}
-        >
-          {signOutState === "pending" ? (
-            <span aria-hidden="true">…</span>
-          ) : (
-            <LogOut size={17} aria-hidden="true" />
-          )}
-        </button>
+        <div className="workspace-account-action">
+          <button
+            className="avatar"
+            aria-label="Sign out"
+            title="Sign out"
+            disabled={open || signOutState === "pending"}
+            onClick={() => void signOut()}
+          >
+            {signOutState === "pending" ? (
+              <span aria-hidden="true">…</span>
+            ) : (
+              <LogOut size={17} aria-hidden="true" />
+            )}
+          </button>
+        </div>
         {signOutState === "error" ? (
           <p role="alert">Sign out failed. Please try again.</p>
         ) : null}
