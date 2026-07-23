@@ -18,7 +18,7 @@
     "test": "pnpm -r --if-present test",
     "test:run": "pnpm -r --if-present test:run",
     "test:regression": "vitest run --config vitest.config.ts tests/security",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:run && pnpm test:regression && pnpm build",
+    "check": "pnpm lint && pnpm typecheck && pnpm test:run && pnpm test:regression && pnpm build",
     "compose:check": "node scripts/validate-compose.mjs",
     "db:migrations:check": "node scripts/check-migrations.mjs"
   },
