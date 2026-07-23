@@ -5,7 +5,7 @@ import { Filter, ScrollText, ShieldCheck } from "lucide-react";
 import { dashboardApi, type WorkspaceAuditEvent } from "../lib/dashboard-api";
 import { useActiveCompany } from "./active-company";
 import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
-import { Button, Status, Table } from "./primitives";
+import { Button, PageHeader, Status, Table } from "./primitives";
 
 export function AuditDashboard() {
   const { context, loading, error, reload } = useActiveCompany();
@@ -80,20 +80,17 @@ function OwnerAuditLog() {
 
   return (
     <>
-      <section className="audit-dashboard page-heading flex flex-col gap-5 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
-        <div className="max-w-2xl">
-          <p className="eyebrow">Governance / audit log</p>
-          <h1 className="mt-1">Security activity</h1>
-          <p>
-            Review workspace changes and security-relevant actions. Request
-            bodies, credentials, and document content are never displayed.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <ShieldCheck className="size-4 text-primary" aria-hidden="true" />
-          Append-only event trail
-        </div>
-      </section>
+      <PageHeader
+        eyebrow="Governance / audit log"
+        title="Security activity"
+        description="Review workspace changes and security-relevant actions. Request bodies, credentials, and document content are never displayed."
+        aside={
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <ShieldCheck className="size-4 text-primary" aria-hidden="true" />
+            Append-only event trail
+          </div>
+        }
+      />
 
       <section
         className="grid gap-3 sm:grid-cols-3"

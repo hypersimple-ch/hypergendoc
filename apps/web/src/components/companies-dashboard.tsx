@@ -11,6 +11,7 @@ import {
   ConfirmDialog,
   FormField,
   Input,
+  PageHeader,
   Status,
   Table,
 } from "./primitives";
@@ -58,23 +59,17 @@ export function CompaniesDashboard() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-5 text-foreground">
-      <header className="flex flex-col gap-3 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-            Operations console
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-            Companies
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Maintain the company scope used by workspace styles and documents.
-          </p>
-        </div>
-        <Status>
-          {companies.length} {companies.length === 1 ? "record" : "records"}
-        </Status>
-      </header>
+    <div className="space-y-5 text-foreground">
+      <PageHeader
+        eyebrow="Operations console"
+        title="Companies"
+        description="Maintain the company scope used by workspace styles and documents."
+        aside={
+          <Status>
+            {companies.length} {companies.length === 1 ? "record" : "records"}
+          </Status>
+        }
+      />
 
       <section
         aria-labelledby="add-company-heading"

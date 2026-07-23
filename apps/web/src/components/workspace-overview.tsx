@@ -12,7 +12,7 @@ import {
 import { dashboardApi, type DocumentDetail } from "../lib/dashboard-api";
 import { useActiveCompany } from "./active-company";
 import { Empty, LoadState, useLoaded } from "./dashboard-state";
-import { Status, Table } from "./primitives";
+import { PageHeader, Status, Table } from "./primitives";
 
 type OverviewData = {
   documents: Awaited<ReturnType<typeof dashboardApi.documents>>;
@@ -71,26 +71,20 @@ export function WorkspaceOverview() {
   );
 
   return (
-    <div className="mx-auto max-w-7xl space-y-5 text-foreground">
-      <header className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-            Operations console
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-            {workspace.activeCompany?.name ?? "Workspace overview"}
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Scope, readiness, and document activity for the active company.
-          </p>
-        </div>
-        <Link
-          className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          href="/workspace/companies"
-        >
-          Manage companies <ArrowRight className="size-4" aria-hidden="true" />
-        </Link>
-      </header>
+    <div className="space-y-5 text-foreground">
+      <PageHeader
+        eyebrow="Operations console"
+        title={workspace.activeCompany?.name ?? "Workspace overview"}
+        description="Scope, readiness, and document activity for the active company."
+        aside={
+          <Link
+            className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            href="/workspace/companies"
+          >
+            Manage companies <ArrowRight className="size-4" aria-hidden="true" />
+          </Link>
+        }
+      />
 
       <LoadState loading={loading} error={error} onRetry={retry} />
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">

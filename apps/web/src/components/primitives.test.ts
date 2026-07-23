@@ -8,6 +8,7 @@ import {
   Dialog,
   FormField,
   Input,
+  PageHeader,
   Select,
   Table,
 } from "./primitives";
@@ -20,6 +21,31 @@ Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
 afterEach(cleanup);
 
 describe("accessible primitives", () => {
+  it("renders a semantic page header with optional actions", () => {
+    render(
+      h(PageHeader, {
+        eyebrow: "Workspace",
+        title: "Companies",
+        description: "Manage the companies in this workspace.",
+        aside: h("button", null, "Add company"),
+        className: "companies-heading",
+      }),
+    );
+
+    const heading = screen.getByRole("banner");
+    expect(heading).toHaveClass("page-heading", "companies-heading");
+    expect(screen.getByText("Workspace")).toHaveClass("eyebrow");
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Companies" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText("Manage the companies in this workspace."),
+    ).toHaveClass("page-heading__description");
+    expect(
+      screen.getByRole("button", { name: "Add company" }),
+    ).toBeVisible();
+  });
+
   it("associates native controls with unique labels, hints, and errors", () => {
     render(
       h(
