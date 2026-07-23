@@ -11,6 +11,7 @@ import {
   ConfirmDialog,
   FormField,
   Input,
+  PageHeader,
   Status,
   Table,
 } from "./primitives";
@@ -58,27 +59,25 @@ export function DocumentsDashboard() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-5 text-foreground">
-      <header className="flex flex-col gap-3 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-            Operations console
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-            Documents
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+    <div className="space-y-5 text-foreground">
+      <PageHeader
+        eyebrow="Operations console"
+        title="Documents"
+        description={
+          <>
             Inspect immutable source history and restore a prior revision as a
             new commit.
-          </p>
-        </div>
-        <Link
-          className="inline-flex items-center gap-2 text-sm font-medium text-primary underline-offset-4 hover:underline"
-          href="/workspace/styles"
-        >
-          Review styles
-        </Link>
-      </header>
+          </>
+        }
+        aside={
+          <Link
+            className="inline-flex items-center gap-2 text-sm font-medium text-primary underline-offset-4 hover:underline"
+            href="/workspace/styles"
+          >
+            Review styles
+          </Link>
+        }
+      />
       {activeCompany && (
         <section
           aria-label="Document filters"

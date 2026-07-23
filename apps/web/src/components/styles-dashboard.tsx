@@ -7,7 +7,7 @@ import type { Company, CompanyAssets, Style } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
 import { useActiveCompany } from "./active-company";
 import { Empty, LoadState, safeError } from "./dashboard-state";
-import { Button, FormField, Input, Status } from "./primitives";
+import { Button, FormField, Input, PageHeader, Status } from "./primitives";
 import { initialStyleDefinition } from "./style-studio-definition";
 import { StyleStudio } from "./style-studio";
 
@@ -81,22 +81,17 @@ export function StylesDashboard() {
 
   return (
     <div className="styles-page">
-      <section className="page-heading !items-start !border-border !pb-5">
-        <div className="max-w-2xl">
-          <p className="eyebrow !font-mono !text-primary">Style library</p>
-          <h1 className="!mt-1 !text-3xl !font-semibold !tracking-tight text-foreground sm:!text-4xl">
-            Structured brand systems.
-          </h1>
-          <p className="!mt-2 !text-sm !leading-6 text-muted-foreground">
-            Build an intentional visual language. Every save remains an
-            immutable version for reliable document rendering.
-          </p>
-        </div>
-        <div className="hidden items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground sm:flex">
-          <Palette className="size-4 text-primary" aria-hidden="true" />
-          Versioned document styling
-        </div>
-      </section>
+      <PageHeader
+        eyebrow="Style library"
+        title="Structured brand systems."
+        description="Build an intentional visual language. Every save remains an immutable version for reliable document rendering."
+        aside={
+          <div className="hidden items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground sm:flex">
+            <Palette className="size-4 text-primary" aria-hidden="true" />
+            Versioned document styling
+          </div>
+        }
+      />
       {activeCompany ? (
         <>
           <section className="panel dashboard-panel !rounded-lg !border-border !bg-card !p-5 !shadow-sm">

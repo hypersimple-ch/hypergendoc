@@ -11,6 +11,7 @@ import {
   ConfirmDialog,
   FormField,
   Input,
+  PageHeader,
   Status,
   Table,
 } from "./primitives";
@@ -55,20 +56,17 @@ export function MembersDashboard() {
 
   return (
     <>
-      <section className="members-dashboard page-heading flex flex-col gap-5 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
-        <div className="max-w-2xl">
-          <p className="eyebrow">Governance / members</p>
-          <h1 className="mt-1">Members & permissions</h1>
-          <p>
-            Manage workspace access with server-enforced roles. Changes apply to
-            every request immediately.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <ShieldCheck className="size-4 text-primary" aria-hidden="true" />
-          Workspace roles
-        </div>
-      </section>
+      <PageHeader
+        eyebrow="Governance / members"
+        title="Members & permissions"
+        description="Manage workspace access with server-enforced roles. Changes apply to every request immediately."
+        aside={
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <ShieldCheck className="size-4 text-primary" aria-hidden="true" />
+            Workspace roles
+          </div>
+        }
+      />
 
       <LoadState
         loading={contextLoading}
@@ -311,7 +309,7 @@ function MemberRow({
         <td data-label="Role">
           {owner ? (
             <select
-              className="input max-w-32"
+              className="input max-w-32 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60"
               aria-label={`Role for ${member.name || member.email}`}
               value={member.role}
               disabled={pending || lastOwner}
@@ -343,6 +341,7 @@ function MemberRow({
             <div className="flex flex-col items-start gap-1">
               <Button
                 tone="danger"
+                className="disabled:cursor-not-allowed disabled:border-muted disabled:bg-muted disabled:text-muted-foreground"
                 disabled={pending || lastOwner}
                 title={
                   lastOwner

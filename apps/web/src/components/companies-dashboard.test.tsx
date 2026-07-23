@@ -58,6 +58,20 @@ describe("CompaniesDashboard", () => {
     );
   });
 
+  it("keeps the directory heading in a shrink-safe header child", () => {
+    activeCompany.mockReturnValue(workspace());
+    render(<CompaniesDashboard />);
+
+    const heading = screen.getByRole("heading", {
+      name: "Manage companies",
+    });
+    expect(heading.closest("section")).toHaveAttribute(
+      "aria-labelledby",
+      "company-directory-heading",
+    );
+    expect(heading.parentElement).toHaveClass("min-w-0");
+  });
+
   it("reloads the shared company collection after creating and renaming", async () => {
     const reload = vi.fn();
     activeCompany.mockReturnValue(workspace({ reload }));

@@ -176,6 +176,35 @@ export function Select({
   );
 }
 
+export function PageHeader({
+  eyebrow,
+  title,
+  description,
+  aside,
+  className,
+}: {
+  eyebrow: ReactNode;
+  title: ReactNode;
+  description: ReactNode;
+  aside?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <header className={cn("page-heading", className)}>
+      <div className="page-heading__content">
+        <p className="eyebrow">{eyebrow}</p>
+        <h1 className="font-semibold leading-[1.15] tracking-[-0.03em]">
+          {title}
+        </h1>
+        <p className="page-heading__description">{description}</p>
+      </div>
+      {aside != null ? (
+        <div className="page-heading__aside self-start">{aside}</div>
+      ) : null}
+    </header>
+  );
+}
+
 export function Table({
   caption,
   columns,

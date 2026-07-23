@@ -11,6 +11,7 @@ import {
   ConfirmDialog,
   FormField,
   Input,
+  PageHeader,
   Status,
   Table,
 } from "./primitives";
@@ -136,20 +137,17 @@ export function CredentialsDashboard() {
 
   return (
     <>
-      <section className="credentials-dashboard page-heading flex flex-col gap-5 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between">
-        <div className="max-w-2xl">
-          <p className="eyebrow">Governance / MCP access</p>
-          <h1 className="mt-1">Scoped agent access</h1>
-          <p>
-            Issue narrowly scoped credentials for MCP agents. Secrets are shown
-            once and cannot be retrieved later.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <ShieldCheck className="size-4 text-primary" aria-hidden="true" />
-          Owner-managed credentials
-        </div>
-      </section>
+      <PageHeader
+        eyebrow="Governance / MCP access"
+        title="Scoped agent access"
+        description="Issue narrowly scoped credentials for MCP agents. Secrets are shown once and cannot be retrieved later."
+        aside={
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <ShieldCheck className="size-4 text-primary" aria-hidden="true" />
+            Owner-managed credentials
+          </div>
+        }
+      />
 
       <section
         className="grid gap-3 sm:grid-cols-3"

@@ -486,6 +486,40 @@ describe("StylesDashboard", () => {
     );
   });
 
+  it("groups typography and page layout controls with clear accessible context", async () => {
+    await openEditor();
+
+    const typography = screen
+      .getByRole("heading", { name: "Typography" })
+      .closest("section") as HTMLElement;
+    expect(typography.querySelector(".typography-stack")).toBeInTheDocument();
+    expect(typography.querySelector(".typography-upload")).toContainElement(
+      screen.getByLabelText("Upload company font"),
+    );
+    expect(within(typography).getByText("Editing Body")).toBeVisible();
+    fireEvent.click(within(typography).getByRole("button", { name: "H2" }));
+    expect(within(typography).getByText("Editing H2")).toBeVisible();
+    expect(typography.querySelector(".typography-fields")).toBeInTheDocument();
+    expect(
+      within(typography).getByRole("radiogroup", { name: "Italic style" }),
+    ).toHaveClass("typography-italic");
+
+    const pageLayout = screen
+      .getByRole("heading", { name: "Page layout" })
+      .closest("section") as HTMLElement;
+    const stack = pageLayout.querySelector(".page-layout-stack");
+    expect(stack).toContainElement(
+      within(pageLayout).getByRole("radiogroup", { name: "Page size" }),
+    );
+    expect(stack).toContainElement(
+      within(pageLayout).getByRole("group", { name: "Margin presets" }),
+    );
+    expect(stack).toContainElement(
+      within(pageLayout).getByRole("group", { name: "Print standards" }),
+    );
+    expect(stack?.querySelector(".margin-grid")).toBeInTheDocument();
+  });
+
   it("updates representative page, typography, header, and footer controls in the live sample", async () => {
     await openEditor();
 
