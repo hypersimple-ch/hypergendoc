@@ -221,6 +221,34 @@ describe("document content foundation", () => {
     expect(output).not.toContain("fonts.googleapis.com");
   });
 
+  it("embeds every added font catalog family with its supported weight range", () => {
+    const output = renderDocumentHtml("Text", "markdown", {
+      ...style,
+      bodyFont: "Nunito",
+      headingFont: "Archivo",
+      textStyles: {
+        ...textStyles,
+        h1: { ...textStyles.h1, fontFamily: "Karla" },
+        h2: { ...textStyles.h2, fontFamily: "Roboto Condensed" },
+        h3: { ...textStyles.h3, fontFamily: "Merriweather Sans" },
+      },
+    });
+
+    for (const family of [
+      "Nunito",
+      "Archivo",
+      "Karla",
+      "RobotoCondensed",
+      "MerriweatherSans",
+    ]) {
+      expect(output).toContain(
+        `font-family: "HypergendocBuiltIn_${family}"; src: url("data:font/woff2;base64,`,
+      );
+    }
+    expect(output.match(/font-weight: 400 700;/g)).toHaveLength(5);
+    expect(output).not.toContain("fonts.googleapis.com");
+  });
+
   it("keeps captions while applying existing sanitizer safeguards", () => {
     const output = renderDocumentHtml(
       '<table><caption onclick="x()"><img src="x">Quarterly <strong>results</strong></caption><tr><td>Value</td></tr></table>',
