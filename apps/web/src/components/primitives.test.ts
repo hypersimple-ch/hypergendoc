@@ -41,9 +41,7 @@ describe("accessible primitives", () => {
     expect(
       screen.getByText("Manage the companies in this workspace."),
     ).toHaveClass("page-heading__description");
-    expect(
-      screen.getByRole("button", { name: "Add company" }),
-    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Add company" })).toBeVisible();
   });
 
   it("associates native controls with unique labels, hints, and errors", () => {
