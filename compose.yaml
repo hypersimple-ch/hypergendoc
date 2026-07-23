@@ -1,7 +1,15 @@
 name: hypergendoc
 
+x-logging: &default-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
 services:
   proxy:
+    <<: *default-logging
     image: caddy:2.11.4-alpine
     depends_on:
       server:
@@ -22,6 +30,7 @@ services:
     networks: [edge]
 
   web:
+    <<: *default-logging
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -52,6 +61,7 @@ services:
     networks: [edge]
 
   server:
+    <<: *default-logging
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -149,6 +159,7 @@ services:
     restart: "no"
 
   renderer:
+    <<: *default-logging
     build:
       context: .
       dockerfile: apps/renderer/Dockerfile
@@ -181,6 +192,7 @@ services:
       retries: 20
 
   postgres:
+    <<: *default-logging
     image: postgres:17.10-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-hypergendoc}
@@ -217,10 +229,12 @@ services:
     restart: "no"
 
   object-store:
+    <<: *default-logging
     image: docker.io/dxflrs/garage:v2.3.0@sha256:866bd13ed2038ba7e7190e840482bc27234c4afaf77be8cfa439ae088c1e4690
     command: [/garage, server, --single-node, --default-bucket]
     environment:
       GARAGE_CONFIG_FILE: /etc/garage.toml
+      RUST_LOG: garage=info,netapp=info,garage_net::netapp=warn,garage_api_admin::api_server=warn
       GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?set GARAGE_RPC_SECRET in .env}
       GARAGE_DEFAULT_ACCESS_KEY: ${S3_ACCESS_KEY:-GK00000000000000000000000000000000}
       GARAGE_DEFAULT_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY in .env}
@@ -240,7 +254,7 @@ services:
       - /tmp:rw,noexec,nosuid,size=64m,uid=10001,gid=10001
     healthcheck:
       test: [CMD, /garage, status]
-      interval: 5s
+      interval: 30s
       timeout: 3s
       retries: 20
     networks: [data]
