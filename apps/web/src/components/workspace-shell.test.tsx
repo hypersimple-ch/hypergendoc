@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -212,11 +213,22 @@ describe("WorkspaceShell", () => {
       </WorkspaceShell>,
     );
 
-    expect(await screen.findByText("Acme Studio")).toBeVisible();
+    const workspaceIdentity = await screen.findByText("Acme Studio");
+    const header = screen.getByRole("banner");
+
+    expect(workspaceIdentity).toBeVisible();
+    expect(workspaceIdentity).toHaveClass("workspace-context__identity");
+    expect(workspaceIdentity.closest(".workspace-brand-group")).not.toBeNull();
     expect(screen.getByText("Route company: Northwind")).toBeVisible();
+    expect(header).not.toHaveTextContent("Current workspace");
+    expect(header).not.toHaveTextContent("Active company");
     expect(
       screen.getByRole("combobox", { name: "Active company" }),
     ).toHaveTextContent("Northwind");
+    expect(
+      within(header).queryByRole("link", { name: "Manage companies" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Companies" })).toBeVisible();
   });
 
   it("switches companies globally and keeps the provider mounted across route rerenders", async () => {
