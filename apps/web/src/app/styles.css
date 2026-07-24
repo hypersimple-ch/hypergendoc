@@ -297,6 +297,16 @@ h2 {
   border-left-color: var(--destructive);
   background: var(--destructive-soft);
 }
+.auth-form {
+  display: grid;
+  gap: 1rem;
+}
+.auth-form-footer {
+  margin: 1.5rem 0 0;
+}
+.hero-proof-row {
+  margin: 1.25rem 0 0;
+}
 .session-loading {
   min-height: 100vh;
   display: grid;
@@ -2753,11 +2763,7 @@ tbody tr:hover {
     display: block;
   }
   .workspace-context__identity {
-    display: flex;
-    max-width: 4.5rem;
-    margin-left: 0.6rem;
-    padding-left: 0.6rem;
-    font-size: 0.72rem;
+    display: none;
   }
   .workspace-context__company {
     grid-template-columns: minmax(0, 1fr);
@@ -2808,6 +2814,9 @@ tbody tr:hover {
   }
   .page-heading__aside {
     width: 100%;
+  }
+  .page-heading__aside:has(> .status) {
+    width: fit-content;
   }
   .page-heading .button {
     width: 100%;

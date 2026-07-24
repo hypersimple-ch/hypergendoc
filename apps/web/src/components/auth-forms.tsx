@@ -47,7 +47,7 @@ export function LoginForm() {
   return (
     <form
       onSubmit={state.submit}
-      className="space-y-4"
+      className="auth-form"
       aria-busy={state.pending}
       aria-label="Sign in"
     >
@@ -91,7 +91,7 @@ export function RegisterForm() {
   return (
     <form
       onSubmit={state.submit}
-      className="space-y-4"
+      className="auth-form"
       aria-busy={state.pending}
       aria-label="Create account"
     >
@@ -141,7 +141,7 @@ export function EmailActionForm({ kind }: { kind: "forgot" | "verify" }) {
   return (
     <form
       onSubmit={state.submit}
-      className="space-y-4"
+      className="auth-form"
       aria-busy={state.pending}
       aria-label={
         kind === "forgot"
@@ -193,7 +193,7 @@ export function ResetForm() {
   return (
     <form
       onSubmit={state.submit}
-      className="space-y-4"
+      className="auth-form"
       aria-busy={state.pending}
       aria-label="Set new password"
     >
@@ -227,7 +227,7 @@ export function WorkspaceForm() {
   return (
     <form
       onSubmit={state.submit}
-      className="space-y-4"
+      className="auth-form"
       aria-busy={state.pending}
       aria-label="Create workspace"
     >
@@ -266,7 +266,7 @@ export function InvitationForm() {
   return (
     <form
       onSubmit={state.submit}
-      className="space-y-4"
+      className="auth-form"
       aria-busy={state.pending}
       aria-label="Accept workspace invitation"
     >

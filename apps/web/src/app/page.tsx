@@ -90,7 +90,7 @@ export default function HomePage() {
               Sign in to your workspace
             </Link>
           </div>
-          <p className="mt-5 flex items-center gap-2 text-sm text-muted-foreground">
+          <p className="hero-proof-row flex items-center gap-2 text-sm text-muted-foreground">
             <Check className="size-4 text-primary" aria-hidden="true" /> Built
             for accountable agency operations
           </p>

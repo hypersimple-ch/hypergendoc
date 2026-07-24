@@ -17,7 +17,7 @@ export default function ForgotPasswordPage() {
         </p>
       </header>
       <EmailActionForm kind="forgot" />
-      <p className="mt-6 text-center text-sm text-muted-foreground">
+      <p className="auth-form-footer text-center text-sm text-muted-foreground">
         Remembered it?{" "}
         <Link
           className="font-semibold text-primary hover:text-primary-hover"

@@ -40,7 +40,7 @@ export default async function LoginPage({
         </div>
       )}
       <LoginForm />
-      <p className="mt-6 text-center text-sm text-muted-foreground">
+      <p className="auth-form-footer text-center text-sm text-muted-foreground">
         New here?{" "}
         <Link
           className="font-semibold text-primary hover:text-primary-hover"

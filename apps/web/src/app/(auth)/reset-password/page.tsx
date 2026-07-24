@@ -16,7 +16,7 @@ export default function ResetPasswordPage() {
       <Suspense>
         <ResetForm />
       </Suspense>
-      <p className="mt-6 text-center text-sm">
+      <p className="auth-form-footer text-center text-sm">
         <Link
           className="font-semibold text-primary hover:text-primary-hover"
           href="/login"
