@@ -306,13 +306,14 @@ const pageMarginBoxes = (
   position: "top" | "bottom",
   value: StyleDefinition["header"],
   mutedColor: string,
+  fontFamily: string,
 ) => {
   if (!value.enabled) return "";
   return (["left", "center", "right"] as const)
     .map((alignment) => {
       const text = value[`${alignment}Text`];
       const pageNumber = alignment === "right" && value.showPageNumber;
-      return `@${position}-${alignment} { color: ${mutedColor}; content: "${escapeCssString(text)}"${pageNumber ? ' " " counter(page)' : ""}; font-size: 8pt; }`;
+      return `@${position}-${alignment} { color: ${mutedColor}; content: "${escapeCssString(text)}"${pageNumber ? ' " " counter(page)' : ""}; font-family: ${fontFamily}; font-size: 8pt; }`;
     })
     .join("\n");
 };
@@ -346,7 +347,7 @@ export function renderDocumentHtml(
       ? `"${builtInFontFamily(reference)}", ${font(reference)}`
       : assetRendering?.fonts.has(reference)
         ? `"${fontFamily(reference)}", sans-serif`
-        : font(reference);
+        : font(reference)!;
   const legacyHeadingCss = `h1, h2, h3, h4, h5, h6 { color: ${style.colors.heading}; font-family: ${renderedFont(style.headingFont)}; line-height: 1.2; }
 h1 { font-size: ${(style.bodySizePt * style.headingScale).toFixed(2)}pt; } h2 { font-size: ${(style.bodySizePt * style.headingScale * 0.85).toFixed(2)}pt; }`;
   const textStyles = style.textStyles;
@@ -359,9 +360,10 @@ h1 { font-size: ${(style.bodySizePt * style.headingScale).toFixed(2)}pt; } h2 { 
         .join("\n")
     : legacyHeadingCss;
   const bodyTextStyle = textStyles?.body;
+  const bodyFont = renderedFont(bodyTextStyle?.fontFamily ?? style.bodyFont);
   const bodyCss = bodyTextStyle
-    ? `color: ${bodyTextStyle.color}; font-family: ${renderedFont(bodyTextStyle.fontFamily)}; font-size: ${bodyTextStyle.fontSizePt}pt; font-weight: ${bodyTextStyle.fontWeight}; line-height: ${bodyTextStyle.lineHeight};`
-    : `color: ${style.colors.text}; font-family: ${renderedFont(style.bodyFont)}; font-size: ${style.bodySizePt}pt; line-height: 1.5;`;
+    ? `color: ${bodyTextStyle.color}; font-family: ${bodyFont}; font-size: ${bodyTextStyle.fontSizePt}pt; font-weight: ${bodyTextStyle.fontWeight}; line-height: ${bodyTextStyle.lineHeight};`
+    : `color: ${style.colors.text}; font-family: ${bodyFont}; font-size: ${style.bodySizePt}pt; line-height: 1.5;`;
   const emphasis = style.italicStyle;
   const pageSize = style.page.size === "A4" ? "A4" : "letter";
   const builtInFontFaceCss = [...new Set(fontReferences)]
@@ -399,14 +401,15 @@ h1 { font-size: ${(style.bodySizePt * style.headingScale).toFixed(2)}pt; } h2 { 
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <style>
 ${fontFaceCss ? `${fontFaceCss}\n` : ""}@page { size: ${pageSize}; margin: ${style.page.marginTopMm}mm ${style.page.marginRightMm}mm ${style.page.marginBottomMm}mm ${style.page.marginLeftMm}mm;
-${pageMarginBoxes("top", style.header, style.colors.muted)}
-${pageMarginBoxes("bottom", style.footer, style.colors.muted)}
+${pageMarginBoxes("top", style.header, style.colors.muted, bodyFont)}
+${pageMarginBoxes("bottom", style.footer, style.colors.muted, bodyFont)}
 }
 * { box-sizing: border-box; }
 body { ${bodyCss} margin: 0; }
 ${logo ? ".document-logo { display: block; max-height: 24mm; max-width: 100%; object-fit: contain; margin: 0 0 6mm; }\n" : ""}main { min-height: 100%; }
 ${textStylesCss}
 em { font-style: ${emphasis}; } a { color: ${style.colors.primary}; } blockquote { border-left: 3px solid ${style.colors.accent}; color: ${style.colors.muted}; margin-left: 0; padding-left: 1em; }
+h1, h2, h3, h4, h5, h6, caption { break-after: avoid-page; } table, blockquote, pre { break-inside: avoid-page; } thead { display: table-header-group; } tr { break-inside: avoid-page; }
 table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid ${style.colors.muted}; padding: .35em; text-align: left; } pre { overflow-wrap: anywhere; white-space: pre-wrap; }
 </style>
 </head>

@@ -273,7 +273,7 @@ describe("document content foundation", () => {
     expect(output).toContain(
       "h1, h2, h3, h4, h5, h6 { color: #17201c; font-family: Georgia, serif; line-height: 1.2; }\nh1 { font-size: 14.00pt; } h2 { font-size: 11.90pt; }",
     );
-    expect(output).not.toContain("caption {");
+    expect(output).not.toContain("caption { color:");
   });
 
   it("strips active content, embeds, images, event handlers, and unsafe URLs", () => {
@@ -350,19 +350,35 @@ describe("document content foundation", () => {
       },
     });
     expect(output).toContain(
-      '@top-left { color: #767b76; content: "Header left"',
+      '@top-left { color: #767b76; content: "Header left"; font-family: Arial, sans-serif;',
     );
     expect(output).toContain(
-      '@top-right { color: #767b76; content: "Header right" " " counter(page);',
+      '@top-right { color: #767b76; content: "Header right" " " counter(page); font-family: Arial, sans-serif;',
     );
     expect(output).toContain(
-      '@bottom-left { color: #767b76; content: "Client"',
+      '@bottom-left { color: #767b76; content: "Client"; font-family: Arial, sans-serif;',
     );
     expect(output).toContain(
-      '@bottom-right { color: #767b76; content: "" " " counter(page);',
+      '@bottom-right { color: #767b76; content: "" " " counter(page); font-family: Arial, sans-serif;',
     );
     expect(output).not.toContain('<header class="running">');
     expect(output).not.toContain('<footer class="running">');
+  });
+
+  it("keeps headings and bounded content blocks together across pages", () => {
+    const output = renderDocumentHtml(
+      "<h2>Section</h2><p>Introduction</p><table><caption>Results</caption><thead><tr><th>Measure</th></tr></thead><tbody><tr><td>Value</td></tr></tbody></table><blockquote>Note</blockquote><pre>code</pre>",
+      "html",
+      style,
+    );
+    expect(output).toContain(
+      "h1, h2, h3, h4, h5, h6, caption { break-after: avoid-page; }",
+    );
+    expect(output).toContain(
+      "table, blockquote, pre { break-inside: avoid-page; }",
+    );
+    expect(output).toContain("thead { display: table-header-group; }");
+    expect(output).toContain("tr { break-inside: avoid-page; }");
   });
 
   it("omits margin boxes for disabled headers and footers", () => {
@@ -437,7 +453,7 @@ describe("document content foundation", () => {
   it("keeps legacy source hashes exact while v1 asset bytes affect them", () => {
     const legacy = renderDocumentHtml("# Heading", "markdown", style);
     expect(sourceHash(legacy)).toBe(
-      "30226b824c7c679927889d1ce5bffb3bbd60187c727b875ca729153e44c3f250",
+      "0053be9f1b9fdbfd611be0364c2701a2d0c9c1bbbc4c5fe2fcbf8099ee2d07a2",
     );
     expect(
       renderDocumentHtml("# Heading", "markdown", style, {

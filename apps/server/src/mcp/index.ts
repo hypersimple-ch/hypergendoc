@@ -21,6 +21,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import type { z } from "zod";
 import type { AgentActor } from "../modules/auth/actors.js";
+import { AuthorizationError } from "../modules/memberships/service.js";
 import { AppError, toSafeError } from "../platform/errors.js";
 import type { RateLimiter } from "../platform/rate-limit.js";
 
@@ -95,7 +96,18 @@ function assertAction(actor: AgentActor, action: McpAction): void {
 const concise = (value: unknown): string => JSON.stringify(value);
 
 function toolError(error: unknown, requestId: string) {
-  const safe = toSafeError(error, requestId).body.error;
+  const normalized =
+    error instanceof AuthorizationError
+      ? new AppError(
+          error.code,
+          error.code === "forbidden"
+            ? 403
+            : error.code === "conflict"
+              ? 409
+              : 404,
+        )
+      : error;
+  const safe = toSafeError(normalized, requestId).body.error;
   return {
     content: [
       {
