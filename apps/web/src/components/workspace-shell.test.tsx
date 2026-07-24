@@ -325,6 +325,8 @@ describe("WorkspaceShell", () => {
     menu.focus();
     fireEvent.click(menu);
     expect(menu).toHaveAttribute("aria-expanded", "true");
+    expect(menu).toHaveTextContent("Close");
+    expect(menu).not.toHaveTextContent("Menu");
     expect(
       screen.queryByRole("region", { name: "Active workspace context" }),
     ).not.toBeInTheDocument();
@@ -340,6 +342,7 @@ describe("WorkspaceShell", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(menu).toHaveFocus());
     expect(menu).toHaveAttribute("aria-expanded", "false");
+    expect(menu).toHaveTextContent("Menu");
     expect(screen.getByRole("main")).not.toHaveAttribute("inert");
     expect(document.body).not.toHaveStyle({ overflow: "hidden" });
 

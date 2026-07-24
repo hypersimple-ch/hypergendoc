@@ -93,7 +93,7 @@ function OwnerAuditLog() {
       />
 
       <section
-        className="grid gap-3 sm:grid-cols-3"
+        className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3"
         aria-label="Audit log summary"
       >
         <SummaryCard
@@ -172,7 +172,7 @@ function OwnerAuditLog() {
                 {filteredEvents.map((event) => (
                   <tr key={event.id}>
                     <td>
-                      <strong className="font-mono text-sm">
+                      <strong className="break-normal font-mono text-sm">
                         {event.action}
                       </strong>
                     </td>
@@ -228,12 +228,14 @@ function SummaryCard({
   value: string | number;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-card px-4 py-3">
-      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+    <div className="rounded-lg border border-border bg-card px-3 py-2.5 last:col-span-2 sm:px-4 sm:py-3 sm:last:col-span-1">
+      <div className="flex items-center gap-2 text-xs font-medium uppercase leading-4 tracking-wide text-muted-foreground">
         {icon}
         {label}
       </div>
-      <p className="mt-2 text-lg font-semibold text-foreground">{value}</p>
+      <p className="mt-1.5 text-lg font-semibold text-foreground sm:mt-2">
+        {value}
+      </p>
     </div>
   );
 }

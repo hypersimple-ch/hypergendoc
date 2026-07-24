@@ -81,6 +81,11 @@ describe("CredentialsDashboard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create credential" }));
 
     expect(await screen.findByText("one-time-secret")).toBeVisible();
+    expect(
+      screen.getByRole("region", { name: "Copy this secret now" }),
+    ).toHaveAccessibleDescription(
+      "This is the only time the full token will be shown. Save it in a secret manager before continuing.",
+    );
     expect(screen.getByRole("button", { name: "Done" })).toBeDisabled();
     fireEvent.click(
       screen.getByLabelText(
@@ -90,6 +95,34 @@ describe("CredentialsDashboard", () => {
     expect(screen.getByRole("button", { name: "Done" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(screen.queryByText("one-time-secret")).not.toBeInTheDocument();
+  });
+
+  it("copies the one-time token and confirms safe storage", async () => {
+    activeCompany.mockReturnValue(workspace("owner"));
+    api.credentials.mockResolvedValue([]);
+    api.createCredential.mockResolvedValue({ token: "one-time-secret" });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    render(<CredentialsDashboard />);
+
+    fireEvent.click(await screen.findByLabelText("Acme"));
+    fireEvent.change(screen.getByLabelText("Credential name"), {
+      target: { value: "Agent" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create credential" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Copy token" }));
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith("one-time-secret"),
+    );
+    expect(
+      screen.getByText(
+        "Token copied. Store it in your agent's secret manager.",
+      ),
+    ).toBeVisible();
   });
 
   it("confirms credential revocation before submitting", async () => {

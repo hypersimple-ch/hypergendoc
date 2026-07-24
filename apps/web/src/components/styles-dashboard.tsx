@@ -126,8 +126,8 @@ export function StylesDashboard() {
             className="panel dashboard-panel !rounded-lg !border-border !bg-card !p-5 !shadow-sm"
             aria-labelledby="style-library-title"
           >
-            <div className="panel-heading !mb-4 !items-center">
-              <div>
+            <div className="panel-heading !mb-4 !flex !flex-row !items-center">
+              <div className="min-w-0">
                 <p className="eyebrow !font-mono !text-primary">Library</p>
                 <h2
                   id="style-library-title"
@@ -274,7 +274,7 @@ function StyleCreate({
 
   return (
     <form
-      className="inline-form !gap-3"
+      className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
       onSubmit={(event) => void submit(event)}
     >
       <FormField label="New style name">
@@ -290,7 +290,11 @@ function StyleCreate({
         <Plus className="size-4" aria-hidden="true" />
         {busy ? "Creating…" : "Create style"}
       </Button>
-      {error && <Status kind="error">{error}</Status>}
+      {error && (
+        <div className="sm:col-span-2">
+          <Status kind="error">{error}</Status>
+        </div>
+      )}
     </form>
   );
 }

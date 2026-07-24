@@ -832,7 +832,7 @@ legend {
   }
   .table-wrap td {
     display: grid;
-    grid-template-columns: minmax(6rem, 0.45fr) minmax(0, 1fr);
+    grid-template-columns: minmax(5.25rem, 0.32fr) minmax(0, 1fr);
     gap: 0.75rem;
     padding: 0.75rem 0;
     border-top: 1px solid var(--workspace-line);
@@ -849,6 +849,14 @@ legend {
       monospace;
     letter-spacing: 0.06em;
     text-transform: uppercase;
+  }
+  .table-wrap td[data-label="Actions"],
+  .table-wrap td[data-label="Action"] {
+    grid-template-columns: 1fr;
+  }
+  .table-wrap td[data-label="Actions"]::before,
+  .table-wrap td[data-label="Action"]::before {
+    margin-bottom: 0.25rem;
   }
   .row-actions {
     margin-top: 0;

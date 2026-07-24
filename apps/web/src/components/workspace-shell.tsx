@@ -13,6 +13,7 @@ import {
   ScrollText,
   ShieldCheck,
   Users,
+  X,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "./ui/button";
@@ -325,8 +326,12 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
           }
           onClick={() => (open ? closeMenu(true) : setOpen(true))}
         >
-          <Menu size={18} aria-hidden="true" />
-          <span>Menu</span>
+          {open ? (
+            <X size={18} aria-hidden="true" />
+          ) : (
+            <Menu size={18} aria-hidden="true" />
+          )}
+          <span>{open ? "Close" : "Menu"}</span>
         </button>
         <div className="workspace-account-action">
           <button
