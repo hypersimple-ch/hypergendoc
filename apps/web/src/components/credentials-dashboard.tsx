@@ -150,7 +150,7 @@ export function CredentialsDashboard() {
       />
 
       <section
-        className="grid gap-3 sm:grid-cols-3"
+        className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3"
         aria-label="Credential access summary"
       >
         <SummaryCard
@@ -192,31 +192,39 @@ export function CredentialsDashboard() {
         <section
           className="panel dashboard-panel border border-warning/30 bg-card p-4 sm:p-5"
           aria-labelledby="credential-token-title"
+          aria-describedby="credential-token-description"
         >
-          <div className="flex gap-3">
-            <div className="rounded-md bg-warning-soft p-2 text-warning">
+          <div className="flex items-start gap-3">
+            <div className="shrink-0 self-start rounded-md bg-warning-soft p-2 text-warning">
               <LockKeyhole className="size-4" aria-hidden="true" />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="eyebrow">Secret handling</p>
               <h2
                 id="credential-token-title"
-                className="text-base font-semibold"
+                className="mt-1 text-base font-semibold"
               >
                 Copy this secret now
               </h2>
-              <Status kind="warning">
+              <p
+                id="credential-token-description"
+                className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground"
+              >
                 This is the only time the full token will be shown. Save it in a
                 secret manager before continuing.
-              </Status>
+              </p>
             </div>
           </div>
-          <code className="secret-token mt-4 block overflow-x-auto rounded-md border border-border bg-muted p-3 text-sm">
-            {token}
-          </code>
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-            <Button onClick={() => void copy()}>Copy token</Button>
-            <label className="checkbox text-sm">
+          <div className="mt-4 grid gap-3 rounded-lg border border-border bg-muted/50 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+            <code className="secret-token block min-w-0 select-all overflow-x-auto font-mono text-base">
+              {token}
+            </code>
+            <Button className="text-base" onClick={() => void copy()}>
+              Copy token
+            </Button>
+          </div>
+          <div className="mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+            <label className="checkbox text-sm leading-5">
               <input
                 type="checkbox"
                 checked={ack}
@@ -224,19 +232,15 @@ export function CredentialsDashboard() {
               />{" "}
               I have saved this one-time token in a secret manager.
             </label>
-            <Button
-              tone="quiet"
-              disabled={!ack}
-              onClick={() => setToken(undefined)}
-            >
+            <Button disabled={!ack} onClick={() => setToken(undefined)}>
               Done
             </Button>
           </div>
         </section>
       ) : (
-        <section className="panel dashboard-panel border border-border bg-card p-4 sm:p-5">
-          <div className="mb-4 flex gap-3">
-            <div className="rounded-md bg-accent p-2 text-accent-foreground">
+        <section className="panel dashboard-panel max-w-4xl border border-border bg-card p-4 sm:p-5">
+          <div className="mb-4 flex items-start gap-3">
+            <div className="shrink-0 self-start rounded-md bg-accent p-2 text-accent-foreground">
               <KeyRound className="size-4" aria-hidden="true" />
             </div>
             <div>
@@ -422,12 +426,14 @@ function SummaryCard({
   value: string | number;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-card px-4 py-3">
-      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+    <div className="rounded-lg border border-border bg-card px-3 py-2.5 last:col-span-2 sm:px-4 sm:py-3 sm:last:col-span-1">
+      <div className="flex items-center gap-2 text-xs font-medium uppercase leading-4 tracking-wide text-muted-foreground">
         {icon}
         {label}
       </div>
-      <p className="mt-2 text-lg font-semibold text-foreground">{value}</p>
+      <p className="mt-1.5 text-lg font-semibold text-foreground sm:mt-2">
+        {value}
+      </p>
     </div>
   );
 }
