@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import LoginPage from "./page";
+import LoginPage, { safeNextPath } from "./page";
 
 afterEach(cleanup);
 
@@ -44,5 +44,17 @@ describe("LoginPage", () => {
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.queryByText("private-value")).not.toBeInTheDocument();
+  });
+
+  it("accepts only safe root-relative post-login destinations", () => {
+    expect(safeNextPath("/workspace/documents?view=recent#item")).toBe(
+      "/workspace/documents?view=recent#item",
+    );
+    expect(safeNextPath("https://attacker.example/steal")).toBe("/workspace");
+    expect(safeNextPath("//attacker.example/steal")).toBe("/workspace");
+    expect(safeNextPath("/\\attacker.example/steal")).toBe("/workspace");
+    expect(safeNextPath(["/workspace", "//attacker.example"])).toBe(
+      "/workspace",
+    );
   });
 });

@@ -21,10 +21,12 @@
     "test:e2e:mcp": "RUN_E2E_MCP_COMPOSE=1 vitest run --config vitest.config.ts tests/e2e/mcp.compose.test.ts",
     "check": "pnpm lint && pnpm typecheck && pnpm test:run && pnpm test:regression && pnpm build",
     "compose:check": "node scripts/validate-compose.mjs",
-    "db:migrations:check": "node scripts/check-migrations.mjs"
+    "db:migrations:check": "node scripts/check-migrations.mjs",
+    "test:e2e:browser": "playwright test --config playwright.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.61.1",
     "@types/node": "^26.1.1",
     "esbuild": "0.28.1",
     "eslint": "^10.7.0",

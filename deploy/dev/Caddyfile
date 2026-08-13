@@ -9,7 +9,7 @@
     request_buffers 256KB
   }
 
-  @server path /api/* /mcp-artifacts/* /health/live /health/ready
+  @server path /api/* /health/live /health/ready
   reverse_proxy @server server:4000
   reverse_proxy web:3000
 }

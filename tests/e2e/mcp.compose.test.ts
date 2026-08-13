@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, parse, resolve } from "node:path";
+import { sanitizeDocumentInput } from "../../packages/document/src/index.js";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
   alpineBoardDocument,
@@ -27,6 +28,8 @@ type Fixture = {
   alpineBoardStyleVersionId: string;
   alpineSystemsStyleId: string;
   alpineSystemsStyleVersionId: string;
+  templateId: string;
+  templateVersionId: string;
   fullToken: string;
   idToolsToken: string;
   stylesOnlyToken: string;
@@ -46,8 +49,9 @@ function string(value: unknown, label: string): string {
 }
 
 function expectBody(value: unknown, expected: string, label: string): void {
-  if (string(value, `${label} body`) !== expected)
-    throw new Error(`${label} body did not match`);
+  expect(string(value, `${label} body`), `${label} body did not match`).toBe(
+    expected,
+  );
 }
 
 function expectStyleVersion(
@@ -237,6 +241,8 @@ async function cleanupFixture(): Promise<void> {
     'psql -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At',
     `BEGIN;
 SET LOCAL hypergendoc.allow_purge = 'on';
+DELETE FROM documents WHERE workspace_id IN (SELECT m.workspace_id FROM memberships m JOIN "user" u ON u.id = m.user_id WHERE u.email = '${safeFixtureEmail()}');
+DELETE FROM templates WHERE workspace_id IN (SELECT m.workspace_id FROM memberships m JOIN "user" u ON u.id = m.user_id WHERE u.email = '${safeFixtureEmail()}');
 DELETE FROM company_fonts WHERE workspace_id IN (SELECT m.workspace_id FROM memberships m JOIN "user" u ON u.id = m.user_id WHERE u.email = '${safeFixtureEmail()}');
 DELETE FROM company_colors WHERE workspace_id IN (SELECT m.workspace_id FROM memberships m JOIN "user" u ON u.id = m.user_id WHERE u.email = '${safeFixtureEmail()}');
 DELETE FROM stored_objects WHERE workspace_id IN (SELECT m.workspace_id FROM memberships m JOIN "user" u ON u.id = m.user_id WHERE u.email = '${safeFixtureEmail()}');
@@ -410,6 +416,48 @@ describe.skipIf(!enabled)("Compose MCP endpoint", () => {
       "systems style version id",
     );
     expect(systems.activeVersionId).toBe(alpineSystemsStyleVersionId);
+    const templateCreation = await json(
+      await http(`/api/companies/${companyId}/templates`, {
+        method: "POST",
+        session,
+        body: {
+          name: "MCP Engagement Brief",
+          definition: {
+            schemaVersion: 1,
+            styleVersionId: alpineBoardStyleVersionId,
+            fields: {
+              title: { type: "text", label: "Title", required: true },
+              body: { type: "richText", label: "Body", required: true },
+            },
+            pageMasters: { standard: {} },
+            document: [
+              {
+                type: "page",
+                master: "standard",
+                children: [
+                  {
+                    type: "heading",
+                    level: 1,
+                    content: [{ type: "binding", path: "title" }],
+                  },
+                  { type: "richText", source: "body" },
+                ],
+              },
+            ],
+          },
+        },
+      }),
+      201,
+      "template creation",
+    );
+    const template = record(templateCreation.template, "template");
+    const templateVersion = record(
+      templateCreation.version,
+      "template version",
+    );
+    const templateId = string(template.id, "template id");
+    const templateVersionId = string(templateVersion.id, "template version id");
+    expect(template.activeVersionId).toBe(templateVersionId);
     const credential = async (
       name: string,
       companyIds: string[],
@@ -427,12 +475,18 @@ describe.skipIf(!enabled)("Compose MCP endpoint", () => {
     const full = await credential(
       "MCP full",
       [companyId, otherCompanyId],
-      ["companies:read", "styles:read", "documents:read", "documents:write"],
+      [
+        "companies:read",
+        "styles:read",
+        "templates:read",
+        "documents:read",
+        "documents:write",
+      ],
     );
     const idTools = await credential(
       "MCP ID tools",
       [companyId],
-      ["styles:read", "documents:read", "documents:write"],
+      ["styles:read", "templates:read", "documents:read", "documents:write"],
     );
     const stylesOnly = await credential(
       "MCP styles only",
@@ -448,6 +502,8 @@ describe.skipIf(!enabled)("Compose MCP endpoint", () => {
       alpineBoardStyleVersionId,
       alpineSystemsStyleId,
       alpineSystemsStyleVersionId,
+      templateId,
+      templateVersionId,
       fullToken: string(full.token, "full MCP token"),
       idToolsToken: string(idTools.token, "ID-tools MCP token"),
       stylesOnlyToken: string(stylesOnly.token, "styles-only MCP token"),
@@ -458,7 +514,7 @@ describe.skipIf(!enabled)("Compose MCP endpoint", () => {
     await cleanupFixture();
   }, 120_000);
 
-  test("discovers exactly the nine public tools", async () => {
+  test("discovers exactly the thirteen public tools", async () => {
     const current = fixture!;
     await mcp(current.fullToken, 1, "initialize", {
       protocolVersion: "2025-03-26",
@@ -468,21 +524,25 @@ describe.skipIf(!enabled)("Compose MCP endpoint", () => {
     const response = await mcp(current.fullToken, 2, "tools/list", {});
     const tools = record(response.result, "tools/list result")
       .tools as unknown[];
-    expect(tools).toHaveLength(9);
+    expect(tools).toHaveLength(13);
     expect(
       tools
         .map((entry) => string(record(entry, "tool").name, "tool name"))
         .sort(),
     ).toEqual([
       "create_document",
+      "create_document_from_template",
       "get_document",
+      "get_template",
       "list_companies",
       "list_document_commits",
       "list_documents",
       "list_styles",
+      "list_templates",
       "read_document_commit",
       "revert_document",
       "update_document",
+      "update_template_document",
     ]);
   });
 
@@ -639,7 +699,10 @@ describe.skipIf(!enabled)("Compose MCP endpoint", () => {
     expect(anotherSnapshotSha).toBe(anotherSha);
     expectBody(
       anotherSnapshot.body,
-      alpineSystemsDocument.body,
+      sanitizeDocumentInput(
+        alpineSystemsDocument.format,
+        alpineSystemsDocument.body,
+      ),
       "second document snapshot",
     );
     expectStyleVersion(
@@ -733,5 +796,96 @@ describe.skipIf(!enabled)("Compose MCP endpoint", () => {
       { limit: 1, cursor: companiesCursor },
     );
     expect(companiesSecond.items as unknown[]).toHaveLength(1);
+  }, 120_000);
+
+  test("discovers templates and writes pinned template documents", async () => {
+    const current = fixture!;
+    const listed = await tool(current.idToolsToken, 14, "list_templates", {
+      companyId: current.companyId,
+      limit: 10,
+    });
+    const listedItems = listed.items as unknown[];
+    expect(listedItems).toHaveLength(1);
+    expect(record(listedItems[0], "listed template").id).toBe(
+      current.templateId,
+    );
+
+    const discovered = await tool(current.idToolsToken, 15, "get_template", {
+      templateId: current.templateId,
+    });
+    expect(record(discovered.template, "discovered template").id).toBe(
+      current.templateId,
+    );
+    expect(record(discovered.version, "discovered version").id).toBe(
+      current.templateVersionId,
+    );
+
+    const created = await tool(
+      current.idToolsToken,
+      16,
+      "create_document_from_template",
+      {
+        companyId: current.companyId,
+        templateId: current.templateId,
+        title: "MCP template document",
+        data: {
+          title: "Pinned template title",
+          body: "<p>Created through the template tool.</p>",
+        },
+      },
+    );
+    const document = record(created.document, "template document");
+    const documentId = string(document.id, "template document id");
+    expect(document.templateId).toBe(current.templateId);
+    const initial = record(created.current, "template document current");
+    const initialCommit = record(initial.commit, "template initial commit");
+    const initialSnapshot = record(
+      initial.snapshot,
+      "template initial snapshot",
+    );
+    expect(initialSnapshot.format).toBe("template");
+    expect(initialSnapshot.templateVersionId).toBe(current.templateVersionId);
+    const initialBody = record(
+      JSON.parse(string(initialSnapshot.body, "template initial body")),
+      "template initial body JSON",
+    );
+    expect(record(initialBody.data, "template initial data").title).toBe(
+      "Pinned template title",
+    );
+
+    const updated = await tool(
+      current.idToolsToken,
+      17,
+      "update_template_document",
+      {
+        documentId,
+        data: {
+          title: "Pinned template title revised",
+          body: "<p>Updated through the template tool.</p>",
+        },
+      },
+    );
+    const updatedCommit = record(updated.commit, "template updated commit");
+    expect(updatedCommit.parentCommitSha).toBe(initialCommit.commitSha);
+    const updatedSnapshot = record(
+      updated.snapshot,
+      "template updated snapshot",
+    );
+    expect(updatedSnapshot.templateVersionId).toBe(current.templateVersionId);
+    const updatedBody = record(
+      JSON.parse(string(updatedSnapshot.body, "template updated body")),
+      "template updated body JSON",
+    );
+    expect(record(updatedBody.data, "template updated data").title).toBe(
+      "Pinned template title revised",
+    );
+
+    await toolError(
+      current.stylesOnlyToken,
+      18,
+      "list_templates",
+      { companyId: current.companyId, limit: 1 },
+      "forbidden",
+    );
   }, 120_000);
 });

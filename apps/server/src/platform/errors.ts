@@ -1,5 +1,6 @@
 import type { ErrorEnvelope } from "@hypergendoc/contracts";
 import type { FastifyInstance } from "fastify";
+import { ZodError } from "zod";
 
 export type AppErrorCode = ErrorEnvelope["error"]["code"];
 const messages: Record<AppErrorCode, string> = {
@@ -30,7 +31,11 @@ export function toSafeError(
   requestId: string,
 ): { statusCode: number; body: ErrorEnvelope } {
   const appError =
-    error instanceof AppError ? error : new AppError("internal_error", 500);
+    error instanceof AppError
+      ? error
+      : error instanceof ZodError
+        ? new AppError("validation_failed", 400)
+        : new AppError("internal_error", 500);
   return {
     statusCode: appError.statusCode,
     body: {

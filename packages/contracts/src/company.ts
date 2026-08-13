@@ -18,5 +18,9 @@ export const CreateCompanyInputSchema = z
 
 export const UpdateCompanyInputSchema = CreateCompanyInputSchema.partial();
 
+/** Explicit lifecycle command contract for restoring an archived company. */
+export const RestoreCompanyInputSchema = z.object({}).strict();
+
 export type Company = z.infer<typeof CompanySchema>;
 export type CreateCompanyInput = z.infer<typeof CreateCompanyInputSchema>;
+export type RestoreCompanyInput = z.infer<typeof RestoreCompanyInputSchema>;

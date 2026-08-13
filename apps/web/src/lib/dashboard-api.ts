@@ -12,6 +12,11 @@ import type {
   Style,
   StyleDefinition,
   StyleVersion,
+  Template,
+  TemplateData,
+  TemplateDefinition,
+  TemplateVersion,
+  CompanyImageAsset,
   WorkspaceRole,
 } from "@hypergendoc/contracts";
 import { ApiError, api } from "./api-client";
@@ -45,6 +50,11 @@ export type WorkspaceAuditPage = {
 export type CredentialCreation = { credential: McpCredential; token: string };
 export type StyleDetail = { style: Style; versions: StyleVersion[] };
 export type StyleCreation = { style: Style; version: StyleVersion };
+export type TemplateDetail = {
+  template: Template;
+  versions: TemplateVersion[];
+};
+export type TemplateCreation = { template: Template; version: TemplateVersion };
 export type DocumentDetail = ContractDocumentDetail;
 export type DocumentHistoryDetail = DocumentDetail;
 export type DocumentCommitSource = DocumentCurrentSource;
@@ -103,6 +113,8 @@ export const dashboardApi = {
     api<Company>(`/api/companies/${id}`, { method: "PATCH", body: input }),
   archiveCompany: (id: string) =>
     api<void>(`/api/companies/${id}`, { method: "DELETE" }),
+  restoreCompany: (id: string) =>
+    api<Company>(`/api/companies/${id}/restore`, { method: "POST", body: {} }),
   uploadLogo: async (id: string, file: File) => {
     if (file.size > 10 * 1024 * 1024)
       throw new ApiError(
@@ -189,6 +201,91 @@ export const dashboardApi = {
       method: "POST",
       body: { definition },
     }),
+  templates: async (companyId: string) =>
+    items<Template>(
+      await api<Collection<Template>>(`/api/companies/${companyId}/templates`),
+    ),
+  createTemplate: async (input: {
+    companyId: string;
+    name: string;
+    definition: TemplateDefinition;
+  }) => {
+    const result = await api<TemplateCreation>(
+      `/api/companies/${input.companyId}/templates`,
+      { method: "POST", body: input },
+    );
+    return result.template;
+  },
+  template: async (id: string): Promise<TemplateDetail> => {
+    const template = await api<Template>(`/api/templates/${id}`);
+    const versions = await api<TemplateVersion[]>(
+      `/api/templates/${id}/versions`,
+    );
+    return { template, versions };
+  },
+  createTemplateVersion: (
+    id: string,
+    definition: TemplateDefinition,
+    activate: boolean,
+  ) =>
+    api<TemplateVersion>(`/api/templates/${id}/versions`, {
+      method: "POST",
+      body: { definition, activate },
+    }),
+  activateTemplate: (id: string, versionId: string) =>
+    api<Template>(`/api/templates/${id}/activate`, {
+      method: "POST",
+      body: { versionId },
+    }),
+  previewTemplate: (
+    id: string,
+    input: { definition: TemplateDefinition; data: TemplateData },
+  ) =>
+    api<{ url: string }>(`/api/templates/${id}/preview`, {
+      method: "POST",
+      body: input,
+    }),
+  createTemplateDocument: async (input: {
+    companyId: string;
+    templateId: string;
+    title: string;
+    data: TemplateData;
+  }) => {
+    const result = await api<{
+      document: Document;
+      current: DocumentCurrentSource;
+    }>("/api/documents/from-template", { method: "POST", body: input });
+    return result.document;
+  },
+  updateTemplateDocument: (
+    id: string,
+    input: { data: TemplateData; templateVersionId?: string },
+  ) =>
+    api<DocumentCurrentSource>(`/api/documents/${id}/data`, {
+      method: "POST",
+      body: input,
+    }),
+  uploadImage: async (id: string, file: File): Promise<CompanyImageAsset> => {
+    if (file.size > 10 * 1024 * 1024)
+      throw new ApiError(
+        "validation_failed",
+        "Choose an image smaller than 10 MiB.",
+      );
+    const form = new FormData();
+    form.set("image", file);
+    const response = await fetch(`/api/companies/${id}/assets/images`, {
+      method: "POST",
+      credentials: "include",
+      body: form,
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok)
+      throw new ApiError(
+        "network_error",
+        "Image upload could not be completed.",
+      );
+    return (await response.json()) as CompanyImageAsset;
+  },
   credentials: async () =>
     items<McpCredential>(
       await api<Collection<McpCredential>>("/api/mcp-credentials"),
@@ -203,10 +300,51 @@ export const dashboardApi = {
       method: "POST",
       body: input,
     }),
+  updateCredential: (
+    id: string,
+    input: {
+      companyIds: string[];
+      actions: McpAction[];
+      expiresAt: string | null;
+    },
+  ) =>
+    api<McpCredential>(`/api/mcp-credentials/${id}`, {
+      method: "PATCH",
+      body: input,
+    }),
   revokeCredential: (id: string) =>
     api<void>(`/api/mcp-credentials/${id}`, { method: "DELETE" }),
-  documents: async () =>
-    items<Document>(await api<Collection<Document>>("/api/documents")),
+  documents: async (companyId?: string) =>
+    items<Document>(
+      await api<Collection<Document>>(
+        companyId
+          ? `/api/documents?companyId=${encodeURIComponent(companyId)}`
+          : "/api/documents",
+      ),
+    ),
+  createDocument: (input: {
+    companyId: string;
+    styleId: string;
+    title: string;
+    format: "markdown" | "html";
+    body: string;
+  }) =>
+    api<{ document: Document; current: DocumentCurrentSource }>(
+      "/api/documents",
+      { method: "POST", body: input },
+    ),
+  updateDocument: (
+    id: string,
+    input: {
+      styleVersionId?: string;
+      format: "markdown" | "html";
+      body: string;
+    },
+  ) =>
+    api<DocumentCurrentSource>(`/api/documents/${id}/source`, {
+      method: "POST",
+      body: input,
+    }),
   document: (id: string): Promise<DocumentDetail> =>
     api<DocumentDetail>(`/api/documents/${id}`),
   documentCommits: (id: string) =>

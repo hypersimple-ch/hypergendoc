@@ -6,3 +6,4 @@ export * from "./credential.js";
 export * from "./document.js";
 export * from "./mcp.js";
 export * from "./style.js";
+export * from "./template.js";

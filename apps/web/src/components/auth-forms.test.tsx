@@ -8,28 +8,25 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-const { forgotPassword, resetPassword, acceptInvitation, searchParam } =
-  vi.hoisted(() => ({
-    forgotPassword: vi.fn(),
-    resetPassword: vi.fn(),
-    acceptInvitation: vi.fn(),
-    searchParam: vi.fn(),
-  }));
+const { forgotPassword, resetPassword, searchParam } = vi.hoisted(() => ({
+  forgotPassword: vi.fn(),
+  resetPassword: vi.fn(),
+  searchParam: vi.fn(),
+}));
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => ({ get: searchParam }),
 }));
 vi.mock("../lib/auth-client", () => ({
-  authClient: { forgotPassword, resetPassword, acceptInvitation },
+  authClient: { forgotPassword, resetPassword },
 }));
 
-import { EmailActionForm, InvitationForm, ResetForm } from "./auth-forms";
+import { EmailActionForm, ResetForm } from "./auth-forms";
 
 afterEach(() => {
   cleanup();
   forgotPassword.mockReset();
   resetPassword.mockReset();
-  acceptInvitation.mockReset();
   searchParam.mockReset();
 });
 
@@ -90,7 +87,7 @@ describe("EmailActionForm", () => {
 
   it("replaces token-dependent forms with safe recovery states", () => {
     searchParam.mockReturnValue(null);
-    const { rerender } = render(<ResetForm />);
+    render(<ResetForm />);
 
     expect(screen.getByRole("status")).toHaveTextContent(
       "password-reset link is missing or incomplete",
@@ -101,14 +98,5 @@ describe("EmailActionForm", () => {
     expect(
       screen.getByRole("link", { name: "Request a new reset link" }),
     ).toHaveAttribute("href", "/forgot-password");
-
-    rerender(<InvitationForm />);
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "invitation link is missing or incomplete",
-    );
-    expect(
-      screen.queryByRole("button", { name: "Accept invitation" }),
-    ).not.toBeInTheDocument();
-    expect(acceptInvitation).not.toHaveBeenCalled();
   });
 });

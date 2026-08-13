@@ -1,9 +1,9 @@
 import fs from "node:fs";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import * as git from "isomorphic-git";
 
-export type DocumentGitFormat = "markdown" | "html";
+export type DocumentGitFormat = "markdown" | "html" | "template";
 export type DocumentGitActorType = "user" | "credential";
 
 export interface CompanyDocumentGitStoreOptions {
@@ -26,6 +26,7 @@ export interface WriteDocumentGitInput extends DocumentGitIdentity {
   readonly body: string;
   readonly format: DocumentGitFormat;
   readonly styleVersionId: string;
+  readonly templateVersionId?: string | undefined;
   readonly actor: DocumentGitActor;
 }
 
@@ -40,11 +41,21 @@ export interface RevertDocumentGitInput extends DocumentGitIdentity {
   readonly actor: DocumentGitActor;
 }
 
+export interface GitDocumentCheckpoint extends Omit<
+  DocumentGitIdentity,
+  "documentId"
+> {
+  readonly headCommitId: string | null;
+  /** Process-local lease spanning the caller's surrounding DB transaction. */
+  readonly release: () => void;
+}
+
 export interface GitDocumentRevision {
   readonly commitId: string;
   readonly body: string;
   readonly format: DocumentGitFormat;
   readonly styleVersionId: string;
+  readonly templateVersionId?: string | undefined;
   readonly actor: DocumentGitActor;
 }
 
@@ -84,6 +95,7 @@ interface ParsedMetadata {
   readonly documentId: string;
   readonly format: DocumentGitFormat;
   readonly styleVersionId: string;
+  readonly templateVersionId?: string | undefined;
   readonly actor: DocumentGitActor;
 }
 
@@ -94,6 +106,7 @@ interface ParsedMetadata {
  */
 export class CompanyDocumentGitStore {
   private readonly rootDir: string;
+  private readonly mutationTails = new Map<string, Promise<void>>();
 
   constructor(options: CompanyDocumentGitStoreOptions) {
     if (!isAbsolute(options.rootDir)) {
@@ -114,27 +127,96 @@ export class CompanyDocumentGitStore {
     );
   }
 
+  async checkpoint(
+    workspaceId: string,
+    companyId: string,
+  ): Promise<GitDocumentCheckpoint> {
+    const dir = this.repositoryPath(workspaceId, companyId);
+    const release = await this.acquireMutationLease(dir);
+    let headCommitId: string | null = null;
+    try {
+      headCommitId = await git.resolveRef({ fs, dir, ref: "main" });
+    } catch {
+      // A repository is created lazily by the first document write.
+    }
+    return { workspaceId, companyId, headCommitId, release };
+  }
+
+  completeCheckpoint(checkpoint: GitDocumentCheckpoint): void {
+    checkpoint.release();
+  }
+
+  /** Restores the company repository after its surrounding DB transaction fails. */
+  async restoreCheckpoint(
+    checkpoint: GitDocumentCheckpoint,
+    expectedHeadCommitId?: string,
+  ): Promise<void> {
+    const dir = this.repositoryPath(
+      checkpoint.workspaceId,
+      checkpoint.companyId,
+    );
+    try {
+      const currentHead = await git
+        .resolveRef({ fs, dir, ref: "main" })
+        .catch(() => null);
+      const expected = expectedHeadCommitId ?? checkpoint.headCommitId;
+      if (currentHead !== expected)
+        throw new Error("Git repository advanced during compensation");
+      if (checkpoint.headCommitId === null) {
+        await rm(dir, { recursive: true, force: true });
+        return;
+      }
+      await git.writeRef({
+        fs,
+        dir,
+        ref: "main",
+        value: checkpoint.headCommitId,
+        force: true,
+      });
+      await rm(join(dir, ".git", "index"), { force: true });
+      await git.checkout({ fs, dir, ref: "main", force: true });
+    } finally {
+      checkpoint.release();
+    }
+  }
+
+  private async acquireMutationLease(key: string): Promise<() => void> {
+    const previous = this.mutationTails.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const tail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.mutationTails.set(key, tail);
+    await previous;
+    return () => {
+      if (this.mutationTails.get(key) === tail) this.mutationTails.delete(key);
+      release();
+    };
+  }
+
   async write(input: WriteDocumentGitInput): Promise<GitDocumentRevision> {
     validateWriteInput(input);
     const dir = this.repositoryPath(input.workspaceId, input.companyId);
     const paths = documentPaths(input.documentId);
     await this.initialize(dir);
 
-    const target = input.format === "markdown" ? paths.markdown : paths.html;
-    const previous = input.format === "markdown" ? paths.html : paths.markdown;
-    const snapshots = await Promise.all([
-      snapshot(dir, target),
-      snapshot(dir, previous),
-    ]);
+    const target = pathForFormat(paths, input.format);
+    const previous = [paths.markdown, paths.html, paths.template].filter(
+      (path) => path !== target,
+    );
+    const snapshots = await Promise.all(
+      [target, ...previous].map((path) => snapshot(dir, path)),
+    );
 
     try {
       await mkdir(dirname(join(dir, target)), { recursive: true });
       await writeFile(join(dir, target), input.body, "utf8");
       await git.add({ fs, dir, filepath: target });
-      if (await exists(join(dir, previous))) {
-        await unlink(join(dir, previous));
-        await git.remove({ fs, dir, filepath: previous });
-      }
+      for (const path of previous)
+        if (await exists(join(dir, path))) {
+          await unlink(join(dir, path));
+          await git.remove({ fs, dir, filepath: path });
+        }
 
       const commitId = await git.commit({
         fs,
@@ -149,6 +231,9 @@ export class CompanyDocumentGitStore {
         body: input.body,
         format: input.format,
         styleVersionId: input.styleVersionId,
+        ...(input.templateVersionId
+          ? { templateVersionId: input.templateVersionId }
+          : {}),
         actor: input.actor,
       };
     } catch (error) {
@@ -187,6 +272,7 @@ export class CompanyDocumentGitStore {
       this.logAll(dir),
       this.logPath(dir, paths.markdown),
       this.logPath(dir, paths.html),
+      this.logPath(dir, paths.template),
     ]);
     const commits = new Map<
       string,
@@ -204,12 +290,17 @@ export class CompanyDocumentGitStore {
           commitId,
           format: metadata.format,
           styleVersionId: metadata.styleVersionId,
+          ...(metadata.templateVersionId
+            ? { templateVersionId: metadata.templateVersionId }
+            : {}),
           actor: metadata.actor,
           parentCommitId: entry.commit.parent[0] ?? null,
           committedAt: new Date(entry.commit.committer.timestamp * 1000),
         };
       })
-      .filter((entry): entry is GitDocumentHistoryEntry => entry !== undefined);
+      .filter(
+        (entry): entry is NonNullable<typeof entry> => entry !== undefined,
+      );
   }
 
   async revert(input: RevertDocumentGitInput): Promise<GitDocumentRevision> {
@@ -224,6 +315,9 @@ export class CompanyDocumentGitStore {
       body: historical.body,
       format: historical.format,
       styleVersionId: historical.styleVersionId,
+      ...(historical.templateVersionId
+        ? { templateVersionId: historical.templateVersionId }
+        : {}),
       actor: input.actor,
     });
   }
@@ -240,7 +334,7 @@ export class CompanyDocumentGitStore {
   ): Promise<GitDocumentRevision> {
     const paths = documentPaths(documentId);
     const metadata = await this.metadataAtCommit(dir, documentId, commitId);
-    const path = metadata.format === "markdown" ? paths.markdown : paths.html;
+    const path = pathForFormat(paths, metadata.format);
     try {
       const blob = await git.readBlob({
         fs,
@@ -253,6 +347,9 @@ export class CompanyDocumentGitStore {
         body: Buffer.from(blob.blob).toString("utf8"),
         format: metadata.format,
         styleVersionId: metadata.styleVersionId,
+        ...(metadata.templateVersionId
+          ? { templateVersionId: metadata.templateVersionId }
+          : {}),
         actor: metadata.actor,
       };
     } catch {
@@ -317,8 +414,14 @@ function validateWriteInput(input: WriteDocumentGitInput): void {
   validateIdentity(input);
   validateUuid(input.styleVersionId);
   validateActor(input.actor);
-  if (input.format !== "markdown" && input.format !== "html")
+  if (
+    input.format !== "markdown" &&
+    input.format !== "html" &&
+    input.format !== "template"
+  )
     throw new GitDocumentStoreValidationError();
+  if (input.format === "template") validateUuid(input.templateVersionId ?? "");
+  else if (input.templateVersionId) throw new GitDocumentStoreValidationError();
 }
 
 function validateIdentity(input: DocumentGitIdentity): void {
@@ -340,14 +443,38 @@ function validateUuid(value: string): void {
 function documentPaths(documentId: string): {
   readonly markdown: string;
   readonly html: string;
+  readonly template: string;
 } {
   validateUuid(documentId);
   const base = `documents/${documentId}/document`;
-  return { markdown: `${base}.md`, html: `${base}.html` };
+  return {
+    markdown: `${base}.md`,
+    html: `${base}.html`,
+    template: `${base}.json`,
+  };
+}
+
+function pathForFormat(
+  paths: ReturnType<typeof documentPaths>,
+  format: DocumentGitFormat,
+): string {
+  return format === "markdown"
+    ? paths.markdown
+    : format === "html"
+      ? paths.html
+      : paths.template;
 }
 
 function commitMessage(input: WriteDocumentGitInput): string {
-  return `${TRAILER_PREFIX}Document-Id: ${input.documentId}\nStyle-Version-Id: ${input.styleVersionId}\nFormat: ${input.format}\nActor-Type: ${input.actor.type}\nActor-Id: ${input.actor.id}`;
+  const templateTrailer = input.templateVersionId
+    ? `
+Template-Version-Id: ${input.templateVersionId}`
+    : "";
+  return `${TRAILER_PREFIX}Document-Id: ${input.documentId}
+Style-Version-Id: ${input.styleVersionId}
+Format: ${input.format}${templateTrailer}
+Actor-Type: ${input.actor.type}
+Actor-Id: ${input.actor.id}`;
 }
 
 function gitSignature(actor: DocumentGitActor): {
@@ -371,19 +498,22 @@ function parseMetadata(message: string): ParsedMetadata | undefined {
   const documentId = trailers.get("Document-Id");
   const styleVersionId = trailers.get("Style-Version-Id");
   const format = trailers.get("Format");
+  const templateVersionId = trailers.get("Template-Version-Id");
   const actorType = trailers.get("Actor-Type");
   const actorId = trailers.get("Actor-Id");
   if (
     !documentId ||
     !styleVersionId ||
     !actorId ||
-    (format !== "markdown" && format !== "html") ||
+    (format !== "markdown" && format !== "html" && format !== "template") ||
     (actorType !== "user" && actorType !== "credential")
   )
     return undefined;
   try {
     validateUuid(documentId);
     validateUuid(styleVersionId);
+    if (format === "template") validateUuid(templateVersionId ?? "");
+    else if (templateVersionId) return undefined;
     validateActor({ type: actorType, id: actorId });
   } catch {
     return undefined;
@@ -392,6 +522,7 @@ function parseMetadata(message: string): ParsedMetadata | undefined {
     documentId,
     format,
     styleVersionId,
+    ...(templateVersionId ? { templateVersionId } : {}),
     actor: { type: actorType, id: actorId },
   };
 }

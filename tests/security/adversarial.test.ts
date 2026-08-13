@@ -97,6 +97,10 @@ function mcpApp(verifier = vi.fn(async () => agent)) {
   const services: DomainServices = {
     listCompanies: vi.fn(async () => ({ items: [] })),
     listStyles: vi.fn(async () => ({ items: [] })),
+    listTemplates: vi.fn(async () => ({ items: [] })),
+    getTemplate: vi.fn(async () => {
+      throw new AppError("not_found", 404);
+    }),
     listDocuments: vi.fn(async () => ({ items: [] })),
     getDocument: vi.fn(async () => {
       throw new AppError("not_found", 404);
@@ -105,6 +109,12 @@ function mcpApp(verifier = vi.fn(async () => agent)) {
       throw new AppError("not_found", 404);
     }),
     updateDocument: vi.fn(async () => {
+      throw new AppError("not_found", 404);
+    }),
+    createTemplateDocument: vi.fn(async () => {
+      throw new AppError("not_found", 404);
+    }),
+    updateTemplateDocument: vi.fn(async () => {
       throw new AppError("not_found", 404);
     }),
     listDocumentCommits: vi.fn(async () => {
@@ -164,6 +174,8 @@ function documentApp(actorFor: () => ActorContext) {
     findActiveStyle: vi.fn(async () => undefined),
     findStyleVersion: vi.fn(async () => undefined),
     findActiveStyleVersion: vi.fn(async () => undefined),
+    findActiveTemplate: vi.fn(async () => undefined),
+    findTemplateVersion: vi.fn(async () => undefined),
     findDocument: vi.fn(async (workspaceId: string, id: string) =>
       workspaceId === "tenant-a" && id === documentId ? document : undefined,
     ),
@@ -179,6 +191,14 @@ function documentApp(actorFor: () => ActorContext) {
     readHistorical: vi.fn(),
     history: vi.fn(),
     revert: vi.fn(),
+    checkpoint: vi.fn(async () => ({
+      workspaceId: "tenant-a",
+      companyId,
+      headCommitId: null,
+      release: vi.fn(),
+    })),
+    restoreCheckpoint: vi.fn(async () => undefined),
+    completeCheckpoint: vi.fn(),
   };
   const renderer = { render: vi.fn() };
   const service = new DocumentService({

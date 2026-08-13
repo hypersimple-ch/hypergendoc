@@ -5,15 +5,21 @@ import {
   type DocumentCurrentSource,
   type DocumentDetail,
   type Style,
+  type Template,
+  type TemplateVersion,
   CreateDocumentToolInputSchema,
+  CreateTemplateDocumentToolInputSchema,
   GetDocumentToolInputSchema,
+  GetTemplateToolInputSchema,
   ListCompaniesToolInputSchema,
   ListDocumentCommitsToolInputSchema,
   ListDocumentsToolInputSchema,
   ListStylesToolInputSchema,
+  ListTemplatesToolInputSchema,
   ReadDocumentCommitToolInputSchema,
   RevertDocumentToolInputSchema,
   UpdateDocumentToolInputSchema,
+  UpdateTemplateDocumentToolInputSchema,
   type McpAction,
 } from "@hypergendoc/contracts";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -25,7 +31,10 @@ import { AuthorizationError } from "../modules/memberships/service.js";
 import { AppError, toSafeError } from "../platform/errors.js";
 import type { RateLimiter } from "../platform/rate-limit.js";
 
-const MAX_BODY_BYTES = 256 * 1024;
+const MAX_DOCUMENT_BODY_BYTES = 256 * 1024;
+// A valid document body can expand to twice its UTF-8 size when JSON-escaped.
+// Leave room for the bounded write-tool fields and the JSON-RPC envelope.
+const MAX_MCP_REQUEST_BYTES = 2 * MAX_DOCUMENT_BODY_BYTES + 64 * 1024;
 const DEFAULT_RATE_LIMIT = 60;
 const DEFAULT_RATE_WINDOW_MS = 60_000;
 
@@ -41,6 +50,14 @@ export interface DomainServices {
     actor: AgentActor,
     input: z.infer<typeof ListStylesToolInputSchema>,
   ): Promise<Page<Style>>;
+  listTemplates(
+    actor: AgentActor,
+    input: z.infer<typeof ListTemplatesToolInputSchema>,
+  ): Promise<Page<Template>>;
+  getTemplate(
+    actor: AgentActor,
+    input: z.infer<typeof GetTemplateToolInputSchema>,
+  ): Promise<{ template: Template; version: TemplateVersion }>;
   listDocuments(
     actor: AgentActor,
     input: z.infer<typeof ListDocumentsToolInputSchema>,
@@ -56,6 +73,14 @@ export interface DomainServices {
   updateDocument(
     actor: AgentActor,
     input: z.infer<typeof UpdateDocumentToolInputSchema>,
+  ): Promise<DocumentCurrentSource>;
+  createTemplateDocument(
+    actor: AgentActor,
+    input: z.infer<typeof CreateTemplateDocumentToolInputSchema>,
+  ): Promise<{ document: Document; current: DocumentCurrentSource }>;
+  updateTemplateDocument(
+    actor: AgentActor,
+    input: z.infer<typeof UpdateTemplateDocumentToolInputSchema>,
   ): Promise<DocumentCurrentSource>;
   listDocumentCommits(
     actor: AgentActor,
@@ -94,6 +119,53 @@ function assertAction(actor: AgentActor, action: McpAction): void {
 }
 
 const concise = (value: unknown): string => JSON.stringify(value);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Keep the general JSON-RPC envelope ceiling while excluding a write tool's
+ * separately bounded document body. The larger parser limit exists only so a
+ * full body can reach the tool schema instead of being rejected by Fastify.
+ */
+function envelopeByteLength(value: unknown): number {
+  if (!isRecord(value) || value.method !== "tools/call")
+    return Buffer.byteLength(JSON.stringify(value ?? null), "utf8");
+  const params = value.params;
+  if (!isRecord(params))
+    return Buffer.byteLength(JSON.stringify(value), "utf8");
+  if (
+    params.name !== "create_document" &&
+    params.name !== "update_document" &&
+    params.name !== "create_document_from_template" &&
+    params.name !== "update_template_document"
+  )
+    return Buffer.byteLength(JSON.stringify(value), "utf8");
+  const arguments_ = params.arguments;
+  if (!isRecord(arguments_))
+    return Buffer.byteLength(JSON.stringify(value), "utf8");
+  const boundedKey =
+    typeof arguments_.body === "string"
+      ? "body"
+      : isRecord(arguments_.data)
+        ? "data"
+        : undefined;
+  if (!boundedKey) return Buffer.byteLength(JSON.stringify(value), "utf8");
+  return Buffer.byteLength(
+    JSON.stringify({
+      ...value,
+      params: {
+        ...params,
+        arguments: {
+          ...arguments_,
+          [boundedKey]: boundedKey === "body" ? "" : {},
+        },
+      },
+    }),
+    "utf8",
+  );
+}
 
 function toolError(error: unknown, requestId: string) {
   const normalized =
@@ -141,7 +213,7 @@ function createServer(actor: AgentActor, services: DomainServices): McpServer {
     "list_companies",
     {
       description: "List authorized companies.",
-      inputSchema: ListCompaniesToolInputSchema.shape,
+      inputSchema: ListCompaniesToolInputSchema,
     },
     (input) =>
       execute("companies:read", () => services.listCompanies(actor, input)),
@@ -150,15 +222,35 @@ function createServer(actor: AgentActor, services: DomainServices): McpServer {
     "list_styles",
     {
       description: "List active styles for an authorized company.",
-      inputSchema: ListStylesToolInputSchema.shape,
+      inputSchema: ListStylesToolInputSchema,
     },
     (input) => execute("styles:read", () => services.listStyles(actor, input)),
+  );
+  server.registerTool(
+    "list_templates",
+    {
+      description:
+        "List active user-authored templates for an authorized company.",
+      inputSchema: ListTemplatesToolInputSchema,
+    },
+    (input) =>
+      execute("templates:read", () => services.listTemplates(actor, input)),
+  );
+  server.registerTool(
+    "get_template",
+    {
+      description:
+        "Read an active or immutable template version and its typed input schema.",
+      inputSchema: GetTemplateToolInputSchema,
+    },
+    (input) =>
+      execute("templates:read", () => services.getTemplate(actor, input)),
   );
   server.registerTool(
     "list_documents",
     {
       description: "List documents for an authorized company.",
-      inputSchema: ListDocumentsToolInputSchema.shape,
+      inputSchema: ListDocumentsToolInputSchema,
     },
     (input) =>
       execute("documents:read", () => services.listDocuments(actor, input)),
@@ -167,7 +259,7 @@ function createServer(actor: AgentActor, services: DomainServices): McpServer {
     "get_document",
     {
       description: "Get current source and commit history for a document.",
-      inputSchema: GetDocumentToolInputSchema.shape,
+      inputSchema: GetDocumentToolInputSchema,
     },
     (input) =>
       execute("documents:read", () => services.getDocument(actor, input)),
@@ -176,7 +268,7 @@ function createServer(actor: AgentActor, services: DomainServices): McpServer {
     "create_document",
     {
       description: "Create a document and its initial Git commit.",
-      inputSchema: CreateDocumentToolInputSchema.shape,
+      inputSchema: CreateDocumentToolInputSchema,
     },
     (input) =>
       execute("documents:write", () => services.createDocument(actor, input)),
@@ -185,16 +277,40 @@ function createServer(actor: AgentActor, services: DomainServices): McpServer {
     "update_document",
     {
       description: "Replace document source and create a Git commit.",
-      inputSchema: UpdateDocumentToolInputSchema.shape,
+      inputSchema: UpdateDocumentToolInputSchema,
     },
     (input) =>
       execute("documents:write", () => services.updateDocument(actor, input)),
   );
   server.registerTool(
+    "create_document_from_template",
+    {
+      description:
+        "Create a document from a template's active immutable version and typed data.",
+      inputSchema: CreateTemplateDocumentToolInputSchema,
+    },
+    (input) =>
+      execute("documents:write", () =>
+        services.createTemplateDocument(actor, input),
+      ),
+  );
+  server.registerTool(
+    "update_template_document",
+    {
+      description:
+        "Create a new immutable revision of a template-backed document.",
+      inputSchema: UpdateTemplateDocumentToolInputSchema,
+    },
+    (input) =>
+      execute("documents:write", () =>
+        services.updateTemplateDocument(actor, input),
+      ),
+  );
+  server.registerTool(
     "list_document_commits",
     {
       description: "List Git commits for an authorized document.",
-      inputSchema: ListDocumentCommitsToolInputSchema.shape,
+      inputSchema: ListDocumentCommitsToolInputSchema,
     },
     (input) =>
       execute("documents:read", () =>
@@ -205,7 +321,7 @@ function createServer(actor: AgentActor, services: DomainServices): McpServer {
     "read_document_commit",
     {
       description: "Read source and pinned style metadata at a commit.",
-      inputSchema: ReadDocumentCommitToolInputSchema.shape,
+      inputSchema: ReadDocumentCommitToolInputSchema,
     },
     (input) =>
       execute("documents:read", () =>
@@ -216,7 +332,7 @@ function createServer(actor: AgentActor, services: DomainServices): McpServer {
     "revert_document",
     {
       description: "Restore an old state as a new Git commit.",
-      inputSchema: RevertDocumentToolInputSchema.shape,
+      inputSchema: RevertDocumentToolInputSchema,
     },
     (input) =>
       execute("documents:write", () => services.revertDocument(actor, input)),
@@ -281,15 +397,12 @@ export function createMcpPlugin(options: McpPluginOptions): FastifyPluginAsync {
     app.route({
       method: "POST",
       url: "/mcp",
-      bodyLimit: MAX_BODY_BYTES,
+      bodyLimit: MAX_MCP_REQUEST_BYTES,
       handler: async (request, reply) => {
         const actor = await authenticate(request);
         if (actor === null) return rejectUnauthenticated(request, reply);
         if (await rejectRateLimited(actor, request, reply)) return;
-        if (
-          Buffer.byteLength(JSON.stringify(request.body ?? null), "utf8") >
-          MAX_BODY_BYTES
-        )
+        if (envelopeByteLength(request.body) > MAX_DOCUMENT_BODY_BYTES)
           return reply
             .code(413)
             .send(

@@ -18,6 +18,8 @@ const pdf = vi.fn();
 const readCommit = vi.fn();
 const get = vi.fn();
 const update = vi.fn();
+const createFromTemplate = vi.fn();
+const updateFromTemplate = vi.fn();
 const revert = vi.fn();
 
 function appFor() {
@@ -29,6 +31,8 @@ function appFor() {
       readCommit,
       get,
       update,
+      createFromTemplate,
+      updateFromTemplate,
       revert,
     } as unknown as DocumentService,
     actorFor: () => actor,
@@ -138,6 +142,65 @@ describe("Git-backed document routes", () => {
     ).toBe(200);
     expect(update).toHaveBeenCalled();
     expect(revert).toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("delegates template-backed create and typed data revisions", async () => {
+    createFromTemplate.mockResolvedValue({
+      document: { id: "document" },
+      current: {},
+    });
+    updateFromTemplate.mockResolvedValue({ snapshot: { commitSha: sha } });
+    const app = appFor();
+    const create = await app.inject({
+      method: "POST",
+      url: "/api/documents/from-template",
+      payload: {
+        companyId: "44444444-4444-4444-8444-444444444444",
+        templateId: "55555555-5555-4555-8555-555555555555",
+        title: "Specific document",
+        data: { title: "Bound value" },
+      },
+    });
+    expect(create.statusCode).toBe(200);
+    expect(createFromTemplate).toHaveBeenCalledWith(
+      actor,
+      expect.objectContaining({ data: { title: "Bound value" } }),
+    );
+    const updateResponse = await app.inject({
+      method: "POST",
+      url: "/api/documents/document/data",
+      payload: { data: { title: "Changed" } },
+    });
+    expect(updateResponse.statusCode).toBe(200);
+    expect(updateFromTemplate).toHaveBeenCalledWith(actor, "document", {
+      data: { title: "Changed" },
+    });
+    await app.close();
+  });
+
+  it("allows a maximum document body through the bounded transport", async () => {
+    update.mockResolvedValue({ snapshot: { commitSha: sha } });
+    const app = appFor();
+    const maximum = await app.inject({
+      method: "POST",
+      url: "/api/documents/document/source",
+      payload: { format: "markdown", body: "\n".repeat(256 * 1024) },
+    });
+    expect(maximum.statusCode).toBe(200);
+    expect(update).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
+  it("rejects an oversized mutation envelope at the HTTP boundary", async () => {
+    const app = appFor();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/documents/document/source",
+      payload: { format: "markdown", body: "x".repeat(576 * 1024) },
+    });
+    expect(response.statusCode).toBe(413);
+    expect(update).not.toHaveBeenCalled();
     await app.close();
   });
 

@@ -4,6 +4,7 @@ import { TimestampSchema, UuidSchema } from "./common.js";
 export const McpActionSchema = z.enum([
   "companies:read",
   "styles:read",
+  "templates:read",
   "documents:read",
   "documents:write",
 ]);
@@ -21,11 +22,19 @@ export const CreateMcpCredentialInputSchema = z
     actions: z
       .array(McpActionSchema)
       .min(1)
-      .max(4)
+      .max(5)
       .refine(unique, "Actions must be unique"),
     expiresAt: TimestampSchema.optional(),
   })
   .strict();
+
+export const UpdateMcpCredentialInputSchema =
+  CreateMcpCredentialInputSchema.pick({
+    companyIds: true,
+    actions: true,
+  })
+    .extend({ expiresAt: TimestampSchema.nullable() })
+    .strict();
 
 export const McpCredentialSchema = z
   .object({
@@ -50,4 +59,7 @@ export const CreatedMcpCredentialSchema = z
   .strict();
 
 export type McpAction = z.infer<typeof McpActionSchema>;
+export type UpdateMcpCredentialInput = z.infer<
+  typeof UpdateMcpCredentialInputSchema
+>;
 export type McpCredential = z.infer<typeof McpCredentialSchema>;

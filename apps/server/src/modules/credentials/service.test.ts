@@ -51,7 +51,18 @@ function repository(): CredentialRepository & { rows: CredentialRecord[] } {
       rows.find((row) => row.prefix === prefix),
     find: async (workspaceId, id) =>
       rows.find((row) => row.workspaceId === workspaceId && row.id === id),
-    replaceScopes: async () => undefined,
+    replaceScopes: async (input) => {
+      const row = rows.find(
+        (item) =>
+          item.workspaceId === input.workspaceId &&
+          item.id === input.credentialId,
+      );
+      if (!row) return undefined;
+      row.companyIds = [...input.companyIds];
+      row.actions = [...input.actions];
+      row.expiresAt = input.expiresAt?.toISOString() ?? null;
+      return row;
+    },
     revoke: async (workspaceId, id, revokedAt) => {
       const row = rows.find(
         (item) => item.workspaceId === workspaceId && item.id === id,
@@ -135,5 +146,39 @@ describe("MCP credentials", () => {
         actions: ["companies:read"],
       }),
     ).rejects.toMatchObject({ code: "not_found" });
+  });
+  it("updates scopes and expiry while rejecting an already elapsed expiry", async () => {
+    const repo = repository();
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    const service = createCredentialService({
+      repository: repo,
+      audit,
+      pepper: "test-pepper",
+      now: () => now,
+    });
+    const created = await service.create(owner, {
+      name: "agent",
+      companyIds: ["company-a"],
+      actions: ["companies:read"],
+    });
+    const expiresAt = new Date("2027-01-01T00:00:00.000Z");
+
+    await expect(
+      service.replaceScopes(owner, created.credential.id, {
+        companyIds: ["company-a"],
+        actions: ["documents:read"],
+        expiresAt,
+      }),
+    ).resolves.toMatchObject({
+      actions: ["documents:read"],
+      expiresAt: expiresAt.toISOString(),
+    });
+    await expect(
+      service.replaceScopes(owner, created.credential.id, {
+        companyIds: ["company-a"],
+        actions: ["documents:read"],
+        expiresAt: new Date("2025-01-01T00:00:00.000Z"),
+      }),
+    ).rejects.toMatchObject({ code: "conflict" });
   });
 });

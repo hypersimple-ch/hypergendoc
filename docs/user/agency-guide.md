@@ -8,7 +8,7 @@ Create a client company, upload its validated logo, and configure a structured s
 
 ## Documents and history
 
-Creating or updating a document writes its exact Markdown or HTML source to the company's private Git history. Each change has a commit SHA; history is immutable. Revert selects an older commit and creates a new commit, rather than overwriting it.
+Creating or updating a document writes exact Markdown or the canonical sanitized HTML fragment to the company's private Git history. Each change has a commit SHA; history is immutable. Revert selects an older commit and creates a new commit, rather than overwriting it.
 
 The dashboard can read current or historical source. PDF is available only for the current document and is generated on demand; historical commits do not have PDF previews or downloads. Document source, generated HTML, and PDFs are not retained in object storage.
 
@@ -29,3 +29,9 @@ Archiving a company retains its private Git history. Purge is not currently prov
 - HyperGenDoc provides no legal validation, legal advice, e-signature, financial workflow, or compliance certification.
 
 See the [permission matrix](../security/permission-matrix.md) and [HTTP/MCP contract](../contracts/http-mcp.md).
+
+## Template studio
+
+Templates are intentionally allowed to model a specific agency workflow or business document; the HyperGenDoc runtime itself remains business-kind agnostic. Create a template under the active company, select an immutable active style version, then define its typed fields, page masters, components and document AST. Preview with representative data before saving an immutable inactive version or activating it. Existing documents stay pinned to their historical template and style versions.
+
+Create a document from an active template in **Documents → Create document**. The generated form follows the template field schema, including nested objects, lists, dates, money, booleans, rich text, and private images. Editing the form later creates a new Git commit; it never mutates an earlier revision. Images are private company assets and are referenced by opaque UUID rather than public URLs.

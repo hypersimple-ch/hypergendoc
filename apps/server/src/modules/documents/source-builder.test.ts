@@ -42,7 +42,7 @@ const style = {
 
 describe("HTML document source builder", () => {
   it.each(["markdown", "html"] as const)(
-    "preserves exact %s input and resolves deterministic HTML",
+    "canonicalizes safe %s input and resolves deterministic HTML",
     (format) => {
       const body = format === "markdown" ? "  # Exact\n" : "<p>Exact</p>\n";
       const result = createHtmlDocumentSourceBuilder().resolve(
@@ -51,7 +51,20 @@ describe("HTML document source builder", () => {
         style,
       );
       expect(result.body).toBe(body);
-      expect(result.source).toBe(renderDocumentHtml(body, format, style));
+      expect(result.source).toBe(
+        renderDocumentHtml(result.body, format, style),
+      );
     },
   );
+
+  it("removes active HTML content before it can be stored or returned", () => {
+    const result = createHtmlDocumentSourceBuilder().resolve(
+      "html",
+      '<p onclick="steal()">Safe <a href="javascript:steal()">link</a></p><script>steal()</script>',
+      style,
+    );
+    expect(result.body).toBe("<p>Safe <a>link</a></p>");
+    expect(result.body).not.toContain("script");
+    expect(result.source).not.toContain("onclick");
+  });
 });

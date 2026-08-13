@@ -16,6 +16,7 @@ const actor: HumanActor = {
 };
 const assets: CompanyAssets = {
   logos: [],
+  images: [],
   fonts: [
     {
       id: "Inter",
@@ -44,6 +45,7 @@ describe("company assets", () => {
       list: vi.fn().mockResolvedValue(assets),
       findContent,
       create: vi.fn(),
+      createImage: vi.fn(),
     };
     const authorizedGet = vi.fn(
       (input: { authorize: () => Promise<boolean> }) =>

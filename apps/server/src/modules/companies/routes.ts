@@ -1,5 +1,6 @@
 import {
   CreateCompanyInputSchema,
+  RestoreCompanyInputSchema,
   UpdateCompanyInputSchema,
 } from "@hypergendoc/contracts";
 import type { FastifyPluginAsync } from "fastify";
@@ -46,6 +47,16 @@ export function createCompanyRoutes(
           request.params.companyId,
           UpdateCompanyInputSchema.parse(request.body),
         ),
+    );
+    app.post<{ Params: { companyId: string } }>(
+      "/api/companies/:companyId/restore",
+      async (request) => {
+        RestoreCompanyInputSchema.parse(request.body ?? {});
+        return deps.service.restore(
+          await deps.authenticate(request),
+          request.params.companyId,
+        );
+      },
     );
     app.delete<{ Params: { companyId: string } }>(
       "/api/companies/:companyId",

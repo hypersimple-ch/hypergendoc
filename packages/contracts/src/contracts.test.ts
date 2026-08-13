@@ -13,6 +13,8 @@ import {
   ResolvedStyleAssetsSchema,
   StyleDefinitionSchema,
   UpdateDocumentToolInputSchema,
+  UpdateMcpCredentialInputSchema,
+  RestoreCompanyInputSchema,
 } from "./index.js";
 
 const id = "00000000-0000-4000-8000-000000000001";
@@ -463,6 +465,26 @@ describe("shared contracts", () => {
           stack: "/srv/secret.ts",
         },
       }),
+    ).toThrow();
+  });
+  it("validates credential updates and the explicit company restore command", () => {
+    expect(
+      UpdateMcpCredentialInputSchema.parse({
+        companyIds: [id],
+        actions: ["documents:read"],
+        expiresAt: null,
+      }),
+    ).toMatchObject({ expiresAt: null });
+    expect(() =>
+      UpdateMcpCredentialInputSchema.parse({
+        companyIds: [id, id],
+        actions: ["documents:read"],
+        expiresAt: null,
+      }),
+    ).toThrow();
+    expect(RestoreCompanyInputSchema.parse({})).toEqual({});
+    expect(() =>
+      RestoreCompanyInputSchema.parse({ archivedAt: null }),
     ).toThrow();
   });
 });

@@ -1,7 +1,18 @@
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import type { Database } from "@hypergendoc/db";
-import { companies, documents, styles, styleVersions } from "@hypergendoc/db";
-import type { Document, StyleDefinition } from "@hypergendoc/contracts";
+import {
+  companies,
+  documents,
+  styles,
+  styleVersions,
+  templates,
+  templateVersions,
+} from "@hypergendoc/db";
+import type {
+  Document,
+  StyleDefinition,
+  TemplateDefinition,
+} from "@hypergendoc/contracts";
 import type { DocumentRepository } from "./service-types.js";
 
 type Db = Database;
@@ -33,6 +44,22 @@ export interface GitDocumentRepository {
     companyId: string,
     styleVersionId: string,
   ): Promise<{ id: string; definition: StyleDefinition } | undefined>;
+  findActiveTemplate(
+    workspaceId: string,
+    companyId: string,
+    templateId: string,
+  ): Promise<
+    | { templateId: string; versionId: string; definition: TemplateDefinition }
+    | undefined
+  >;
+  findTemplateVersion(
+    workspaceId: string,
+    companyId: string,
+    templateVersionId: string,
+  ): Promise<
+    | { templateId: string; versionId: string; definition: TemplateDefinition }
+    | undefined
+  >;
   findDocument(
     workspaceId: string,
     documentId: string,
@@ -43,7 +70,13 @@ export interface GitDocumentRepository {
     documentId: string,
   ): Promise<Document | undefined>;
   insertDocument(
-    input: Readonly<{ workspaceId: string; companyId: string; title: string }>,
+    input: Readonly<{
+      workspaceId: string;
+      companyId: string;
+      templateId?: string | undefined;
+      title: string;
+      metadata?: Record<string, string>;
+    }>,
   ): Promise<Document>;
   touchDocument(
     workspaceId: string,
@@ -58,7 +91,9 @@ export interface GitDocumentRepository {
 const document = (row: typeof documents.$inferSelect): Document => ({
   id: row.id,
   companyId: row.companyId,
+  templateId: row.templateId,
   title: row.title,
+  metadata: row.metadata as Record<string, string>,
   createdAt: row.createdAt.toISOString(),
   updatedAt: row.updatedAt.toISOString(),
 });
@@ -134,6 +169,52 @@ function operations(db: Db): Omit<GitDocumentRepository, "transaction"> {
         );
       return row && { ...row, definition: row.definition as StyleDefinition };
     },
+    async findActiveTemplate(workspaceId, companyId, templateId) {
+      const [row] = await db
+        .select({
+          templateId: templates.id,
+          versionId: templateVersions.id,
+          definition: templateVersions.definition,
+        })
+        .from(templates)
+        .innerJoin(
+          templateVersions,
+          eq(templates.activeVersionId, templateVersions.id),
+        )
+        .where(
+          and(
+            eq(templates.workspaceId, workspaceId),
+            eq(templates.companyId, companyId),
+            eq(templates.id, templateId),
+            isNull(templates.archivedAt),
+          ),
+        );
+      return (
+        row && { ...row, definition: row.definition as TemplateDefinition }
+      );
+    },
+    async findTemplateVersion(workspaceId, companyId, templateVersionId) {
+      const [row] = await db
+        .select({
+          templateId: templateVersions.templateId,
+          versionId: templateVersions.id,
+          definition: templateVersions.definition,
+        })
+        .from(templateVersions)
+        .innerJoin(templates, eq(templateVersions.templateId, templates.id))
+        .where(
+          and(
+            eq(templateVersions.workspaceId, workspaceId),
+            eq(templateVersions.companyId, companyId),
+            eq(templateVersions.id, templateVersionId),
+            eq(templates.workspaceId, workspaceId),
+            eq(templates.companyId, companyId),
+          ),
+        );
+      return (
+        row && { ...row, definition: row.definition as TemplateDefinition }
+      );
+    },
     async findDocument(workspaceId, documentId) {
       const [row] = await db
         .select()
@@ -177,7 +258,10 @@ function operations(db: Db): Omit<GitDocumentRepository, "transaction"> {
       return row && document(row);
     },
     async insertDocument(input) {
-      const [row] = await db.insert(documents).values(input).returning();
+      const [row] = await db
+        .insert(documents)
+        .values({ ...input, metadata: input.metadata ?? {} })
+        .returning();
       if (!row) throw new Error("document insert did not return a row");
       return document(row);
     },

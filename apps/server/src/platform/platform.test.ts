@@ -174,6 +174,22 @@ describe("platform", () => {
     });
     expect(environment.s3.endpoint).toBe("http://object-store:3900");
     expect(environment.documentGitRoot).toBe("/var/lib/hypergendoc/git");
+    expect(environment.renderTimeoutMs).toBe(30_000);
+    expect(environment.logLevel).toBe("info");
+    const configured = loadServerEnvironment({
+      ...values,
+      S3_ENDPOINT: "https://storage.example.test",
+      RENDER_TIMEOUT_MS: "25000",
+      LOG_LEVEL: "debug",
+    });
+    expect(configured.renderTimeoutMs).toBe(25_000);
+    expect(configured.logLevel).toBe("debug");
+    expect(() =>
+      loadServerEnvironment({ ...values, RENDER_TIMEOUT_MS: "999" }),
+    ).toThrow("RENDER_TIMEOUT_MS");
+    expect(() =>
+      loadServerEnvironment({ ...values, LOG_LEVEL: "verbose" }),
+    ).toThrow("LOG_LEVEL");
     expect(environment.smtp).toEqual({
       host: "mail.example.test",
       port: 465,

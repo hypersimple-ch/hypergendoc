@@ -6,6 +6,7 @@ import type { Document, DocumentCommit } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
 import { useActiveCompany } from "./active-company";
 import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
+import { TemplateDocumentEditor } from "./template-document-editor";
 import {
   Button,
   ConfirmDialog,
@@ -17,7 +18,11 @@ import {
 } from "./primitives";
 
 const formatLabel = (format: DocumentCommit["format"]) =>
-  format === "markdown" ? "Markdown" : "HTML";
+  format === "markdown"
+    ? "Markdown"
+    : format === "html"
+      ? "HTML"
+      : "Template data";
 const shortSha = (commitSha: string) => commitSha.slice(0, 8);
 
 export function DocumentsDashboard() {
@@ -28,7 +33,10 @@ export function DocumentsDashboard() {
     noActiveCompany,
   } = useActiveCompany();
   const data = useLoaded(
-    () => (activeCompany ? dashboardApi.documents() : Promise.resolve([])),
+    () =>
+      activeCompany
+        ? dashboardApi.documents(activeCompany.id)
+        : Promise.resolve([]),
     [activeCompany?.id],
   );
   const [query, setQuery] = useState("");
@@ -70,12 +78,20 @@ export function DocumentsDashboard() {
           </>
         }
         aside={
-          <Link
-            className="inline-flex items-center gap-2 text-sm font-medium text-primary underline-offset-4 hover:underline"
-            href="/workspace/styles"
-          >
-            Review styles
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              className="button button--quiet inline-flex items-center"
+              href="/workspace/templates"
+            >
+              Review templates
+            </Link>
+            <Link
+              className="button inline-flex items-center"
+              href="/workspace/documents/new"
+            >
+              Create document
+            </Link>
+          </div>
         }
       />
       {activeCompany && (
@@ -344,9 +360,17 @@ function DocumentDetail({
               <LoadState {...source} />
               {activeSource && (
                 <>
-                  <pre className="document-source">
-                    {activeSource.snapshot.body}
-                  </pre>
+                  {activeSource.snapshot.format === "template" && isCurrent ? (
+                    <TemplateDocumentEditor
+                      document={document}
+                      current={activeSource}
+                      onSaved={() => detail.reload()}
+                    />
+                  ) : (
+                    <pre className="document-source">
+                      {activeSource.snapshot.body}
+                    </pre>
+                  )}
                   <div className="row-actions document-actions">
                     <a
                       className="button button--quiet"

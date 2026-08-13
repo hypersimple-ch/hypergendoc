@@ -77,6 +77,22 @@ export function createCompanyRepository(db: Database): CompanyRepository {
           and(
             eq(companies.workspaceId, workspaceId),
             eq(companies.id, companyId),
+            isNull(companies.archivedAt),
+          ),
+        )
+        .returning();
+      return row && company(row);
+    },
+    async restore(workspaceId, companyId) {
+      const [row] = await db
+        .update(companies)
+        .set({ archivedAt: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(companies.workspaceId, workspaceId),
+            eq(companies.id, companyId),
+            // Restoring an active company is not a successful lifecycle transition.
+            sql`${companies.archivedAt} is not null`,
           ),
         )
         .returning();
@@ -115,64 +131,82 @@ export function createCompanyAssetRepository(
   const builtInFonts = FontFamilySchema.options;
   return {
     async list(workspaceId, companyId): Promise<CompanyAssets> {
-      const [logos, uploadedFonts, ownedBuiltIns, colors] = await Promise.all([
-        db
-          .select({
-            id: storedObjects.id,
-            displayName: storedObjects.displayName,
-            contentType: storedObjects.contentType,
-            byteSize: storedObjects.byteSize,
-            createdAt: storedObjects.createdAt,
-          })
-          .from(storedObjects)
-          .where(
-            and(
-              eq(storedObjects.workspaceId, workspaceId),
-              eq(storedObjects.companyId, companyId),
-              eq(storedObjects.purpose, "logo"),
-              isNull(storedObjects.deletedAt),
+      const [logos, images, uploadedFonts, ownedBuiltIns, colors] =
+        await Promise.all([
+          db
+            .select({
+              id: storedObjects.id,
+              displayName: storedObjects.displayName,
+              contentType: storedObjects.contentType,
+              byteSize: storedObjects.byteSize,
+              createdAt: storedObjects.createdAt,
+            })
+            .from(storedObjects)
+            .where(
+              and(
+                eq(storedObjects.workspaceId, workspaceId),
+                eq(storedObjects.companyId, companyId),
+                eq(storedObjects.purpose, "logo"),
+                isNull(storedObjects.deletedAt),
+              ),
             ),
-          ),
-        db
-          .select({
-            id: storedObjects.id,
-            displayName: storedObjects.displayName,
-            familyName: companyFonts.familyName,
-            subfamilyName: companyFonts.subfamilyName,
-          })
-          .from(companyFonts)
-          .innerJoin(
-            storedObjects,
-            eq(companyFonts.storedObjectId, storedObjects.id),
-          )
-          .where(
-            and(
-              eq(companyFonts.workspaceId, workspaceId),
-              eq(companyFonts.companyId, companyId),
-              eq(storedObjects.purpose, "font"),
-              isNull(storedObjects.deletedAt),
+          db
+            .select({
+              id: storedObjects.id,
+              displayName: storedObjects.displayName,
+              contentType: storedObjects.contentType,
+              byteSize: storedObjects.byteSize,
+              createdAt: storedObjects.createdAt,
+            })
+            .from(storedObjects)
+            .where(
+              and(
+                eq(storedObjects.workspaceId, workspaceId),
+                eq(storedObjects.companyId, companyId),
+                eq(storedObjects.purpose, "image"),
+                isNull(storedObjects.deletedAt),
+              ),
             ),
-          ),
-        db
-          .select({ family: companyFonts.builtInFamily })
-          .from(companyFonts)
-          .where(
-            and(
-              eq(companyFonts.workspaceId, workspaceId),
-              eq(companyFonts.companyId, companyId),
-              inArray(companyFonts.builtInFamily, builtInFonts),
+          db
+            .select({
+              id: storedObjects.id,
+              displayName: storedObjects.displayName,
+              familyName: companyFonts.familyName,
+              subfamilyName: companyFonts.subfamilyName,
+            })
+            .from(companyFonts)
+            .innerJoin(
+              storedObjects,
+              eq(companyFonts.storedObjectId, storedObjects.id),
+            )
+            .where(
+              and(
+                eq(companyFonts.workspaceId, workspaceId),
+                eq(companyFonts.companyId, companyId),
+                eq(storedObjects.purpose, "font"),
+                isNull(storedObjects.deletedAt),
+              ),
             ),
-          ),
-        db
-          .select({ color: companyColors.color })
-          .from(companyColors)
-          .where(
-            and(
-              eq(companyColors.workspaceId, workspaceId),
-              eq(companyColors.companyId, companyId),
+          db
+            .select({ family: companyFonts.builtInFamily })
+            .from(companyFonts)
+            .where(
+              and(
+                eq(companyFonts.workspaceId, workspaceId),
+                eq(companyFonts.companyId, companyId),
+                inArray(companyFonts.builtInFamily, builtInFonts),
+              ),
             ),
-          ),
-      ]);
+          db
+            .select({ color: companyColors.color })
+            .from(companyColors)
+            .where(
+              and(
+                eq(companyColors.workspaceId, workspaceId),
+                eq(companyColors.companyId, companyId),
+              ),
+            ),
+        ]);
       const owned = new Set(ownedBuiltIns.flatMap((font) => font.family ?? []));
       return {
         logos: logos.map((logo) => ({
@@ -183,6 +217,15 @@ export function createCompanyAssetRepository(
           byteSize: logo.byteSize,
           contentUrl: `/api/companies/${companyId}/assets/logos/${logo.id}/content`,
           createdAt: logo.createdAt.toISOString(),
+        })),
+        images: images.map((image) => ({
+          id: image.id,
+          displayName: image.displayName,
+          contentType: image.contentType as
+            "image/png" | "image/jpeg" | "image/webp",
+          byteSize: image.byteSize,
+          contentUrl: `/api/companies/${companyId}/assets/images/${image.id}/content`,
+          createdAt: image.createdAt.toISOString(),
         })),
         fonts: [
           ...builtInFonts.map((family) => ({
@@ -229,6 +272,23 @@ export function createCompanyAssetRepository(
           ),
         );
       const [row] = await query;
+      return row;
+    },
+    async createImage(input) {
+      const [row] = await db
+        .insert(storedObjects)
+        .values({
+          workspaceId: input.workspaceId,
+          companyId: input.companyId,
+          purpose: "image",
+          displayName: input.displayName,
+          objectKey: input.objectKey,
+          contentType: input.contentType,
+          byteSize: input.bytes,
+          sha256: input.sha256,
+        })
+        .returning({ id: storedObjects.id });
+      if (!row) throw new Error("stored image insert did not return a row");
       return row;
     },
     async create(input) {

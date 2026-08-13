@@ -4,27 +4,40 @@ import { limits } from "@hypergendoc/config";
 import type {
   DocumentFormat,
   ResolvedStyleAssets,
+  ResolvedTemplateAssets,
   StyleDefinition,
+  TemplateData,
+  TemplateDefinition,
 } from "@hypergendoc/contracts";
 import { AppError } from "../../platform/errors.js";
 
 const protocol = "hypergendoc-render-v2" as const;
 const maxRequestFrameBytes =
-  limits.documentBodyBytes +
+  3 * limits.documentBodyBytes +
   Math.ceil(limits.renderAssetBytes / 3) * 4 +
-  16 * 1024;
+  768 * 1024;
 const maxResponseFrameBytes =
   Math.ceil(limits.renderedArtifactBytes / 3) * 4 + 16 * 1024;
 const sha256 = (value: Uint8Array) =>
   createHash("sha256").update(value).digest("hex");
 const hashPattern = /^[a-f0-9]{64}$/;
 
-export interface RenderRequest {
-  readonly format: DocumentFormat;
-  readonly body: string;
-  readonly style: StyleDefinition;
-  readonly assets?: ResolvedStyleAssets;
-}
+export type RenderRequest =
+  | Readonly<{
+      format: DocumentFormat;
+      body: string;
+      style: StyleDefinition;
+      assets?: ResolvedStyleAssets;
+    }>
+  | Readonly<{
+      format: "template";
+      data: TemplateData;
+      template: TemplateDefinition;
+      style: StyleDefinition;
+      assets?: ResolvedStyleAssets;
+      templateAssets?: ResolvedTemplateAssets;
+      locale?: string;
+    }>;
 export interface RenderResult {
   readonly ok: boolean;
   readonly sourceHash?: string;

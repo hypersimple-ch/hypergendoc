@@ -1,6 +1,6 @@
 # HyperGenDoc
 
-A narrow TypeScript MVP for agencies that produce branded PDF artifacts for client companies. It provides workspace-scoped owner/member access, immutable styles, Git-backed document history, private object storage for logos/styles, and company-scoped/revocable MCP credentials. It is **not production-ready**, a legal service, a financial workflow, a client portal, an arbitrary document-runtime host, or a dashboard document editor.
+A narrow TypeScript MVP for agencies that produce branded PDF artifacts for client companies. It provides workspace-scoped owner/member access, immutable styles, Git-backed document history, private object storage for uploaded logos/fonts, and company-scoped/revocable MCP credentials. It is **not production-ready**, a legal service, a financial workflow, a client portal, an arbitrary document-runtime host, or a dashboard document editor.
 
 ## Local development
 
@@ -23,11 +23,11 @@ pnpm --filter @hypergendoc/db migrate
 ## Architecture and environment
 
 - Local browser and MCP traffic enters through Caddy. Production uses Dokploy's Traefik for HTTPS and path routing; Caddy is not part of the production stack.
-- PostgreSQL holds identity, tenant/document index and authorization metadata, credential hashes, and audit records. One private Git repository per company holds document source history; private Garage S3-compatible storage holds logos and styles only. The renderer receives jobs only over a Unix socket, has no network, and renders current PDFs in memory.
+- PostgreSQL holds identity, tenant/document index and authorization metadata, credential hashes, and audit records. One private Git repository per company holds document source history; private Garage S3-compatible storage holds uploaded logos and fonts only. The renderer receives jobs only over a Unix socket, has no network, and renders current PDFs in memory. Style definitions live in PostgreSQL; only uploaded logo/font bytes live in Garage, under opaque `private/` keys. Compose persists Garage metadata and bytes in the `object-metadata` and `object-data` named volumes (mounted at `/var/lib/garage/meta` and `/var/lib/garage/data` inside the object-store container).
 - Required server configuration is `APP_ORIGIN`, `BETTER_AUTH_SECRET`, `CREDENTIAL_PEPPER`, `DATABASE_URL`, `S3_REGION`, `S3_BUCKET`, and S3 credentials. Garage requires `GARAGE_RPC_SECRET`; `S3_ENDPOINT`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM`, `RENDERER_SOCKET`, `RENDER_TIMEOUT_MS`, `NODE_ENV`, and `LOG_LEVEL` are also documented in [`.env.example`](.env.example). The internal Garage endpoint is `http://object-store:3900` in region `garage`; production requires SMTP and HTTPS for external S3 endpoints, while only the isolated Compose service name `object-store` may use internal HTTP.
 - Production Garage is a single-node `replication_factor=1` deployment. It has no storage redundancy: encrypted off-VPS backups and restore drills are mandatory. A future HA deployment requires three nodes across three zones with replication factor 3.
 
-Production deploys the standalone [`compose.prod.yaml`](compose.prod.yaml) through Dokploy with no published application ports. Configure the same HTTPS hostname in Dokploy for `/api`, `/mcp`, `/mcp-artifacts`, and `/health` to `server:4000`, then `/` to `web:3000`, without stripping paths. See the [operations runbook](docs/operations/runbook.md) for the exact route settings.
+Production deploys the standalone [`compose.prod.yaml`](compose.prod.yaml) through Dokploy with no published application ports. Configure the same HTTPS hostname in Dokploy for `/api`, `/mcp`, and `/health` to `server:4000`, then `/` to `web:3000`, without stripping paths. See the [operations runbook](docs/operations/runbook.md) for the exact route settings.
 
 See the authoritative [MVP architecture](docs/architecture/mvp.md), [HTTP/MCP contract](docs/contracts/http-mcp.md), and [data policy](docs/operations/data-policy.md).
 
@@ -53,3 +53,9 @@ Keep changes scoped, add or update tests for behavior changes, and run the relev
 - [MCP client guide](docs/mcp/client-guide.md)
 - [Operations runbook](docs/operations/runbook.md)
 - [Security runbook](docs/security/runbook.md)
+
+## Templates and document authoring
+
+HyperGenDoc includes a business-kind-agnostic [declarative template runtime](docs/contracts/template-ast.md). Workspace users create company-specific, immutable template versions that pin an immutable style version. A template may encode any business document through typed fields, page masters, generic layout nodes, reusable components, conditions, repeaters, formulas, tables, images, and automatic contents navigation. HyperGenDoc core does not contain proposal, invoice, contract, or other business-specific concepts.
+
+Template-backed document data is validated against the pinned template version and stored as canonical JSON in the same private company Git history used by Markdown and HTML source. Company media remains private, is resolved by UUID only, and is embedded into the isolated renderer after ownership and hash verification. The dashboard supports template creation/version activation, exact PDF previews, template-driven document creation, typed revision editing, history, revert, and PDF download. Templates never accept arbitrary CSS, JavaScript, remote URLs, or unsanitized HTML.

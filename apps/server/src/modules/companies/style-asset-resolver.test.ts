@@ -47,11 +47,11 @@ const definition: StyleDefinition = {
   },
 };
 
-const record = (kind: "logo" | "font") => ({
+const record = (kind: "logo" | "font" | "image") => ({
   key: `private/${kind}`,
   sha256: hash,
   byteSize: bytes.byteLength,
-  contentType: kind === "logo" ? "image/png" : "font/woff2",
+  contentType: kind === "font" ? "font/woff2" : "image/png",
 });
 
 describe("company style asset resolver", () => {

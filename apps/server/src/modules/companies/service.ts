@@ -14,6 +14,7 @@ export interface CompanyRepository {
     input: Readonly<{ name?: string | undefined }>,
   ): Promise<Company | undefined>;
   archive(workspaceId: string, companyId: string): Promise<Company | undefined>;
+  restore(workspaceId: string, companyId: string): Promise<Company | undefined>;
 }
 
 export function createCompanyService(deps: {
@@ -74,6 +75,16 @@ export function createCompanyService(deps: {
       );
       if (!company) throw new AuthorizationError("not_found");
       await audit(actor, "company.archived", company.id);
+      return company;
+    },
+    async restore(actor: HumanActor, companyId: string): Promise<Company> {
+      if (actor.role !== "owner") throw new AuthorizationError("forbidden");
+      const company = await deps.repository.restore(
+        actor.workspaceId,
+        companyId,
+      );
+      if (!company) throw new AuthorizationError("not_found");
+      await audit(actor, "company.restored", company.id);
       return company;
     },
   };

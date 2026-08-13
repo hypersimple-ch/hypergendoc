@@ -31,6 +31,7 @@ export * from "./core-schema.js";
 export const storedObjectPurpose = pgEnum("stored_object_purpose", [
   "logo",
   "font",
+  "image",
 ]);
 
 export const storedObjects = pgTable(
@@ -208,6 +209,87 @@ export const styleVersions = pgTable(
   ],
 );
 
+export const templates = pgTable(
+  "templates",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id").notNull(),
+    name: text("name").notNull(),
+    activeVersionId: uuid("active_version_id"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("template_workspace_id_unique").on(table.workspaceId, table.id),
+    unique("template_workspace_company_id_unique").on(
+      table.workspaceId,
+      table.companyId,
+      table.id,
+    ),
+    unique("template_company_name_unique").on(table.companyId, table.name),
+    foreignKey({
+      columns: [table.workspaceId, table.companyId],
+      foreignColumns: [companies.workspaceId, companies.id],
+      name: "templates_workspace_company_fk",
+    }).onDelete("cascade"),
+    index("template_workspace_company_idx").on(
+      table.workspaceId,
+      table.companyId,
+    ),
+  ],
+);
+
+export const templateVersions = pgTable(
+  "template_versions",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id").notNull(),
+    templateId: uuid("template_id").notNull(),
+    styleVersionId: uuid("style_version_id")
+      .notNull()
+      .references(() => styleVersions.id, { onDelete: "restrict" }),
+    version: integer("version").notNull(),
+    definition: jsonb("definition").notNull(),
+    createdByUserId: text("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    unique("template_version_unique").on(table.templateId, table.version),
+    unique("template_version_workspace_id_unique").on(
+      table.workspaceId,
+      table.id,
+    ),
+    unique("template_version_workspace_company_id_unique").on(
+      table.workspaceId,
+      table.companyId,
+      table.id,
+    ),
+    foreignKey({
+      columns: [table.workspaceId, table.companyId, table.templateId],
+      foreignColumns: [
+        templates.workspaceId,
+        templates.companyId,
+        templates.id,
+      ],
+      name: "template_versions_workspace_company_template_fk",
+    }).onDelete("cascade"),
+    index("template_version_template_idx").on(table.templateId),
+    index("template_version_style_idx").on(table.styleVersionId),
+    check("template_version_positive", sql`${table.version} > 0`),
+  ],
+);
+
 export const documents = pgTable(
   "documents",
   {
@@ -218,7 +300,9 @@ export const documents = pgTable(
     companyId: uuid("company_id")
       .notNull()
       .references(() => companies.id, { onDelete: "restrict" }),
+    templateId: uuid("template_id"),
     title: text("title").notNull(),
+    metadata: jsonb("metadata").notNull().default({}),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -232,6 +316,16 @@ export const documents = pgTable(
       foreignColumns: [companies.workspaceId, companies.id],
       name: "documents_workspace_company_fk",
     }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.workspaceId, table.companyId, table.templateId],
+      foreignColumns: [
+        templates.workspaceId,
+        templates.companyId,
+        templates.id,
+      ],
+      name: "documents_workspace_company_template_fk",
+    }).onDelete("restrict"),
+    index("document_template_idx").on(table.templateId),
     index("document_workspace_company_idx").on(
       table.workspaceId,
       table.companyId,

@@ -7,6 +7,7 @@ import {
   FileStack,
   KeyRound,
   LayoutDashboard,
+  LayoutTemplate,
   LogOut,
   Menu,
   Palette,
@@ -32,6 +33,11 @@ const navigationGroups = [
     links: [
       { href: "/workspace/companies", label: "Companies", icon: Building2 },
       { href: "/workspace/styles", label: "Styles", icon: Palette },
+      {
+        href: "/workspace/templates",
+        label: "Templates",
+        icon: LayoutTemplate,
+      },
       { href: "/workspace/documents", label: "Documents", icon: FileStack },
     ],
   },

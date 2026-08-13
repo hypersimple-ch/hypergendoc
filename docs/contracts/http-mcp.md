@@ -44,3 +44,21 @@ Numeric-version tools do not exist.
 `format` is exactly `"markdown"` or `"html"`; it is never inferred. HTML is a sanitized fragment. Inputs are capped at 256 KiB, PDFs at 25 MiB, rendering at 30 seconds and 100 pages, and pagination defaults to 50 with a maximum of 100.
 
 Additive response changes require optional fields; breaking changes require a versioned route or tool contract.
+
+## Template HTTP surface
+
+- `GET|POST /api/companies/:companyId/templates`
+- `GET /api/templates/:templateId`
+- `GET|POST /api/templates/:templateId/versions`
+- `POST /api/templates/:templateId/activate`
+- `POST /api/templates/:templateId/preview`
+- `POST /api/documents/from-template`
+- `POST /api/documents/:documentId/data`
+- `POST /api/companies/:companyId/assets/images`
+- `GET /api/companies/:companyId/assets/images/:objectId/content`
+
+The complete field, path, expression, node, page-master, and failure contract is documented in [Declarative template contract](./template-ast.md).
+
+Template definitions are strict, versioned declarative ASTs. They pin a style version and may define typed fields, computed expressions, page masters, components, conditions, repeaters, tables, image bindings, contents navigation, and generic layout nodes. Document data and definitions retain the existing explicit byte, expansion, renderer, and tenant-isolation limits. Unknown fields, arbitrary HTML/CSS/JavaScript, remote assets, invalid expressions, and foreign-company media references are rejected.
+
+Additional MCP tools are `list_templates`, `get_template`, `create_document_from_template`, and `update_template_document`. Reading template definitions requires `templates:read`; template-backed document writes require `documents:write`. Template authoring and activation remain human-session operations.

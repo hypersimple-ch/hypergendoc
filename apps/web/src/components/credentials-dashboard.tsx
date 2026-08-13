@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { KeyRound, LockKeyhole, ShieldCheck } from "lucide-react";
-import type { McpAction } from "@hypergendoc/contracts";
+import type { McpAction, McpCredential } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
 import { useActiveCompany } from "./active-company";
 import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
@@ -19,6 +19,7 @@ import {
 const actions: McpAction[] = [
   "companies:read",
   "styles:read",
+  "templates:read",
   "documents:read",
   "documents:write",
 ];
@@ -43,6 +44,7 @@ export function CredentialsDashboard() {
   const [selectedActions, setActions] = useState<McpAction[]>([
     "documents:read",
   ]);
+  const [expiresAt, setExpiresAt] = useState("");
   const [token, setToken] = useState<string>();
   const [ack, setAck] = useState(false);
   const [message, setMessage] = useState<string>();
@@ -53,7 +55,9 @@ export function CredentialsDashboard() {
   const revokingRef = useRef(false);
   const owner = context?.role === "owner";
   const activeCredentials = credentials.value?.filter(
-    (credential) => !credential.revokedAt,
+    (credential) =>
+      !credential.revokedAt &&
+      (!credential.expiresAt || new Date(credential.expiresAt) > new Date()),
   ).length;
 
   async function create(event: React.FormEvent) {
@@ -69,10 +73,12 @@ export function CredentialsDashboard() {
         name,
         companyIds,
         actions: selectedActions,
+        ...(expiresAt ? { expiresAt: new Date(expiresAt).toISOString() } : {}),
       });
       setToken(created.token);
       setAck(false);
       setName("");
+      setExpiresAt("");
       credentials.reload();
     } catch (error) {
       setMessage(safeError(error));
@@ -254,15 +260,28 @@ export function CredentialsDashboard() {
             </div>
           </div>
           <form className="grid gap-5" onSubmit={(event) => void create(event)}>
-            <FormField label="Credential name">
-              <Input
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                required
-                maxLength={120}
-                disabled={creating}
-              />
-            </FormField>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <FormField label="Credential name">
+                <Input
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  required
+                  maxLength={120}
+                  disabled={creating}
+                />
+              </FormField>
+              <FormField
+                label="Expires (optional)"
+                hint="Uses your local time."
+              >
+                <Input
+                  type="datetime-local"
+                  value={expiresAt}
+                  onChange={(event) => setExpiresAt(event.target.value)}
+                  disabled={creating}
+                />
+              </FormField>
+            </div>
             <div className="grid gap-5 lg:grid-cols-2">
               <fieldset className="rounded-md border border-border p-4">
                 <legend className="px-1 text-sm font-medium">
@@ -354,43 +373,14 @@ export function CredentialsDashboard() {
               columns={["Credential", "Scopes", "Last used", "State", "Action"]}
             >
               {credentials.value.map((credential) => (
-                <tr key={credential.id}>
-                  <td>
-                    <div className="flex flex-col gap-0.5">
-                      <strong>{credential.name}</strong>
-                      <small className="font-mono text-muted-foreground">
-                        {credential.prefix}…
-                      </small>
-                    </div>
-                  </td>
-                  <td>
-                    {credential.companyIds.length} companies ·{" "}
-                    {credential.actions.join(", ")}
-                  </td>
-                  <td>
-                    {credential.lastUsedAt
-                      ? new Date(credential.lastUsedAt).toLocaleString()
-                      : "Never"}
-                  </td>
-                  <td>
-                    {credential.revokedAt ? (
-                      <span className="badge badge--muted">Revoked</span>
-                    ) : (
-                      <span className="badge">Active</span>
-                    )}
-                  </td>
-                  <td>
-                    {!credential.revokedAt && (
-                      <Button
-                        tone="danger"
-                        disabled={revokingId === credential.id}
-                        onClick={() => setCredentialToRevoke(credential.id)}
-                      >
-                        {revokingId === credential.id ? "Revoking…" : "Revoke"}
-                      </Button>
-                    )}
-                  </td>
-                </tr>
+                <CredentialRow
+                  key={credential.id}
+                  credential={credential}
+                  companies={companies}
+                  revoking={revokingId === credential.id}
+                  onRevoke={() => setCredentialToRevoke(credential.id)}
+                  onUpdated={credentials.reload}
+                />
               ))}
             </Table>
           ) : (
@@ -413,6 +403,188 @@ export function CredentialsDashboard() {
         }}
       />
     </>
+  );
+}
+
+function CredentialRow({
+  credential,
+  companies,
+  revoking,
+  onRevoke,
+  onUpdated,
+}: {
+  credential: McpCredential;
+  companies: { id: string; name: string; archivedAt: string | null }[];
+  revoking: boolean;
+  onRevoke: () => void;
+  onUpdated: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [companyIds, setCompanyIds] = useState([...credential.companyIds]);
+  const [selectedActions, setSelectedActions] = useState<McpAction[]>([
+    ...credential.actions,
+  ]);
+  const [expiresAt, setExpiresAt] = useState(
+    credential.expiresAt
+      ? new Date(
+          new Date(credential.expiresAt).getTime() -
+            new Date(credential.expiresAt).getTimezoneOffset() * 60_000,
+        )
+          .toISOString()
+          .slice(0, 16)
+      : "",
+  );
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string>();
+  const expired = Boolean(
+    credential.expiresAt && new Date(credential.expiresAt) <= new Date(),
+  );
+
+  async function save() {
+    if (saving || !companyIds.length || !selectedActions.length) return;
+    setSaving(true);
+    setMessage(undefined);
+    try {
+      await dashboardApi.updateCredential(credential.id, {
+        companyIds,
+        actions: selectedActions,
+        expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+      });
+      setEditing(false);
+      setMessage("Credential updated.");
+      onUpdated();
+    } catch (error) {
+      setMessage(safeError(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <tr>
+      <td>
+        <div className="flex flex-col gap-0.5">
+          <strong>{credential.name}</strong>
+          <small className="font-mono text-muted-foreground">
+            {credential.prefix}…
+          </small>
+          {message && <small aria-live="polite">{message}</small>}
+        </div>
+      </td>
+      <td>
+        {editing ? (
+          <div className="grid gap-3">
+            <fieldset>
+              <legend className="text-xs font-medium">Company scopes</legend>
+              {companies
+                .filter((company) => !company.archivedAt)
+                .map((company) => (
+                  <label className="checkbox" key={company.id}>
+                    <input
+                      type="checkbox"
+                      checked={companyIds.includes(company.id)}
+                      onChange={(event) =>
+                        setCompanyIds((current) =>
+                          event.target.checked
+                            ? [...current, company.id]
+                            : current.filter((id) => id !== company.id),
+                        )
+                      }
+                    />
+                    {company.name}
+                  </label>
+                ))}
+            </fieldset>
+            <fieldset>
+              <legend className="text-xs font-medium">Allowed actions</legend>
+              {actions.map((action) => (
+                <label className="checkbox font-mono text-xs" key={action}>
+                  <input
+                    type="checkbox"
+                    checked={selectedActions.includes(action)}
+                    onChange={(event) =>
+                      setSelectedActions((current) =>
+                        event.target.checked
+                          ? [...current, action]
+                          : current.filter((item) => item !== action),
+                      )
+                    }
+                  />
+                  {action}
+                </label>
+              ))}
+            </fieldset>
+          </div>
+        ) : (
+          <>
+            {credential.companyIds.length} companies ·{" "}
+            {credential.actions.join(", ")}
+          </>
+        )}
+      </td>
+      <td>
+        {credential.lastUsedAt
+          ? new Date(credential.lastUsedAt).toLocaleString()
+          : "Never"}
+      </td>
+      <td>
+        {editing ? (
+          <FormField label="Expires" hint="Leave blank for no expiry.">
+            <Input
+              type="datetime-local"
+              value={expiresAt}
+              onChange={(event) => setExpiresAt(event.target.value)}
+            />
+          </FormField>
+        ) : (
+          <div className="flex flex-col gap-1">
+            {credential.revokedAt ? (
+              <span className="badge badge--muted">Revoked</span>
+            ) : expired ? (
+              <span className="badge badge--muted">Expired</span>
+            ) : (
+              <span className="badge">Active</span>
+            )}
+            <small className="text-muted-foreground">
+              {credential.expiresAt
+                ? `Expires ${new Date(credential.expiresAt).toLocaleString()}`
+                : "No expiry"}
+            </small>
+          </div>
+        )}
+      </td>
+      <td>
+        {!credential.revokedAt &&
+          (editing ? (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                disabled={
+                  saving || !companyIds.length || !selectedActions.length
+                }
+                onClick={() => void save()}
+              >
+                {saving ? "Saving…" : "Save"}
+              </Button>
+              <Button
+                tone="quiet"
+                disabled={saving}
+                onClick={() => setEditing(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              <Button tone="quiet" onClick={() => setEditing(true)}>
+                Edit
+              </Button>
+              <Button tone="danger" disabled={revoking} onClick={onRevoke}>
+                {revoking ? "Revoking…" : "Revoke"}
+              </Button>
+            </div>
+          ))}
+      </td>
+    </tr>
   );
 }
 

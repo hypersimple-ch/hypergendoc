@@ -1,7 +1,7 @@
 import { CommitShaSchema } from "@hypergendoc/contracts";
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ActorContext } from "../../platform/context.js";
-import { AppError } from "../../platform/errors.js";
+import { AppError, toSafeError } from "../../platform/errors.js";
 import type { DocumentService } from "./service.js";
 
 export interface DocumentRouteDependencies {
@@ -9,6 +9,26 @@ export interface DocumentRouteDependencies {
   /** Authentication/CSRF wiring belongs to the application composition root. */
   readonly actorFor: (request: FastifyRequest) => ActorContext | undefined;
 }
+
+const MAX_DOCUMENT_BODY_BYTES = 256 * 1024;
+// A valid allowed body can expand to twice its UTF-8 size when JSON-escaped.
+const DOCUMENT_MUTATION_BODY_LIMIT = 2 * MAX_DOCUMENT_BODY_BYTES + 64 * 1024;
+
+const mutationOptions = {
+  bodyLimit: DOCUMENT_MUTATION_BODY_LIMIT,
+  errorHandler(
+    error: Error & { code?: string },
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ) {
+    if (error.code !== "FST_ERR_CTP_BODY_TOO_LARGE") throw error;
+    const safe = toSafeError(
+      new AppError("validation_failed", 413),
+      request.id,
+    );
+    return reply.status(safe.statusCode).send(safe.body);
+  },
+};
 
 const safeSha = (value: string): string => {
   const parsed = CommitShaSchema.safeParse(value);
@@ -31,8 +51,12 @@ export function registerDocumentRoutes(
     return deps.service.list(actor(request), query.companyId);
   });
 
-  app.post("/api/documents", async (request) =>
+  app.post("/api/documents", mutationOptions, async (request) =>
     deps.service.create(actor(request), request.body),
+  );
+
+  app.post("/api/documents/from-template", mutationOptions, async (request) =>
+    deps.service.createFromTemplate(actor(request), request.body),
   );
 
   app.get("/api/documents/:documentId", async (request) =>
@@ -42,12 +66,26 @@ export function registerDocumentRoutes(
     ),
   );
 
-  app.post("/api/documents/:documentId/source", async (request) =>
-    deps.service.update(
-      actor(request),
-      (request.params as { documentId: string }).documentId,
-      request.body,
-    ),
+  app.post(
+    "/api/documents/:documentId/source",
+    mutationOptions,
+    async (request) =>
+      deps.service.update(
+        actor(request),
+        (request.params as { documentId: string }).documentId,
+        request.body,
+      ),
+  );
+
+  app.post(
+    "/api/documents/:documentId/data",
+    mutationOptions,
+    async (request) =>
+      deps.service.updateFromTemplate(
+        actor(request),
+        (request.params as { documentId: string }).documentId,
+        request.body,
+      ),
   );
 
   app.get("/api/documents/:documentId/commits", async (request) =>
@@ -85,9 +123,19 @@ export function registerDocumentRoutes(
         actor(request),
         params.documentId,
       );
-      const extension = result.snapshot.format === "markdown" ? "md" : "html";
+      const extension =
+        result.snapshot.format === "markdown"
+          ? "md"
+          : result.snapshot.format === "html"
+            ? "html"
+            : "json";
       return reply
-        .header("Content-Type", "text/plain; charset=utf-8")
+        .header(
+          "Content-Type",
+          result.snapshot.format === "template"
+            ? "application/json; charset=utf-8"
+            : "text/plain; charset=utf-8",
+        )
         .header("Cache-Control", "private, no-store")
         .header("X-Document-Commit", result.snapshot.commitSha)
         .header(
@@ -98,12 +146,15 @@ export function registerDocumentRoutes(
     },
   );
 
-  app.post("/api/documents/:documentId/revert", async (request) =>
-    deps.service.revert(
-      actor(request),
-      (request.params as { documentId: string }).documentId,
-      request.body,
-    ),
+  app.post(
+    "/api/documents/:documentId/revert",
+    mutationOptions,
+    async (request) =>
+      deps.service.revert(
+        actor(request),
+        (request.params as { documentId: string }).documentId,
+        request.body,
+      ),
   );
 
   app.get("/api/documents/:documentId/pdf", async (request, reply) => {

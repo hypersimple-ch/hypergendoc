@@ -9,6 +9,9 @@ export interface ServerEnvironment {
   readonly betterAuthSecret: string;
   readonly credentialPepper: string;
   readonly rendererSocket: string;
+  readonly renderTimeoutMs: number;
+  readonly logLevel:
+    "silent" | "fatal" | "error" | "warn" | "info" | "debug" | "trace";
   readonly documentGitRoot: string;
   readonly databaseUrl: string;
   readonly s3: {
@@ -42,6 +45,28 @@ function port(value: string | undefined): number {
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65_535)
     throw new Error("PORT must be an integer between 1 and 65535");
   return parsed;
+}
+
+function renderTimeout(value: string | undefined): number {
+  const parsed = Number(value?.trim() || "30000");
+  if (!Number.isInteger(parsed) || parsed < 1_000 || parsed > 30_000)
+    throw new Error(
+      "RENDER_TIMEOUT_MS must be an integer between 1000 and 30000",
+    );
+  return parsed;
+}
+
+function logLevel(value: string | undefined): ServerEnvironment["logLevel"] {
+  const parsed = value?.trim() || "info";
+  if (
+    !(
+      ["silent", "fatal", "error", "warn", "info", "debug", "trace"] as const
+    ).includes(parsed as ServerEnvironment["logLevel"])
+  )
+    throw new Error(
+      "LOG_LEVEL must be silent, fatal, error, warn, info, debug, or trace",
+    );
+  return parsed as ServerEnvironment["logLevel"];
 }
 
 function smtpPort(value: string | undefined): number {
@@ -121,6 +146,8 @@ export function loadServerEnvironment(
     credentialPepper: required(values, "CREDENTIAL_PEPPER"),
     rendererSocket:
       values.RENDERER_SOCKET?.trim() || "/run/hypergendoc/renderer.sock",
+    renderTimeoutMs: renderTimeout(values.RENDER_TIMEOUT_MS),
+    logLevel: logLevel(values.LOG_LEVEL),
     documentGitRoot: resolve(documentGitRoot),
     databaseUrl: required(values, "DATABASE_URL"),
     s3: {

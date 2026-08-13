@@ -74,6 +74,8 @@ services:
       PORT: 4000
       DOCUMENT_GIT_ROOT: /var/lib/hypergendoc/git
       RENDERER_SOCKET: /run/hypergendoc/renderer.sock
+      RENDER_TIMEOUT_MS: ${RENDER_TIMEOUT_MS:-30000}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
       postgres:
         condition: service_healthy
@@ -166,6 +168,7 @@ services:
     environment:
       NODE_ENV: production
       RENDERER_SOCKET: /run/hypergendoc/renderer.sock
+      RENDER_TIMEOUT_MS: ${RENDER_TIMEOUT_MS:-30000}
     network_mode: none
     read_only: true
     user: "10001:10001"

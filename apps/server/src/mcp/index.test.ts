@@ -83,10 +83,14 @@ function servicesFor(overrides: Partial<DomainServices> = {}): DomainServices {
   return {
     listCompanies: vi.fn(() => Promise.resolve({ items: [company] })),
     listStyles: vi.fn(() => Promise.resolve({ items: [style] })),
+    listTemplates: vi.fn(() => Promise.resolve({ items: [] })),
+    getTemplate: vi.fn(() => Promise.reject(new Error("not configured"))),
     listDocuments: vi.fn(() => Promise.resolve({ items: [document] })),
     getDocument: vi.fn(() => Promise.resolve(detail)),
     createDocument: vi.fn(() => Promise.resolve({ document, current })),
     updateDocument: vi.fn(() => Promise.resolve(current)),
+    createTemplateDocument: vi.fn(() => Promise.resolve({ document, current })),
+    updateTemplateDocument: vi.fn(() => Promise.resolve(current)),
     listDocumentCommits: vi.fn(() => Promise.resolve({ items: [commit] })),
     readDocumentCommit: vi.fn(() => Promise.resolve(current)),
     revertDocument: vi.fn(() => Promise.resolve(current)),
@@ -187,10 +191,14 @@ describe("MCP Streamable HTTP adapter", () => {
     expect(mcpJson(listed).result.tools?.map((tool) => tool.name)).toEqual([
       "list_companies",
       "list_styles",
+      "list_templates",
+      "get_template",
       "list_documents",
       "get_document",
       "create_document",
       "update_document",
+      "create_document_from_template",
+      "update_template_document",
       "list_document_commits",
       "read_document_commit",
       "revert_document",
@@ -255,17 +263,69 @@ describe("MCP Streamable HTTP adapter", () => {
     await app.close();
   });
 
-  it("lets the SDK reject malformed tool input", async () => {
-    const app = appFor();
+  it("preserves strict tool schemas so the SDK rejects unknown input keys", async () => {
+    const listStyles = vi.fn(() => Promise.resolve({ items: [style] }));
+    const app = appFor("test-token", servicesFor({ listStyles }));
     const malformed = await post(
       app,
       request("tools/call", {
         name: "list_styles",
-        arguments: { companyId: "not-a-uuid", extra: true },
+        arguments: { companyId, extra: true },
       }),
     );
     expect(malformed.statusCode).toBe(200);
     expect(mcpJson(malformed).result.isError).toBe(true);
+    expect(listStyles).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("accepts a full 256 KiB body in addition to the JSON-RPC envelope", async () => {
+    const createDocument = vi.fn(() => Promise.resolve({ document, current }));
+    const app = appFor("test-token", servicesFor({ createDocument }));
+    // Newlines are JSON-escaped, so this also exercises the parser's
+    // worst-case two-byte wire representation for an allowed body character.
+    const body = "\n".repeat(256 * 1024);
+    const response = await post(
+      app,
+      request("tools/call", {
+        name: "create_document",
+        arguments: {
+          companyId,
+          styleId,
+          title: document.title,
+          format: "markdown",
+          body,
+        },
+      }),
+    );
+    expect(response.statusCode).toBe(200);
+    expect(mcpJson(response).result.isError).not.toBe(true);
+    expect(createDocument).toHaveBeenCalledWith(
+      actor,
+      expect.objectContaining({ body }),
+    );
+    await app.close();
+  });
+
+  it("does not weaken the 256 KiB document body limit", async () => {
+    const createDocument = vi.fn(() => Promise.resolve({ document, current }));
+    const app = appFor("test-token", servicesFor({ createDocument }));
+    const response = await post(
+      app,
+      request("tools/call", {
+        name: "create_document",
+        arguments: {
+          companyId,
+          styleId,
+          title: document.title,
+          format: "markdown",
+          body: "x".repeat(256 * 1024 + 1),
+        },
+      }),
+    );
+    expect(response.statusCode).toBe(200);
+    expect(mcpJson(response).result.isError).toBe(true);
+    expect(createDocument).not.toHaveBeenCalled();
     await app.close();
   });
 

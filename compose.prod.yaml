@@ -171,6 +171,7 @@ services:
     environment:
       NODE_ENV: production
       RENDERER_SOCKET: /run/hypergendoc/renderer.sock
+      RENDER_TIMEOUT_MS: ${RENDER_TIMEOUT_MS:-30000}
     user: "10001:10001"
     read_only: true
     network_mode: none

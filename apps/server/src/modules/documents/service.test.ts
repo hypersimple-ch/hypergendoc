@@ -125,6 +125,8 @@ async function fixture(
           ? { id: styleVersionId, definition }
           : undefined,
       ),
+    findActiveTemplate: () => Promise.resolve(undefined),
+    findTemplateVersion: () => Promise.resolve(undefined),
     findDocument: (workspaceId, documentId) =>
       Promise.resolve(
         workspaceId === ids.workspace
@@ -145,7 +147,9 @@ async function fixture(
       const document: Document = {
         id: ids.document,
         companyId: input.companyId,
+        templateId: input.templateId ?? null,
         title: input.title,
+        metadata: input.metadata ?? {},
         createdAt: new Date(0).toISOString(),
         updatedAt: new Date(0).toISOString(),
       };
@@ -164,6 +168,8 @@ async function fixture(
     },
   };
   const render = vi.fn<Renderer["render"]>((input) => {
+    if (input.format === "template")
+      throw new Error("unexpected template request");
     const source = sourceBuilder.resolve(
       input.format,
       input.body,
@@ -188,6 +194,9 @@ async function fixture(
         readHistorical: actualGit.readHistorical.bind(actualGit),
         history: actualGit.history.bind(actualGit),
         revert: actualGit.revert.bind(actualGit),
+        checkpoint: actualGit.checkpoint.bind(actualGit),
+        restoreCheckpoint: actualGit.restoreCheckpoint.bind(actualGit),
+        completeCheckpoint: actualGit.completeCheckpoint.bind(actualGit),
       }
     : actualGit;
   return {
@@ -233,6 +242,7 @@ describe("DocumentService Git history", () => {
       styleVersionId: ids.activeStyleVersion,
     });
     expect(result.current.commit.createdByType).toBe("user");
+    expect(result.document.metadata).toEqual({});
     expect(await service.history(human, ids.document)).toHaveLength(1);
     expect(render).not.toHaveBeenCalled();
     expect(lockCompanyForGitWrites).toHaveBeenCalledWith(

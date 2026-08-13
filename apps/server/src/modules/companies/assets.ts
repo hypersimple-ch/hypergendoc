@@ -1,4 +1,8 @@
-import type { CompanyAssets, CompanyFontAsset } from "@hypergendoc/contracts";
+import type {
+  CompanyAssets,
+  CompanyFontAsset,
+  CompanyImageAsset,
+} from "@hypergendoc/contracts";
 import type { AuditWriter } from "../../platform/audit.js";
 import { auditActor } from "../../platform/audit.js";
 import type {
@@ -8,17 +12,22 @@ import type {
 import { uploadFont } from "../../platform/font-upload.js";
 import type { LogoOwnershipRepository } from "../../platform/logo-upload.js";
 import { uploadLogo } from "../../platform/logo-upload.js";
+import {
+  uploadImage,
+  type ImageOwnershipRepository,
+} from "../../platform/media-upload.js";
 import type { ObjectStore } from "../../platform/object-store.js";
 import type { HumanActor } from "../auth/actors.js";
 import { AuthorizationError } from "../memberships/service.js";
 import type { createCompanyService } from "./service.js";
 
-export interface CompanyAssetRepository extends FontOwnershipRepository {
+export interface CompanyAssetRepository
+  extends FontOwnershipRepository, ImageOwnershipRepository {
   list(workspaceId: string, companyId: string): Promise<CompanyAssets>;
   findContent(
     workspaceId: string,
     companyId: string,
-    kind: "logo" | "font",
+    kind: "logo" | "font" | "image",
     objectId: string,
   ): Promise<
     | Readonly<{
@@ -64,6 +73,42 @@ export function createCompanyAssetService(deps: {
       });
       return logo;
     },
+    async uploadImage(
+      actor: HumanActor,
+      companyId: string,
+      bytes: Uint8Array,
+      displayName?: string,
+    ): Promise<CompanyImageAsset> {
+      await company(actor, companyId);
+      const image = await uploadImage(
+        {
+          workspaceId: actor.workspaceId,
+          companyId,
+          bytes,
+          ...(displayName ? { displayName } : {}),
+        },
+        deps.store,
+        deps.repository,
+      );
+      await deps.audit.write({
+        workspaceId: actor.workspaceId,
+        requestId: actor.requestId,
+        event: "company.image_uploaded",
+        ...auditActor({ type: "human", ...actor }),
+        targetType: "stored_object",
+        targetId: image.id,
+        outcome: "success",
+      });
+      return {
+        id: image.id,
+        displayName: displayName ?? null,
+        contentType: image.contentType as
+          "image/png" | "image/jpeg" | "image/webp",
+        byteSize: image.bytes,
+        contentUrl: `/api/companies/${companyId}/assets/images/${image.id}/content`,
+        createdAt: new Date().toISOString(),
+      };
+    },
     async uploadFont(
       actor: HumanActor,
       companyId: string,
@@ -97,7 +142,7 @@ export function createCompanyAssetService(deps: {
     async content(
       actor: HumanActor,
       companyId: string,
-      kind: "logo" | "font",
+      kind: "logo" | "font" | "image",
       objectId: string,
     ) {
       await company(actor, companyId);

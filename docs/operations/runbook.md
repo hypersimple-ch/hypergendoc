@@ -13,13 +13,15 @@ Dokploy deploys the standalone Compose service. Traefik is the only public entry
 
 One durable private Git repository belongs to each company. It is source-history authority and is not directly served. Company archival retains the repository. Purge is out of scope; do not delete repository contents ad hoc.
 
-PostgreSQL is only the document index and authorization store. Object storage is only for logos/styles, never document source, generated HTML, PDFs, or render records. Current PDFs are rendered in memory and are not a backup artifact.
+PostgreSQL is only the document index and authorization store. Object storage is only for uploaded logos/fonts, never document source, generated HTML, PDFs, or render records. Current PDFs are rendered in memory and are not a backup artifact.
 
 ## Backup and restore
 
-Create a consistent recovery set containing the PostgreSQL dump and private Git volume, plus object storage for logos/styles. Encrypt before off-VPS transfer. Daily backups, integrity checks, and periodic isolated restore drills are required.
+Create a consistent recovery set containing the PostgreSQL dump and private Git volume, plus object storage for uploaded logos/fonts. Encrypt before off-VPS transfer. Daily backups, integrity checks, and periodic isolated restore drills are required.
 
 Restore PostgreSQL and Git from the same recovery point before accepting traffic, then verify authorized document reads, commit history, a revert, and a current-PDF render. Record the recovery point, migration version, consistency result, and last successful full restore. Do not restore partial Git history into a live deployment.
+
+In Compose, Garage stores metadata and object bytes in the Docker named volumes `object-metadata` and `object-data`, mounted inside the container at `/var/lib/garage/meta` and `/var/lib/garage/data`; these paths are not application-host directories. Style definitions remain in PostgreSQL, while opaque `private/` object keys contain only uploaded logo/font bytes.
 
 Garage is single-node `replication_factor=1` and has no redundancy. Keep its metadata and object-data volumes together during local incident response; encrypted off-VPS logical backups are the portable recovery mechanism.
 

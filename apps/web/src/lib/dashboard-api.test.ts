@@ -223,4 +223,22 @@ describe("dashboard contract adapters", () => {
     const versionInit = fetcher.mock.calls[0]?.[1] as RequestInit;
     expect(versionInit.method).toBe("POST");
   });
+  it("uses lifecycle and credential update endpoints without a workspace id", async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({}));
+    vi.stubGlobal("fetch", fetcher);
+
+    await dashboardApi.restoreCompany("company");
+    await dashboardApi.updateCredential("credential", {
+      companyIds: ["company"],
+      actions: ["documents:read"],
+      expiresAt: null,
+    });
+
+    expect(fetcher.mock.calls[0]?.[0]).toBe("/api/companies/company/restore");
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ method: "POST" });
+    expect(fetcher.mock.calls[1]?.[0]).toBe("/api/mcp-credentials/credential");
+    expect(fetcher.mock.calls[1]?.[1]).toMatchObject({ method: "PATCH" });
+    const updateOptions = fetcher.mock.calls[1]?.[1] as RequestInit | undefined;
+    expect(updateOptions?.body).not.toContain("workspaceId");
+  });
 });

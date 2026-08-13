@@ -5,7 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PDFDocument } from "pdf-lib";
 import { describe, expect, it } from "vitest";
-import { renderDocumentHtml, sourceHash } from "@hypergendoc/document";
+import {
+  renderDocumentHtml,
+  renderTemplateDocumentHtml,
+  sourceHash,
+} from "@hypergendoc/document";
 import {
   ChromiumPdfRenderer,
   RENDERER_PROTOCOL,
@@ -14,6 +18,7 @@ import {
   type RendererRequest,
   render,
   startRenderer,
+  loadRenderTimeout,
 } from "./index.js";
 
 const style = {
@@ -102,6 +107,27 @@ function requestSocket(
 }
 
 describe("renderer worker", () => {
+  it("validates and applies the configured render deadline", async () => {
+    expect(loadRenderTimeout(undefined)).toBe(30_000);
+    expect(loadRenderTimeout("25000")).toBe(25_000);
+    expect(() => loadRenderTimeout("999")).toThrow("RENDER_TIMEOUT_MS");
+    expect(() => loadRenderTimeout("not-a-number")).toThrow(
+      "RENDER_TIMEOUT_MS",
+    );
+    let receivedTimeout = 0;
+    await render(
+      request,
+      {
+        render: async (_source, timeoutMs) => {
+          receivedTimeout = timeoutMs;
+          return pdf();
+        },
+      },
+      1_234,
+    );
+    expect(receivedTimeout).toBe(1_234);
+  });
+
   it.each(["markdown", "html"] as const)(
     "renders %s using the shared deterministic source",
     async (format) => {
@@ -123,6 +149,54 @@ describe("renderer worker", () => {
       expect(received).toBe(renderDocumentHtml(body, format, style));
     },
   );
+
+  it("renders a structured template request with the same canonical compiler", async () => {
+    const template = {
+      schemaVersion: 1 as const,
+      styleVersionId: "22222222-2222-4222-8222-222222222222",
+      fields: {
+        title: { type: "text" as const, label: "Title", required: true },
+      },
+      pageMasters: { cover: { background: "heading" as const } },
+      document: [
+        {
+          type: "page" as const,
+          master: "cover",
+          children: [
+            {
+              type: "heading" as const,
+              level: 1,
+              content: [{ type: "binding" as const, path: "title" }],
+            },
+          ],
+        },
+      ],
+    };
+    const data = { title: "Bound document" };
+    let received = "";
+    const result = await render(
+      {
+        protocol: RENDERER_PROTOCOL,
+        requestId: request.requestId,
+        format: "template",
+        template,
+        data,
+        style,
+      },
+      { render: async (source) => ((received = source), pdf()) },
+    );
+    const canonical = renderTemplateDocumentHtml({
+      definition: template,
+      data,
+      style,
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      sourceHash: sourceHash(canonical),
+    });
+    expect(received).toBe(canonical);
+    expect(received).toContain("Bound document");
+  });
 
   it("carries resolved assets into the canonical source", async () => {
     const bytes = Buffer.from("font");
@@ -290,7 +364,12 @@ describe("renderer worker", () => {
     expect(calls.indexOf("content")).toBeLessThan(calls.indexOf("fonts"));
     expect(calls.indexOf("fonts")).toBeLessThan(
       calls.indexOf(
-        JSON.stringify({ printBackground: true, preferCSSPageSize: true }),
+        JSON.stringify({
+          printBackground: true,
+          preferCSSPageSize: true,
+          tagged: true,
+          outline: true,
+        }),
       ),
     );
     expect(calls.at(-1)).toBe("server-kill");
@@ -364,7 +443,7 @@ describe("renderer worker", () => {
       await expect(
         requestSocket(
           socketPath,
-          `${"x".repeat(256 * 1024 + Math.ceil((30 * 1024 * 1024) / 3) * 4 + 16 * 1024 + 1)}`,
+          `${"x".repeat(3 * 256 * 1024 + Math.ceil((30 * 1024 * 1024) / 3) * 4 + 768 * 1024 + 1)}`,
         ),
       ).rejects.toBeDefined();
     } finally {

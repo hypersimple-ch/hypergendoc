@@ -4,6 +4,11 @@ import { TimestampSchema, UuidSchema } from "./common.js";
 const utf8Bytes = (value: string) => new TextEncoder().encode(value).byteLength;
 
 export const DocumentFormatSchema = z.enum(["markdown", "html"]);
+export const DocumentStoredFormatSchema = z.enum([
+  "markdown",
+  "html",
+  "template",
+]);
 export const CommitShaSchema = z
   .string()
   .regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/);
@@ -65,7 +70,9 @@ export const DocumentSchema = z
   .object({
     id: UuidSchema,
     companyId: UuidSchema,
+    templateId: UuidSchema.nullable().optional(),
     title: z.string().min(1).max(200),
+    metadata: DocumentMetadataSchema.optional(),
     createdAt: TimestampSchema,
     updatedAt: TimestampSchema,
   })
@@ -77,7 +84,8 @@ export const DocumentCommitSchema = z
     commitSha: CommitShaSchema,
     parentCommitSha: CommitShaSchema.nullable(),
     styleVersionId: UuidSchema,
-    format: DocumentFormatSchema,
+    templateVersionId: UuidSchema.nullable().optional(),
+    format: DocumentStoredFormatSchema,
     createdByType: z.enum(["user", "credential"]),
     createdById: UuidSchema,
     createdAt: TimestampSchema,
@@ -89,7 +97,8 @@ export const DocumentSnapshotSchema = z
     documentId: UuidSchema,
     commitSha: CommitShaSchema,
     styleVersionId: UuidSchema,
-    format: DocumentFormatSchema,
+    templateVersionId: UuidSchema.nullable().optional(),
+    format: DocumentStoredFormatSchema,
     body: DocumentBodySchema,
   })
   .strict();
@@ -110,6 +119,7 @@ export const DocumentDetailSchema = z
   .strict();
 
 export type DocumentFormat = z.infer<typeof DocumentFormatSchema>;
+export type DocumentStoredFormat = z.infer<typeof DocumentStoredFormatSchema>;
 export type CommitSha = z.infer<typeof CommitShaSchema>;
 export type CreateDocumentInput = z.infer<typeof CreateDocumentInputSchema>;
 export type UpdateDocumentInput = z.infer<typeof UpdateDocumentInputSchema>;

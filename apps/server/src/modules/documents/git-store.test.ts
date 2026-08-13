@@ -18,6 +18,7 @@ const ids = {
   document: "55555555-5555-4555-8555-555555555555",
   style: "66666666-6666-4666-8666-666666666666",
   nextStyle: "77777777-7777-4777-8777-777777777777",
+  templateVersion: "99999999-9999-4999-8999-999999999999",
   actor: "88888888-8888-4888-8888-888888888888",
 };
 
@@ -179,6 +180,32 @@ describe("CompanyDocumentGitStore", () => {
     ]);
   });
 
+  it("stores canonical template data in JSON with pinned template metadata", async () => {
+    const gitStore = await store();
+    const body = `${JSON.stringify({ schemaVersion: 1, templateVersionId: ids.templateVersion, data: { title: "Example" } })}
+`;
+    const revision = await gitStore.write(
+      writeInput({
+        body,
+        format: "template",
+        templateVersionId: ids.templateVersion,
+      }),
+    );
+    const repo = gitStore.repositoryPath(ids.workspace, ids.company);
+    await expect(
+      readFile(join(repo, "documents", ids.document, "document.json"), "utf8"),
+    ).resolves.toBe(body);
+    await expect(gitStore.readCurrent(writeInput())).resolves.toMatchObject({
+      commitId: revision.commitId,
+      format: "template",
+      templateVersionId: ids.templateVersion,
+      body,
+    });
+    await expect(gitStore.history(writeInput())).resolves.toMatchObject([
+      { format: "template", templateVersionId: ids.templateVersion },
+    ]);
+  });
+
   it("reads an older blob and reverts by appending a new commit", async () => {
     const gitStore = await store();
     const first = await gitStore.write(writeInput({ body: "first" }));
@@ -199,6 +226,22 @@ describe("CompanyDocumentGitStore", () => {
       actor: { type: "credential", id: ids.actor },
     });
     await expect(gitStore.history(writeInput())).resolves.toHaveLength(3);
+  });
+
+  it("restores a checkpoint after a surrounding transaction fails", async () => {
+    const gitStore = await store();
+    await gitStore.write(writeInput({ body: "baseline" }));
+    const checkpoint = await gitStore.checkpoint(ids.workspace, ids.company);
+    const mutation = await gitStore.write(
+      writeInput({ body: "uncommitted projection" }),
+    );
+
+    await gitStore.restoreCheckpoint(checkpoint, mutation.commitId);
+
+    await expect(gitStore.readCurrent(writeInput())).resolves.toMatchObject({
+      body: "baseline",
+    });
+    await expect(gitStore.history(writeInput())).resolves.toHaveLength(1);
   });
 
   it("rejects malformed SHAs and missing documents", async () => {

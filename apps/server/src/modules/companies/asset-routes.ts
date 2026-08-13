@@ -57,7 +57,24 @@ export function createCompanyAssetRoutes(
           );
       },
     );
-    for (const kind of ["logo", "font"] as const) {
+    app.post<{ Params: { companyId: string } }>(
+      "/api/companies/:companyId/assets/images",
+      async (request, reply) => {
+        const upload = await uploadedFile(request);
+        if (!upload.bytes) return reply.code(400).send();
+        if (upload.truncated) return reply.code(413).send();
+        return reply
+          .code(201)
+          .send(
+            await deps.service.uploadImage(
+              await deps.authenticate(request),
+              request.params.companyId,
+              upload.bytes,
+            ),
+          );
+      },
+    );
+    for (const kind of ["logo", "font", "image"] as const) {
       app.get<{ Params: { companyId: string; objectId: string } }>(
         `/api/companies/:companyId/assets/${kind}s/:objectId/content`,
         async (request, reply) => {

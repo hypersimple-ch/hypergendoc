@@ -17,6 +17,17 @@ export const CompanyLogoAssetSchema = z
   })
   .strict();
 
+export const CompanyImageAssetSchema = z
+  .object({
+    id: UuidSchema,
+    displayName: z.string().min(1).max(255).nullable(),
+    contentType: z.enum(["image/png", "image/jpeg", "image/webp"]),
+    byteSize: z.number().int().positive(),
+    contentUrl: AssetContentPathSchema,
+    createdAt: TimestampSchema,
+  })
+  .strict();
+
 export const CompanyFontAssetSchema = z
   .object({
     id: z.union([FontFamilySchema, UuidSchema]),
@@ -45,6 +56,7 @@ export const CompanyFontAssetSchema = z
 export const CompanyAssetsSchema = z
   .object({
     logos: z.array(CompanyLogoAssetSchema),
+    images: z.array(CompanyImageAssetSchema).default([]),
     fonts: z.array(CompanyFontAssetSchema),
     colors: z.array(HexColorSchema),
   })
@@ -63,6 +75,22 @@ export const ResolvedLogoAssetSchema = z
 export const ResolvedFontAssetSchema = z
   .object({ id: UuidSchema, ...ResolvedAssetFields })
   .strict();
+export const ResolvedTemplateImageAssetSchema = z
+  .object({ id: UuidSchema, ...ResolvedAssetFields })
+  .strict()
+  .refine(
+    (asset) =>
+      ["image/png", "image/jpeg", "image/webp"].includes(asset.contentType),
+    {
+      message: "Unsupported template image",
+    },
+  );
+export const ResolvedTemplateAssetsSchema = z
+  .object({
+    images: z.array(ResolvedTemplateImageAssetSchema).max(100).default([]),
+  })
+  .strict();
+
 export const ResolvedStyleAssetsSchema = z
   .object({
     logo: ResolvedLogoAssetSchema.nullable().default(null),
@@ -71,8 +99,15 @@ export const ResolvedStyleAssetsSchema = z
   .strict();
 
 export type CompanyLogoAsset = z.infer<typeof CompanyLogoAssetSchema>;
+export type CompanyImageAsset = z.infer<typeof CompanyImageAssetSchema>;
 export type CompanyFontAsset = z.infer<typeof CompanyFontAssetSchema>;
 export type CompanyAssets = z.infer<typeof CompanyAssetsSchema>;
 export type ResolvedLogoAsset = z.infer<typeof ResolvedLogoAssetSchema>;
 export type ResolvedFontAsset = z.infer<typeof ResolvedFontAssetSchema>;
+export type ResolvedTemplateImageAsset = z.infer<
+  typeof ResolvedTemplateImageAssetSchema
+>;
+export type ResolvedTemplateAssets = z.infer<
+  typeof ResolvedTemplateAssetsSchema
+>;
 export type ResolvedStyleAssets = z.infer<typeof ResolvedStyleAssetsSchema>;

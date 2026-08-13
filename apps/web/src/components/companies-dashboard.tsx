@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { Archive, Building2, Plus, Upload } from "lucide-react";
+import { Archive, Building2, Plus, RotateCcw, Upload } from "lucide-react";
 import type { Company } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
 import { useActiveCompany } from "./active-company";
@@ -239,6 +239,22 @@ function CompanyRow({
       setArchiveDialogOpen(false);
     }
   }
+  async function restore() {
+    if (pendingAction.current) return;
+    pendingAction.current = true;
+    setBusy(true);
+    setMessage(undefined);
+    try {
+      await dashboardApi.restoreCompany(company.id);
+      onChange();
+      setMessage({ text: "Company restored.", error: false });
+    } catch (e) {
+      setMessage({ text: safeError(e), error: true });
+    } finally {
+      pendingAction.current = false;
+      setBusy(false);
+    }
+  }
   async function upload(file?: File) {
     if (pendingAction.current || !file) return;
     pendingAction.current = true;
@@ -328,7 +344,16 @@ function CompanyRow({
                 onChange={(e) => void upload(e.target.files?.[0])}
               />
             </label>
-            {!company.archivedAt && (
+            {company.archivedAt ? (
+              <Button
+                tone="quiet"
+                disabled={busy}
+                onClick={() => void restore()}
+              >
+                <RotateCcw className="size-3.5" aria-hidden="true" />
+                {busy ? "Restoring…" : "Restore"}
+              </Button>
+            ) : (
               <Button
                 tone="danger"
                 disabled={busy}

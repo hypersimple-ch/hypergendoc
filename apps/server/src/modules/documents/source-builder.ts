@@ -1,6 +1,6 @@
 import {
   renderDocumentHtml,
-  validateDocumentInput,
+  sanitizeDocumentInput,
 } from "@hypergendoc/document";
 import type {
   DocumentFormat,
@@ -21,7 +21,7 @@ export function createHtmlDocumentSourceBuilder(): DocumentSourceBuilder {
       style: StyleDefinition,
       assets?: ResolvedStyleAssets,
     ): ResolvedDocumentSource {
-      const exactBody = validateDocumentInput(format, body);
+      const exactBody = sanitizeDocumentInput(format, body);
       return {
         body: exactBody,
         source: renderDocumentHtml(exactBody, format, style, assets),

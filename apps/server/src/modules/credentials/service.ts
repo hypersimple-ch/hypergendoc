@@ -150,6 +150,8 @@ export function createCredentialService(deps: {
     ) {
       requireOwner(actor);
       await validateScopes(actor.workspaceId, input.companyIds);
+      if (input.expiresAt && input.expiresAt <= now())
+        throw new AuthorizationError("conflict");
       const credential = await deps.repository.transaction((repository) =>
         repository.replaceScopes({
           workspaceId: actor.workspaceId,

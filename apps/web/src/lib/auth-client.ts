@@ -59,8 +59,6 @@ export const authClient = {
       email,
       callbackURL: verificationCallbackURL,
     }),
-  acceptInvitation: (invitationId: string) =>
-    auth("organization/accept-invitation", { invitationId }),
   signOut: () => auth("sign-out", {}),
   createWorkspace: (name: string) =>
     api<unknown>("/api/workspaces", { method: "POST", body: { name } }),

@@ -19,6 +19,7 @@ import {
   createCompanyRoutes,
   createCompanyService,
   createCompanyStyleAssetResolver,
+  createCompanyTemplateAssetResolver,
   createLogoOwnershipRepository,
 } from "../modules/companies/index.js";
 import {
@@ -49,6 +50,13 @@ import {
   createStyleService,
 } from "../modules/styles/index.js";
 import { STYLE_PREVIEW_DOCUMENT } from "../modules/styles/preview-document.js";
+import {
+  createTemplateRepository,
+  createTemplateRoutes,
+  createTemplateService,
+} from "../modules/templates/index.js";
+import { DocumentInputError, templateImageIds } from "@hypergendoc/document";
+
 import {
   createWorkspaceReadRepository,
   createWorkspaceRepository,
@@ -95,7 +103,7 @@ export async function createApplication(
   });
   const app = Fastify({
     logger: {
-      level: environment.nodeEnv === "production" ? "info" : "warn",
+      level: environment.logLevel,
       redact: [
         "req.headers.authorization",
         "req.headers.cookie",
@@ -135,8 +143,14 @@ export async function createApplication(
     companyAssetRepository,
     objects,
   );
+  const templateAssetResolver = createCompanyTemplateAssetResolver(
+    companyAssetRepository,
+    objects,
+  );
   const renderer = createDocumentRenderer({
     socketPath: environment.rendererSocket,
+    // The worker owns the render deadline; the client allows bounded IPC cleanup.
+    timeoutMs: environment.renderTimeoutMs + 5_000,
   });
   const styles = createStyleService({
     repository: createStyleRepository(db),
@@ -171,12 +185,57 @@ export async function createApplication(
       },
     },
   });
+  const documentRepository = createDocumentRepository(db);
+  const templateRepository = createTemplateRepository(db);
+  const templates = createTemplateService({
+    repository: templateRepository,
+    audit,
+    renderer: {
+      async renderPreview(input) {
+        const style = await documentRepository.findStyleVersion(
+          input.workspaceId,
+          input.companyId,
+          input.definition.styleVersionId,
+        );
+        if (!style) throw new AppError("not_found", 404);
+        const [assets, templateAssets] = await Promise.all([
+          styleAssetResolver.resolve(
+            input.workspaceId,
+            input.companyId,
+            style.definition,
+          ),
+          templateAssetResolver.resolve(
+            input.workspaceId,
+            input.companyId,
+            templateImageIds(input.definition, input.data),
+          ),
+        ]);
+        const result = await renderer.render({
+          format: "template",
+          template: input.definition,
+          data: input.data,
+          style: style.definition,
+          assets,
+          templateAssets,
+        });
+        if (!result.ok || !result.pdf)
+          throw new AppError(
+            result.error ?? "render_failed",
+            result.error === "dependency_unavailable" ? 503 : 422,
+          );
+        return {
+          url: `data:application/pdf;base64,${Buffer.from(result.pdf).toString("base64")}`,
+        };
+      },
+    },
+  });
   const documents = createDocumentService({
-    repository: createDocumentRepository(db),
+    repository: documentRepository,
     git: new CompanyDocumentGitStore({ rootDir: environment.documentGitRoot }),
     renderer,
     sourceBuilder: createHtmlDocumentSourceBuilder(),
     styleAssetResolver,
+    templateAssetResolver,
     audit,
   });
   const smtp = environment.smtp
@@ -259,7 +318,7 @@ export async function createApplication(
                 ? 409
                 : 404,
           )
-        : error instanceof ZodError
+        : error instanceof ZodError || error instanceof DocumentInputError
           ? new AppError("validation_failed", 400)
           : (error as { code?: string }).code === "FST_ERR_CTP_BODY_TOO_LARGE"
             ? new AppError("validation_failed", 413)
@@ -380,6 +439,9 @@ export async function createApplication(
     createCompanyAssetRoutes({ authenticate, service: companyAssets }),
   );
   await app.register(createStyleRoutes({ authenticate, service: styles }));
+  await app.register(
+    createTemplateRoutes({ authenticate, service: templates }),
+  );
   const credentials = createCredentialService({
     repository: createCredentialRepository(db),
     audit,
@@ -405,6 +467,22 @@ export async function createApplication(
         input.cursor,
         input.limit,
       ),
+    listTemplates: async (actor, input) =>
+      page(
+        await templates.list(actor, input.companyId),
+        input.cursor,
+        input.limit,
+      ),
+    getTemplate: async (actor, input) => {
+      const template = await templates.get(actor, input.templateId);
+      const versions = await templates.history(actor, input.templateId);
+      const version = versions.find(
+        (candidate) =>
+          candidate.id === (input.versionId ?? template.activeVersionId),
+      );
+      if (!version) throw new AuthorizationError("not_found");
+      return { template, version };
+    },
     listDocuments: async (actor, input) =>
       page(
         await documents.list({ type: "agent", ...actor }, input.companyId),
@@ -426,6 +504,16 @@ export async function createApplication(
               styleVersionId: input.styleVersionId,
             }
           : { format: input.format, body: input.body },
+      ),
+    createTemplateDocument: (actor, input) =>
+      documents.createFromTemplate({ type: "agent", ...actor }, input),
+    updateTemplateDocument: (actor, input) =>
+      documents.updateFromTemplate(
+        { type: "agent", ...actor },
+        input.documentId,
+        input.templateVersionId
+          ? { data: input.data, templateVersionId: input.templateVersionId }
+          : { data: input.data },
       ),
     listDocumentCommits: async (actor, input) =>
       page(

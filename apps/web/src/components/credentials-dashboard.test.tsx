@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({
   credentials: vi.fn(),
   createCredential: vi.fn(),
+  updateCredential: vi.fn(),
   revokeCredential: vi.fn(),
 }));
 const activeCompany = vi.hoisted(() => vi.fn());
@@ -159,5 +160,79 @@ describe("CredentialsDashboard", () => {
     expect(await screen.findByText("Owner access required.")).toBeVisible();
     expect(screen.queryByLabelText("Credential name")).not.toBeInTheDocument();
     expect(api.credentials).not.toHaveBeenCalled();
+  });
+  it("creates expiring credentials and marks expired credentials as expired, not active", async () => {
+    activeCompany.mockReturnValue(workspace("owner"));
+    api.credentials.mockResolvedValue([
+      {
+        id: "expired-credential",
+        name: "Old agent",
+        prefix: "hgd_old",
+        companyIds: ["company-a"],
+        actions: ["documents:read"],
+        expiresAt: "2020-01-01T00:00:00.000Z",
+        lastUsedAt: null,
+        revokedAt: null,
+      },
+    ]);
+    api.createCredential.mockResolvedValue({ token: "secret" });
+    render(<CredentialsDashboard />);
+
+    expect(await screen.findByText("Expired")).toBeVisible();
+    expect(screen.getByText("Expired").closest("td")).not.toHaveTextContent(
+      "Active",
+    );
+
+    fireEvent.click(screen.getByLabelText("Acme"));
+    fireEvent.change(screen.getByLabelText("Credential name"), {
+      target: { value: "Timed agent" },
+    });
+    fireEvent.change(screen.getByLabelText("Expires (optional)"), {
+      target: { value: "2030-01-02T03:04" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create credential" }));
+
+    await waitFor(() =>
+      expect(api.createCredential).toHaveBeenCalledWith({
+        name: "Timed agent",
+        companyIds: ["company-a"],
+        actions: ["documents:read"],
+        expiresAt: new Date("2030-01-02T03:04").toISOString(),
+      }),
+    );
+  });
+
+  it("edits an existing credential's scopes, actions, and expiry", async () => {
+    activeCompany.mockReturnValue(workspace("owner"));
+    api.credentials.mockResolvedValue([
+      {
+        id: "credential-1",
+        name: "Agent",
+        prefix: "hgd_agent",
+        companyIds: ["company-a"],
+        actions: ["documents:read"],
+        expiresAt: null,
+        lastUsedAt: null,
+        revokedAt: null,
+      },
+    ]);
+    api.updateCredential.mockResolvedValue({});
+    render(<CredentialsDashboard />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    const globex = screen.getAllByLabelText("Globex").at(-1)!;
+    fireEvent.click(globex);
+    fireEvent.change(screen.getByLabelText("Expires"), {
+      target: { value: "2030-01-02T03:04" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(api.updateCredential).toHaveBeenCalledWith("credential-1", {
+        companyIds: ["company-a", "company-b"],
+        actions: ["documents:read"],
+        expiresAt: new Date("2030-01-02T03:04").toISOString(),
+      }),
+    );
   });
 });

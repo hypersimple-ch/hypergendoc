@@ -8,6 +8,19 @@ const invalidVerificationMessage =
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
+/** Accept only same-origin root-relative destinations for post-login navigation. */
+export function safeNextPath(value: string | string[] | undefined): string {
+  if (typeof value !== "string" || !value.startsWith("/")) return "/workspace";
+  try {
+    const base = new URL("https://hypergendoc.invalid");
+    const target = new URL(value, base);
+    if (target.origin !== base.origin) return "/workspace";
+    return `${target.pathname}${target.search}${target.hash}`;
+  } catch {
+    return "/workspace";
+  }
+}
+
 export default async function LoginPage({
   searchParams,
 }: {
@@ -39,7 +52,7 @@ export default async function LoginPage({
           <Status kind={status.kind}>{status.message}</Status>
         </div>
       )}
-      <LoginForm />
+      <LoginForm next={safeNextPath(params.next)} />
       <p className="auth-form-footer text-center text-sm text-muted-foreground">
         New here?{" "}
         <Link

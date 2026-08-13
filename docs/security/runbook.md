@@ -11,7 +11,7 @@
 
 Git repositories are private source-history authority, one per company; they are never a direct download surface. Company archival retains its repository and purge is out of scope. Do not delete repository contents ad hoc.
 
-A recovery must use PostgreSQL and the Git volume from the same consistent backup set. Preserve object storage separately for logos/styles. Document source, generated HTML, PDFs, and render records are not object-store artifacts; PDFs are rendered in memory only.
+A recovery must use PostgreSQL and the Git volume from the same consistent backup set. Preserve object storage separately for uploaded logos/fonts. Document source, generated HTML, PDFs, and render records are not object-store artifacts; PDFs are rendered in memory only.
 
 ## Release gate
 

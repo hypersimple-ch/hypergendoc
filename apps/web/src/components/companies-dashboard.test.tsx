@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
   createCompany: vi.fn(),
   updateCompany: vi.fn(),
   archiveCompany: vi.fn(),
+  restoreCompany: vi.fn(),
   uploadLogo: vi.fn(),
 }));
 const activeCompany = vi.hoisted(() => vi.fn());
@@ -167,5 +168,22 @@ describe("CompaniesDashboard", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Add company" })).toBeEnabled(),
     );
+  });
+  it("restores an archived company and reloads shared state", async () => {
+    const reload = vi.fn();
+    const archived = {
+      ...company,
+      archivedAt: "2026-02-01T00:00:00.000Z",
+    };
+    activeCompany.mockReturnValue(workspace({ companies: [archived], reload }));
+    api.restoreCompany.mockResolvedValue({ ...archived, archivedAt: null });
+    render(<CompaniesDashboard />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    await waitFor(() =>
+      expect(api.restoreCompany).toHaveBeenCalledWith("company-1"),
+    );
+    expect(reload).toHaveBeenCalledOnce();
+    expect(await screen.findByText("Company restored.")).toBeVisible();
   });
 });

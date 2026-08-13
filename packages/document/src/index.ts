@@ -1,8 +1,19 @@
 import { createHash } from "node:crypto";
-import type {
-  DocumentFormat,
-  ResolvedStyleAssets,
-  StyleDefinition,
+import {
+  TemplateDataSchema,
+  TemplateDefinitionSchema,
+  type DocumentFormat,
+  type ResolvedStyleAssets,
+  type ResolvedTemplateAssets,
+  type StyleDefinition,
+  type TemplateCondition,
+  type TemplateData,
+  type TemplateDefinition,
+  type TemplateExpression,
+  type TemplateFieldDefinition,
+  type TemplateInline,
+  type TemplateNode,
+  type TemplateValue,
 } from "@hypergendoc/contracts";
 import { marked } from "marked";
 import sanitizeHtml from "sanitize-html";
@@ -125,6 +136,18 @@ const semanticText = (fragment: string) =>
   sanitizeHtml(fragment, { allowedTags: [], allowedAttributes: {} })
     .replace(/\s+/g, " ")
     .trim();
+
+/** Validates source and canonicalizes HTML fragments before persistence. */
+export function sanitizeDocumentInput(
+  format: DocumentFormat,
+  body: string,
+): string {
+  const exactBody = validateDocumentInput(format, body);
+  if (format === "markdown") return exactBody;
+  const sanitized = sanitizeFragment(exactBody);
+  if (!semanticText(sanitized)) fail("invalid_body");
+  return sanitized;
+}
 
 const escapeCssString = (value: string) =>
   [...value]
@@ -325,7 +348,7 @@ export function renderDocumentHtml(
   style: StyleDefinition,
   assets?: ResolvedStyleAssets,
 ): string {
-  const exactBody = validateDocumentInput(format, body);
+  const exactBody = sanitizeDocumentInput(format, body);
   const assetRendering =
     style.assetVersion === 1 ? resolveAssets(style, assets) : undefined;
   const rendered =
@@ -426,3 +449,648 @@ export const inputHash = (format: DocumentFormat, body: string) =>
 
 export const sourceHash = (source: string) =>
   createHash("sha256").update(source, "utf8").digest("hex");
+
+export interface RenderTemplateDocumentInput {
+  readonly definition: TemplateDefinition;
+  readonly data: TemplateData;
+  readonly style: StyleDefinition;
+  readonly styleAssets?: ResolvedStyleAssets;
+  readonly templateAssets?: ResolvedTemplateAssets;
+  readonly locale?: string;
+}
+
+const TEMPLATE_MAX_DEPTH = 32;
+const TEMPLATE_MAX_EXPANDED_NODES = 5_000;
+const TEMPLATE_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
+const htmlEscape = (value: unknown) =>
+  (value === null || value === undefined
+    ? ""
+    : typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "boolean"
+      ? String(value)
+      : JSON.stringify(value)
+  )
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+
+const isTemplateRecord = (
+  value: unknown,
+): value is Record<string, TemplateValue> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const templatePath = (
+  root: Readonly<Record<string, TemplateValue>>,
+  locals: Readonly<Record<string, TemplateValue>>,
+  path: string,
+): TemplateValue | undefined => {
+  const parts = path
+    .replace(/^\$\.?/, "")
+    .split(".")
+    .filter(Boolean);
+  if (
+    !parts.length ||
+    parts.some(
+      (part) =>
+        part === "__proto__" || part === "constructor" || part === "prototype",
+    )
+  )
+    return undefined;
+  let value: TemplateValue | undefined = Object.hasOwn(locals, parts[0]!)
+    ? locals[parts.shift()!]
+    : root[parts.shift()!];
+  for (const part of parts) {
+    if (Array.isArray(value) && /^\d+$/.test(part))
+      value = (value as readonly TemplateValue[])[Number(part)];
+    else if (isTemplateRecord(value)) value = value[part];
+    else return undefined;
+  }
+  return value;
+};
+
+const matchesTemplateField = (
+  field: TemplateFieldDefinition,
+  value: TemplateValue | undefined,
+  depth = 0,
+): boolean => {
+  if (depth > TEMPLATE_MAX_DEPTH) return false;
+  if (value === undefined || value === null) return !field.required;
+  if (
+    field.options &&
+    typeof value === "string" &&
+    !field.options.includes(value)
+  )
+    return false;
+  switch (field.type) {
+    case "text":
+    case "richText":
+    case "date":
+      return typeof value === "string";
+    case "image":
+      return typeof value === "string" && uuidPattern.test(value);
+    case "number":
+    case "money":
+      return typeof value === "number" && Number.isFinite(value);
+    case "boolean":
+      return typeof value === "boolean";
+    case "object":
+      return Boolean(
+        field.fields &&
+        isTemplateRecord(value) &&
+        Object.keys(value).every((key) => key in field.fields!) &&
+        Object.entries(field.fields).every(([key, child]) =>
+          matchesTemplateField(child, value[key], depth + 1),
+        ),
+      );
+    case "list":
+      return Boolean(
+        field.item &&
+        Array.isArray(value) &&
+        value.length <= 500 &&
+        (value as readonly TemplateValue[]).every((item) =>
+          matchesTemplateField(field.item!, item, depth + 1),
+        ),
+      );
+  }
+};
+
+const templateFieldDefaults = (
+  field: TemplateFieldDefinition,
+  value: TemplateValue | undefined,
+  depth = 0,
+): TemplateValue | undefined => {
+  if (depth > TEMPLATE_MAX_DEPTH) fail("invalid_body");
+  const resolved = value === undefined ? field.default : value;
+  if (resolved === undefined || resolved === null) return resolved;
+  if (field.type === "object" && field.fields && isTemplateRecord(resolved)) {
+    const record: Record<string, TemplateValue> = { ...resolved };
+    for (const [key, child] of Object.entries(field.fields)) {
+      const childValue = templateFieldDefaults(child, record[key], depth + 1);
+      if (childValue !== undefined) record[key] = childValue;
+    }
+    return record;
+  }
+  if (field.type === "list" && field.item && Array.isArray(resolved)) {
+    const itemDefinition = field.item;
+    return (resolved as readonly TemplateValue[]).map(
+      (item) => templateFieldDefaults(itemDefinition, item, depth + 1) ?? null,
+    );
+  }
+  return resolved;
+};
+
+const validateTemplateData = (
+  definition: TemplateDefinition,
+  data: TemplateData,
+): Readonly<Record<string, TemplateValue>> => {
+  const parsedDefinition = TemplateDefinitionSchema.safeParse(definition);
+  const parsedData = TemplateDataSchema.safeParse(data);
+  if (!parsedDefinition.success || !parsedData.success) fail("invalid_body");
+  const parsedDefinitionData = parsedDefinition.data as TemplateDefinition;
+  const parsedTemplateData = parsedData.data as TemplateData;
+  if (!parsedDefinitionData || !parsedTemplateData) fail("invalid_body");
+  const allowed = new Set(Object.keys(parsedDefinitionData.fields));
+  if (Object.keys(parsedTemplateData).some((key) => !allowed.has(key)))
+    fail("invalid_body");
+  const withDefaults: Record<string, TemplateValue> = { ...parsedTemplateData };
+  for (const [key, field] of Object.entries(parsedDefinitionData.fields)) {
+    const value = templateFieldDefaults(field, withDefaults[key]);
+    if (value !== undefined) withDefaults[key] = value;
+    if (!matchesTemplateField(field, value)) fail("invalid_body");
+  }
+  return withDefaults;
+};
+
+export function templateImageIds(
+  definition: TemplateDefinition,
+  data: TemplateData,
+): readonly string[] {
+  const root = validateTemplateData(definition, data);
+  const ids = new Set<string>();
+  const collect = (
+    field: TemplateFieldDefinition,
+    value: TemplateValue | undefined,
+    depth: number,
+  ) => {
+    if (depth > TEMPLATE_MAX_DEPTH || value === undefined || value === null)
+      return;
+    if (field.type === "image" && typeof value === "string") ids.add(value);
+    else if (field.type === "object" && field.fields && isTemplateRecord(value))
+      for (const [key, child] of Object.entries(field.fields))
+        collect(child, value[key], depth + 1);
+    else if (field.type === "list" && field.item && Array.isArray(value))
+      for (const item of value as readonly TemplateValue[])
+        collect(field.item, item, depth + 1);
+  };
+  for (const [key, field] of Object.entries(definition.fields))
+    collect(field, root[key], 0);
+  return [...ids].sort();
+}
+
+const evaluateTemplateExpression = (
+  expression: TemplateExpression,
+  root: Readonly<Record<string, TemplateValue>>,
+): TemplateValue => {
+  if (expression.op === "value") return expression.value;
+  if (expression.op === "path")
+    return templatePath(root, {}, expression.path) ?? null;
+  if (expression.op === "sum") {
+    const values = templatePath(root, {}, expression.path);
+    return Array.isArray(values)
+      ? (values as readonly TemplateValue[]).reduce<number>((total, value) => {
+          const number =
+            expression.valuePath && isTemplateRecord(value)
+              ? templatePath(value, {}, expression.valuePath)
+              : value;
+          return total + (typeof number === "number" ? number : 0);
+        }, 0)
+      : 0;
+  }
+  if (expression.op === "count") {
+    const values = templatePath(root, {}, expression.path);
+    return Array.isArray(values)
+      ? values.length
+      : isTemplateRecord(values)
+        ? Object.keys(values).length
+        : 0;
+  }
+  if (expression.op === "dateAdd") {
+    const value = templatePath(root, {}, expression.path);
+    const days = evaluateTemplateExpression(expression.days, root);
+    if (typeof value !== "string" || typeof days !== "number") return null;
+    const date = new Date(`${value}T00:00:00.000Z`);
+    if (Number.isNaN(date.valueOf())) return null;
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
+  }
+  const left = evaluateTemplateExpression(expression.left, root);
+  const right = evaluateTemplateExpression(expression.right, root);
+  if (typeof left !== "number" || typeof right !== "number") return null;
+  if (expression.op === "add") return left + right;
+  if (expression.op === "subtract") return left - right;
+  if (expression.op === "multiply") return left * right;
+  return right === 0 ? null : left / right;
+};
+
+const templateConditionMatches = (
+  condition: TemplateCondition,
+  root: Readonly<Record<string, TemplateValue>>,
+  locals: Readonly<Record<string, TemplateValue>>,
+): boolean => {
+  const actual = templatePath(root, locals, condition.path);
+  const expected = condition.value;
+  switch (condition.operator) {
+    case "truthy":
+      return Boolean(actual);
+    case "falsy":
+      return !actual;
+    case "equals":
+      return actual === expected;
+    case "notEquals":
+      return actual !== expected;
+    case "contains":
+      return Array.isArray(actual)
+        ? actual.includes(expected ?? null)
+        : typeof actual === "string" && typeof expected === "string"
+          ? actual.includes(expected)
+          : false;
+    case "gt":
+      return (
+        typeof actual === "number" &&
+        typeof expected === "number" &&
+        actual > expected
+      );
+    case "gte":
+      return (
+        typeof actual === "number" &&
+        typeof expected === "number" &&
+        actual >= expected
+      );
+    case "lt":
+      return (
+        typeof actual === "number" &&
+        typeof expected === "number" &&
+        actual < expected
+      );
+    case "lte":
+      return (
+        typeof actual === "number" &&
+        typeof expected === "number" &&
+        actual <= expected
+      );
+  }
+};
+
+const templateDisplayValue = (
+  value: TemplateValue | undefined,
+  format: TemplateInline["format"] | "text" | undefined,
+  currency: string | undefined,
+  locale: string,
+): string => {
+  if (value === undefined || value === null) return "";
+  if (format === "date" && typeof value === "string") {
+    const date = new Date(`${value}T00:00:00.000Z`);
+    return Number.isNaN(date.valueOf())
+      ? value
+      : new Intl.DateTimeFormat(locale, {
+          dateStyle: "medium",
+          timeZone: "UTC",
+        }).format(date);
+  }
+  if ((format === "number" || format === "money") && typeof value === "number")
+    return new Intl.NumberFormat(
+      locale,
+      format === "money"
+        ? { style: "currency", currency: currency ?? "USD" }
+        : {},
+    ).format(value);
+  return typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+    ? String(value)
+    : JSON.stringify(value);
+};
+
+const templateColor = (
+  reference: string | undefined,
+  style: StyleDefinition,
+) =>
+  reference?.startsWith("#")
+    ? reference
+    : (style.colors[(reference as keyof StyleDefinition["colors"]) ?? "text"] ??
+      style.colors.text);
+
+/** Compiles a versioned user template with typed data into deterministic, trusted standalone HTML. */
+export function renderTemplateDocumentHtml(
+  input: RenderTemplateDocumentInput,
+): string {
+  const baseData = validateTemplateData(input.definition, input.data);
+  const root: Record<string, TemplateValue> = { ...baseData };
+  const computed = input.definition.computed ?? {};
+  const computedDependencies = (expression: TemplateExpression): string[] => {
+    switch (expression.op) {
+      case "value":
+        return [];
+      case "path":
+      case "count":
+      case "sum":
+        return [expression.path.split(".")[0]!];
+      case "dateAdd":
+        return [
+          expression.path.split(".")[0]!,
+          ...computedDependencies(expression.days),
+        ];
+      case "add":
+      case "subtract":
+      case "multiply":
+      case "divide":
+        return [
+          ...computedDependencies(expression.left),
+          ...computedDependencies(expression.right),
+        ];
+    }
+  };
+  const resolvedComputed = new Set<string>();
+  const resolvingComputed = new Set<string>();
+  const resolveComputed = (key: string): void => {
+    if (resolvedComputed.has(key)) return;
+    if (resolvingComputed.has(key)) fail("invalid_body");
+    const expression = computed[key] ?? fail("invalid_body");
+    resolvingComputed.add(key);
+    for (const dependency of computedDependencies(expression))
+      if (computed[dependency]) resolveComputed(dependency);
+    root[key] = evaluateTemplateExpression(expression, root);
+    resolvingComputed.delete(key);
+    resolvedComputed.add(key);
+  };
+  for (const key of Object.keys(computed)) resolveComputed(key);
+  const locale = input.locale ?? "en";
+  const imageAssets = new Map<
+    string,
+    NonNullable<ResolvedTemplateAssets>["images"][number]
+  >();
+  let imageBytes =
+    (input.styleAssets?.logo?.byteSize ?? 0) +
+    (input.styleAssets?.fonts ?? []).reduce(
+      (total, fontAsset) => total + fontAsset.byteSize,
+      0,
+    );
+  for (const asset of input.templateAssets?.images ?? []) {
+    if (imageAssets.has(asset.id) || !logoTypes.has(asset.contentType))
+      fail("invalid_assets");
+    const bytes = decodedAsset(asset);
+    imageBytes += bytes.byteLength;
+    if (
+      asset.byteSize > TEMPLATE_MAX_IMAGE_BYTES ||
+      imageBytes > MAX_RENDER_ASSET_BYTES
+    )
+      fail("invalid_assets");
+    imageAssets.set(asset.id, asset);
+  }
+  if (input.style.logoObjectId && input.styleAssets?.logo)
+    imageAssets.set(input.style.logoObjectId, input.styleAssets.logo);
+
+  type Heading = { id: string; level: number; text: string };
+  const collectHeadings: Heading[] = [];
+  let expandedNodes = 0;
+  let generatedId = 0;
+
+  const inlineText = (
+    inline: readonly TemplateInline[] | undefined,
+    locals: Readonly<Record<string, TemplateValue>>,
+    markup: boolean,
+  ) =>
+    (inline ?? [])
+      .map((part) => {
+        const raw =
+          part.type === "binding"
+            ? templateDisplayValue(
+                templatePath(root, locals, part.path ?? ""),
+                part.format,
+                part.currency,
+                locale,
+              )
+            : (part.value ?? "");
+        let value = htmlEscape(raw);
+        if (!markup) return raw;
+        if (part.strong) value = `<strong>${value}</strong>`;
+        if (part.emphasis) value = `<em>${value}</em>`;
+        if (part.color)
+          value = `<span class="template-color-${part.color}">${value}</span>`;
+        return value;
+      })
+      .join("");
+
+  const renderPass = (
+    nodes: readonly TemplateNode[],
+    headings: readonly Heading[],
+    collecting: boolean,
+  ): string => {
+    expandedNodes = 0;
+    generatedId = 0;
+    const renderNodes = (
+      values: readonly TemplateNode[],
+      locals: Readonly<Record<string, TemplateValue>>,
+      depth: number,
+    ): string => {
+      if (depth > TEMPLATE_MAX_DEPTH) fail("invalid_body");
+      return values
+        .map((node) => {
+          expandedNodes += 1;
+          if (expandedNodes > TEMPLATE_MAX_EXPANDED_NODES)
+            fail("body_too_large");
+          switch (node.type) {
+            case "page": {
+              const master =
+                node.master ??
+                Object.keys(input.definition.pageMasters)[0] ??
+                fail("invalid_body");
+              const pageMaster =
+                input.definition.pageMasters[master] ?? fail("invalid_body");
+              const pageHeightMm = input.style.page.size === "A4" ? 297 : 279.4;
+              const pageWidthMm = input.style.page.size === "A4" ? 210 : 215.9;
+              const contentHeightMm = Math.max(
+                1,
+                Math.round(
+                  (pageHeightMm -
+                    (pageMaster.marginTopMm ?? input.style.page.marginTopMm) -
+                    (pageMaster.marginBottomMm ??
+                      input.style.page.marginBottomMm)) *
+                    1_000,
+                ) / 1_000,
+              );
+              const contentWidthMm = Math.max(
+                1,
+                Math.round(
+                  (pageWidthMm -
+                    (pageMaster.marginLeftMm ?? input.style.page.marginLeftMm) -
+                    (pageMaster.marginRightMm ??
+                      input.style.page.marginRightMm)) *
+                    1_000,
+                ) / 1_000,
+              );
+              return `<section class="template-page template-master-${htmlEscape(master)}" data-page-content-mm="${contentHeightMm}" data-page-width-mm="${contentWidthMm}" data-page-start="${pageMaster.startOn ?? "any"}">${renderNodes(node.children ?? [], locals, depth + 1)}</section>`;
+            }
+            case "section": {
+              const id = node.id ?? `section-${++generatedId}`;
+              return `<section id="${htmlEscape(id)}" class="template-section">${renderNodes(node.children ?? [], locals, depth + 1)}</section>`;
+            }
+            case "stack":
+              return `<div class="template-stack" style="--template-gap:${node.gapMm ?? 4}mm">${renderNodes(node.children ?? [], locals, depth + 1)}</div>`;
+            case "grid":
+              return `<div class="template-grid" style="--template-columns:${node.columns ?? 2};--template-gap:${node.gapMm ?? 4}mm">${renderNodes(node.children ?? [], locals, depth + 1)}</div>`;
+            case "heading": {
+              const level = node.level ?? 2;
+              const text = inlineText(node.content, locals, false);
+              const id = node.id ?? `heading-${++generatedId}`;
+              if (collecting) collectHeadings.push({ id, level, text });
+              return `<h${level} id="${htmlEscape(id)}">${inlineText(node.content, locals, true)}</h${level}>`;
+            }
+            case "paragraph":
+              return `<p>${inlineText(node.content, locals, true)}</p>`;
+            case "richText": {
+              const value = templatePath(root, locals, node.source ?? "");
+              return `<div class="template-rich-text">${typeof value === "string" ? sanitizeFragment(value) : ""}</div>`;
+            }
+            case "image": {
+              const value =
+                node.source && uuidPattern.test(node.source)
+                  ? node.source
+                  : templatePath(root, locals, node.source ?? "");
+              if (typeof value !== "string") return "";
+              const asset = imageAssets.get(value);
+              if (!asset) return fail("invalid_assets");
+              const alt = node.altPath
+                ? templateDisplayValue(
+                    templatePath(root, locals, node.altPath),
+                    "text",
+                    undefined,
+                    locale,
+                  )
+                : "";
+              const caption = node.caption?.length
+                ? `<figcaption>${inlineText(node.caption, locals, true)}</figcaption>`
+                : "";
+              return `<figure class="template-image"><img src="data:${asset.contentType};base64,${asset.base64}" alt="${htmlEscape(alt)}" style="object-fit:${node.fit ?? "cover"}${node.heightMm === undefined ? "" : `;height:${node.heightMm}mm`}">${caption}</figure>`;
+            }
+            case "list": {
+              const value = templatePath(
+                root,
+                locals,
+                node.itemsPath ?? node.source ?? "",
+              );
+              const items: readonly TemplateValue[] = Array.isArray(value)
+                ? (value as readonly TemplateValue[])
+                : [];
+              const tag = node.ordered ? "ol" : "ul";
+              return `<${tag}>${items.map((item) => `<li>${htmlEscape(templateDisplayValue(item, "text", undefined, locale))}</li>`).join("")}</${tag}>`;
+            }
+            case "table": {
+              const value = templatePath(root, locals, node.source ?? "");
+              const rows = Array.isArray(value) ? value : [];
+              const columns = node.tableColumns ?? [];
+              return `<table><thead><tr>${columns.map((column) => `<th style="text-align:${column.align ?? "left"}">${htmlEscape(column.header)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${columns.map((column) => `<td style="text-align:${column.align ?? "left"}">${htmlEscape(templateDisplayValue(isTemplateRecord(row) ? templatePath(row, {}, column.path) : undefined, column.format, column.currency, locale))}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+            }
+            case "repeat": {
+              const value = templatePath(root, locals, node.source ?? "");
+              if (!Array.isArray(value)) return "";
+              const alias = node.as ?? "item";
+              return (value as readonly TemplateValue[])
+                .map((item, index) =>
+                  renderNodes(
+                    node.children ?? [],
+                    { ...locals, [alias]: item, index },
+                    depth + 1,
+                  ),
+                )
+                .join("");
+            }
+            case "condition":
+              return node.condition &&
+                templateConditionMatches(node.condition, root, locals)
+                ? renderNodes(node.children ?? [], locals, depth + 1)
+                : "";
+            case "component": {
+              const component =
+                input.definition.components?.[node.component ?? ""];
+              if (!component) return fail("invalid_body");
+              return renderNodes(
+                component,
+                { ...locals, props: node.props ?? {} },
+                depth + 1,
+              );
+            }
+            case "toc":
+              return `<nav class="template-toc" aria-label="Table of contents"><ol>${headings
+                .filter((heading) => heading.level <= (node.tocDepth ?? 3))
+                .map(
+                  (heading) =>
+                    `<li class="template-toc-level-${heading.level}"><a href="#${htmlEscape(heading.id)}"><span>${htmlEscape(heading.text)}</span><span class="template-toc-leader"></span><span class="template-toc-page"></span></a></li>`,
+                )
+                .join("")}</ol></nav>`;
+            case "pageBreak":
+              return `<div class="template-page-break"></div>`;
+            case "spacer":
+              return `<div class="template-spacer" style="height:${node.heightMm ?? 4}mm"></div>`;
+            case "divider":
+              return `<hr>`;
+          }
+        })
+        .join("");
+    };
+    return renderNodes(nodes, {}, 0);
+  };
+
+  renderPass(input.definition.document, [], true);
+  generatedId = 0;
+  expandedNodes = 0;
+  const body = renderPass(input.definition.document, collectHeadings, false);
+  if (Buffer.byteLength(body, "utf8") > DOCUMENT_BODY_MAX_BYTES * 4)
+    fail("body_too_large");
+
+  const masterCss = Object.entries(input.definition.pageMasters)
+    .map(([name, master]) => {
+      const margins: readonly [number, number, number, number] = [
+        master.marginTopMm ?? input.style.page.marginTopMm,
+        master.marginRightMm ?? input.style.page.marginRightMm,
+        master.marginBottomMm ?? input.style.page.marginBottomMm,
+        master.marginLeftMm ?? input.style.page.marginLeftMm,
+      ];
+      const pageHeightMm = input.style.page.size === "A4" ? 297 : 279.4;
+      const pageWidthMm = input.style.page.size === "A4" ? 210 : 215.9;
+      const contentHeightMm = Math.max(
+        1,
+        Math.round((pageHeightMm - margins[0] - margins[2]) * 1_000) / 1_000,
+      );
+      const contentWidthMm = Math.max(
+        1,
+        Math.round((pageWidthMm - margins[1] - margins[3]) * 1_000) / 1_000,
+      );
+      const hiddenMarginBoxes = [
+        ...(master.hideHeader ? ["top-left", "top-center", "top-right"] : []),
+        ...(master.hideFooter
+          ? ["bottom-left", "bottom-center", "bottom-right"]
+          : []),
+      ]
+        .map((box) => `@${box}{content:none;}`)
+        .join("");
+      const edge = master.edgeBar
+        ? `.template-master-${name}::after{content:"";position:absolute;top:0;bottom:0;width:${master.edgeBar.widthMm}mm;background:${templateColor(master.edgeBar.color, input.style)};${master.edgeBar.side === "left" ? "left:0" : "right:0"};}${master.edgeBar.side === "outside" ? `.template-page:nth-of-type(even).template-master-${name}::after{left:0;right:auto;}` : ""}`
+        : "";
+      return `@page ${name}{size:${input.style.page.size === "A4" ? "A4" : "letter"};margin:${margins.map((value) => `${value}mm`).join(" ")};${hiddenMarginBoxes}}${master.startOn === "recto" ? `.template-master-${name}{break-before:right;}` : master.startOn === "verso" ? `.template-master-${name}{break-before:left;}` : ""}.template-master-${name}{page:${name};width:${contentWidthMm}mm;min-height:${contentHeightMm}mm;background:${templateColor(master.background, input.style)};color:${templateColor(master.color, input.style)};}${edge}`;
+    })
+    .join("\n");
+  const templateCss = `${masterCss}
+.template-page{position:relative;break-after:page;}
+.template-page:last-child{break-after:auto;}
+.template-stack{display:flex;flex-direction:column;gap:var(--template-gap);}
+.template-grid{display:grid;grid-template-columns:repeat(var(--template-columns),minmax(0,1fr));gap:var(--template-gap);}
+.template-image{margin:0;break-inside:avoid-page;}.template-image img{display:block;width:100%;max-height:220mm;}.template-image figcaption{margin-top:2mm;font-size:8pt;color:${input.style.colors.muted};}
+.template-page-break{break-after:page;}.template-rich-text>:first-child{margin-top:0;}.template-rich-text>:last-child{margin-bottom:0;}
+.template-toc ol{list-style:none;padding:0;}.template-toc li{margin:.35em 0;}.template-toc a{display:flex;color:inherit;text-decoration:none;gap:.5em;}.template-toc-leader{flex:1;border-bottom:1px dotted currentColor;transform:translateY(-.25em);}.template-toc-page{min-width:2ch;text-align:right;}
+.template-color-text{color:${input.style.colors.text}}.template-color-heading{color:${input.style.colors.heading}}.template-color-primary{color:${input.style.colors.primary}}.template-color-accent{color:${input.style.colors.accent}}.template-color-muted{color:${input.style.colors.muted}}
+`;
+  const placeholder = "HYPERGENDOC_TEMPLATE_PLACEHOLDER_7D38";
+  let shell = renderDocumentHtml(
+    `<p>${placeholder}</p>`,
+    "html",
+    input.style,
+    input.styleAssets,
+  );
+  shell = shell.replace(/<img class="document-logo"[^>]*>/, "");
+  shell = shell.replace(`<p>${placeholder}</p>`, body);
+  shell = shell.replace("</style>", `${templateCss}</style>`);
+  shell = shell.replace(
+    "default-src 'none'; style-src",
+    "default-src 'none'; img-src data:; style-src",
+  );
+  shell = shell.replace(
+    '<html lang="en">',
+    `<html lang="${htmlEscape(locale.split("-")[0] ?? "en")}">`,
+  );
+  return shell;
+}

@@ -7,26 +7,47 @@ import { z } from "zod";
 import { limits } from "@hypergendoc/config";
 import {
   ResolvedStyleAssetsSchema,
+  ResolvedTemplateAssetsSchema,
   StyleDefinitionSchema,
+  TemplateDataSchema,
+  TemplateDefinitionSchema,
 } from "@hypergendoc/contracts";
 import {
   DOCUMENT_MAX_PAGES,
   DocumentInputError,
   renderDocumentHtml,
+  renderTemplateDocumentHtml,
   sourceHash,
 } from "@hypergendoc/document";
 
+/** Parse the shared render deadline used by Chromium, IPC, and the server client. */
+export function loadRenderTimeout(value: string | undefined): number {
+  const parsed = Number(value?.trim() || "30000");
+  if (!Number.isInteger(parsed) || parsed < 1_000 || parsed > 30_000)
+    throw new Error(
+      "RENDER_TIMEOUT_MS must be an integer between 1000 and 30000",
+    );
+  return parsed;
+}
+
 export const RENDERER_PROTOCOL = "hypergendoc-render-v2";
 const MAX_FRAME_BYTES =
-  limits.documentBodyBytes +
+  3 * limits.documentBodyBytes +
   Math.ceil(limits.renderAssetBytes / 3) * 4 +
-  16 * 1024;
+  768 * 1024;
 const PDF_HEADER = Buffer.from("%PDF-");
 
-const RendererRequestSchema = z
-  .object({
-    protocol: z.literal(RENDERER_PROTOCOL),
-    requestId: z.string().uuid(),
+const RendererRequestBaseSchema = z.object({
+  protocol: z.literal(RENDERER_PROTOCOL),
+  requestId: z.string().uuid(),
+  style: StyleDefinitionSchema,
+  assets: ResolvedStyleAssetsSchema.optional().default({
+    logo: null,
+    fonts: [],
+  }),
+});
+const RendererRequestSchema = z.discriminatedUnion("format", [
+  RendererRequestBaseSchema.extend({
     format: z.enum(["markdown", "html"]),
     body: z
       .string()
@@ -34,13 +55,17 @@ const RendererRequestSchema = z
       .refine(
         (body) => Buffer.byteLength(body, "utf8") <= limits.documentBodyBytes,
       ),
-    style: StyleDefinitionSchema,
-    assets: ResolvedStyleAssetsSchema.optional().default({
-      logo: null,
-      fonts: [],
+  }).strict(),
+  RendererRequestBaseSchema.extend({
+    format: z.literal("template"),
+    template: TemplateDefinitionSchema,
+    data: TemplateDataSchema,
+    templateAssets: ResolvedTemplateAssetsSchema.optional().default({
+      images: [],
     }),
-  })
-  .strict();
+    locale: z.string().min(2).max(35).optional(),
+  }).strict(),
+]);
 export type RendererRequest = z.input<typeof RendererRequestSchema>;
 
 export const RendererResponseSchema = z
@@ -133,9 +158,120 @@ export class ChromiumPdfRenderer implements PdfRenderer {
         await page.setContent(source, { waitUntil: "load" });
         await page.evaluate(async () => {
           await document.fonts.ready;
+          const pages = [
+            ...document.querySelectorAll<HTMLElement>(".template-page"),
+          ];
+          const millimeterPx = 96 / 25.4;
+          type PageSegment = Readonly<{
+            top: number;
+            bottom: number;
+            pageOffset: number;
+            pages: number;
+          }>;
+          const pagination = new Map<
+            HTMLElement,
+            Readonly<{
+              start: number;
+              top: number;
+              contentHeightPx: number;
+              segments: readonly PageSegment[];
+            }>
+          >();
+          let nextPage = 1;
+          for (const templatePage of pages) {
+            const startOn = templatePage.dataset.pageStart ?? "any";
+            if (startOn === "recto" && nextPage % 2 === 0) nextPage += 1;
+            if (startOn === "verso" && nextPage % 2 === 1) nextPage += 1;
+            const contentHeightPx =
+              Number(templatePage.dataset.pageContentMm) * millimeterPx;
+            const rect = templatePage.getBoundingClientRect();
+            const breakOffsets = [
+              ...templatePage.querySelectorAll<HTMLElement>(
+                ".template-page-break",
+              ),
+            ]
+              .map((pageBreak) =>
+                Math.max(
+                  0,
+                  Math.min(
+                    rect.height,
+                    pageBreak.getBoundingClientRect().bottom - rect.top,
+                  ),
+                ),
+              )
+              .sort((left, right) => left - right);
+            const boundaries = [0, ...breakOffsets, rect.height];
+            const segments: PageSegment[] = [];
+            let pageOffset = 0;
+            for (let index = 0; index < boundaries.length - 1; index += 1) {
+              const top = boundaries[index] ?? 0;
+              const bottom = boundaries[index + 1] ?? top;
+              const pagesForSegment = Number.isFinite(contentHeightPx)
+                ? Math.max(1, Math.ceil((bottom - top) / contentHeightPx))
+                : 1;
+              segments.push({
+                top,
+                bottom,
+                pageOffset,
+                pages: pagesForSegment,
+              });
+              pageOffset += pagesForSegment;
+            }
+            pagination.set(templatePage, {
+              start: nextPage,
+              top: rect.top,
+              contentHeightPx,
+              segments,
+            });
+            nextPage += Math.max(1, pageOffset);
+          }
+          for (const link of document.querySelectorAll<HTMLAnchorElement>(
+            ".template-toc a[href^='#']",
+          )) {
+            const id = link.getAttribute("href")?.slice(1);
+            const target = id ? document.getElementById(id) : null;
+            const templatePage = target?.closest<HTMLElement>(".template-page");
+            const pageInfo = templatePage
+              ? pagination.get(templatePage)
+              : undefined;
+            let pageNumber = pageInfo?.start ?? 0;
+            if (target && pageInfo) {
+              const targetOffset = Math.max(
+                0,
+                target.getBoundingClientRect().top - pageInfo.top,
+              );
+              const segment =
+                pageInfo.segments.find(
+                  (candidate) =>
+                    targetOffset >= candidate.top &&
+                    targetOffset <= candidate.bottom,
+                ) ?? pageInfo.segments.at(-1);
+              if (segment)
+                pageNumber +=
+                  segment.pageOffset +
+                  Math.min(
+                    segment.pages - 1,
+                    Math.max(
+                      0,
+                      Math.floor(
+                        (targetOffset - segment.top) / pageInfo.contentHeightPx,
+                      ),
+                    ),
+                  );
+            }
+            const output =
+              link.querySelector<HTMLElement>(".template-toc-page");
+            if (output && pageNumber > 0)
+              output.textContent = String(pageNumber);
+          }
         });
         return Buffer.from(
-          await page.pdf({ printBackground: true, preferCSSPageSize: true }),
+          await page.pdf({
+            printBackground: true,
+            preferCSSPageSize: true,
+            tagged: true,
+            outline: true,
+          }),
         );
       } catch {
         throw new Error("chromium render failed");
@@ -182,6 +318,7 @@ const requestIdFrom = (request: unknown): string => {
 export async function render(
   request: unknown,
   pdfRenderer: PdfRenderer = new ChromiumPdfRenderer(),
+  timeoutMs = loadRenderTimeout(process.env.RENDER_TIMEOUT_MS),
 ): Promise<RendererResponse> {
   const parsed = RendererRequestSchema.safeParse(request);
   if (!parsed.success)
@@ -192,13 +329,23 @@ export async function render(
       error: "render_rejected",
     };
   try {
-    const source = renderDocumentHtml(
-      parsed.data.body,
-      parsed.data.format,
-      parsed.data.style,
-      parsed.data.assets,
-    );
-    const pdf = await pdfRenderer.render(source, limits.renderTimeoutMs);
+    const source =
+      parsed.data.format === "template"
+        ? renderTemplateDocumentHtml({
+            definition: parsed.data.template,
+            data: parsed.data.data,
+            style: parsed.data.style,
+            styleAssets: parsed.data.assets,
+            templateAssets: parsed.data.templateAssets,
+            ...(parsed.data.locale ? { locale: parsed.data.locale } : {}),
+          })
+        : renderDocumentHtml(
+            parsed.data.body,
+            parsed.data.format,
+            parsed.data.style,
+            parsed.data.assets,
+          );
+    const pdf = await pdfRenderer.render(source, timeoutMs);
     await validatePdf(pdf);
     return {
       protocol: RENDERER_PROTOCOL,
@@ -236,12 +383,13 @@ function send(socket: Socket, response: RendererResponse): void {
 function handleSocket(
   socket: Socket,
   renderJob: (request: unknown) => Promise<RendererResponse>,
+  timeoutMs: number,
 ): void {
   const chunks: string[] = [];
   let frameBytes = 0;
   let completeFrame = false;
   socket.setEncoding("utf8");
-  socket.setTimeout(limits.renderTimeoutMs + 5_000, () => socket.destroy());
+  socket.setTimeout(timeoutMs + 5_000, () => socket.destroy());
   socket.on("data", (chunk: string) => {
     frameBytes += Buffer.byteLength(chunk, "utf8");
     if (
@@ -274,6 +422,7 @@ function handleSocket(
 export async function startRenderer(
   socketPath = process.env.RENDERER_SOCKET ?? "/run/hypergendoc/renderer.sock",
   pdfRenderer: PdfRenderer = new ChromiumPdfRenderer(),
+  timeoutMs = loadRenderTimeout(process.env.RENDER_TIMEOUT_MS),
 ): Promise<Server> {
   try {
     if ((await lstat(socketPath)).isSocket()) await unlink(socketPath);
@@ -292,7 +441,7 @@ export async function startRenderer(
         error: "render_busy" as const,
       });
     queuedOrRunning += 1;
-    const result = queue.then(() => render(request, pdfRenderer));
+    const result = queue.then(() => render(request, pdfRenderer, timeoutMs));
     queue = result.then(
       () => undefined,
       () => undefined,
@@ -303,7 +452,7 @@ export async function startRenderer(
   };
   const server = createServer({ allowHalfOpen: true }, (socket) => {
     socket.on("error", () => undefined);
-    handleSocket(socket, renderJob);
+    handleSocket(socket, renderJob, timeoutMs);
   });
   server.once("close", () => void unlink(socketPath).catch(() => undefined));
   await new Promise<void>((resolve, reject) =>

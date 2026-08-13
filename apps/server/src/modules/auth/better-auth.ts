@@ -21,6 +21,11 @@ const argon2id: Options = {
   outputLen: 32,
 };
 
+export const authRateLimitRules = {
+  "/sign-in/email": { window: 60, max: 10 },
+  "/request-password-reset": { window: 60, max: 5 },
+} as const;
+
 export interface CreateAuthOptions {
   database: Database;
   mail: AuthMail;
@@ -101,10 +106,7 @@ export function createAuth(options: CreateAuthOptions) {
       enabled: true,
       window: 60,
       max: 30,
-      customRules: {
-        "/sign-in/email": { window: 60, max: 10 },
-        "/forget-password": { window: 60, max: 5 },
-      },
+      customRules: authRateLimitRules,
       storage: "memory",
     },
     advanced: { useSecureCookies: options.production },

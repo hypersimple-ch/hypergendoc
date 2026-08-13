@@ -13,6 +13,9 @@ export function toDocumentCommit(
     commitSha: entry.commitId,
     parentCommitSha: entry.parentCommitId,
     styleVersionId: entry.styleVersionId,
+    ...(entry.templateVersionId
+      ? { templateVersionId: entry.templateVersionId }
+      : {}),
     format: entry.format,
     createdByType: entry.actor.type,
     createdById: entry.actor.id,
@@ -28,6 +31,9 @@ export function toDocumentSnapshot(
     documentId,
     commitSha: revision.commitId,
     styleVersionId: revision.styleVersionId,
+    ...(revision.templateVersionId
+      ? { templateVersionId: revision.templateVersionId }
+      : {}),
     format: revision.format,
     body: revision.body,
   };

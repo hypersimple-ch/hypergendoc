@@ -13,3 +13,4 @@ export {
 } from "./repository.js";
 export type { CompanyAssetRepository } from "./assets.js";
 export type { CompanyRepository } from "./service.js";
+export { createCompanyTemplateAssetResolver } from "./template-asset-resolver.js";

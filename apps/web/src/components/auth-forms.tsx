@@ -37,12 +37,12 @@ function useSubmit(action: () => Promise<unknown>) {
   return { pending, message, error, submit };
 }
 
-export function LoginForm() {
+export function LoginForm({ next = "/workspace" }: { next?: string }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const state = useSubmit(async () => {
     await authClient.login(email, password);
-    window.location.assign("/workspace");
+    window.location.assign(next);
   });
   return (
     <form
@@ -242,46 +242,6 @@ export function WorkspaceForm() {
       {state.error && <Status kind="error">{state.error}</Status>}
       <Button className="w-full" type="submit" disabled={state.pending}>
         {state.pending ? "Creating workspace…" : "Create workspace"}
-      </Button>
-    </form>
-  );
-}
-
-export function InvitationForm() {
-  const params = useSearchParams();
-  const invitationId = params.get("invitationId");
-  const state = useSubmit(() =>
-    authClient.acceptInvitation(invitationId ?? ""),
-  );
-  if (!invitationId)
-    return (
-      <div className="space-y-4">
-        <Status kind="warning">
-          This invitation link is missing or incomplete. Ask a workspace owner
-          for a valid invitation.
-        </Status>
-        <Link href="/login">Return to sign in</Link>
-      </div>
-    );
-  return (
-    <form
-      onSubmit={state.submit}
-      className="auth-form"
-      aria-busy={state.pending}
-      aria-label="Accept workspace invitation"
-    >
-      <p className="text-sm leading-6 text-muted-foreground">
-        Accepting an invitation joins the workspace named in your secure
-        invitation.
-      </p>
-      {state.error && <Status kind="error">{state.error}</Status>}
-      {state.message && (
-        <Status kind="success">
-          Invitation accepted. You can open your workspace.
-        </Status>
-      )}
-      <Button className="w-full" type="submit" disabled={state.pending}>
-        {state.pending ? "Accepting invitation…" : "Accept invitation"}
       </Button>
     </form>
   );

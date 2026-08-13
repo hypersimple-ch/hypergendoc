@@ -35,3 +35,50 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./scripts/smoke-server-image.sh
+
+  authenticated-browser-release-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.11.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Provision disposable local stack configuration
+        shell: bash
+        run: |
+          cat > .env <<EOF
+          APP_ORIGIN=http://localhost:8080
+          POSTGRES_DB=hypergendoc
+          POSTGRES_USER=hypergendoc
+          POSTGRES_PASSWORD=$(openssl rand -hex 24)
+          DATABASE_URL=postgresql://hypergendoc:$(openssl rand -hex 24)@postgres:5432/hypergendoc
+          S3_ENDPOINT=http://object-store:3900
+          S3_REGION=garage
+          S3_BUCKET=hypergendoc-private
+          S3_ACCESS_KEY=GK$(openssl rand -hex 16)
+          S3_SECRET_KEY=$(openssl rand -hex 32)
+          GARAGE_RPC_SECRET=$(openssl rand -hex 32)
+          BETTER_AUTH_SECRET=$(openssl rand -hex 32)
+          CREDENTIAL_PEPPER=$(openssl rand -hex 32)
+          DOCUMENT_GIT_ROOT=/var/lib/hypergendoc/git
+          RENDER_TIMEOUT_MS=30000
+          LOG_LEVEL=warn
+          EOF
+          # Keep the URL password coherent without printing the disposable secret.
+          DB_PASSWORD=$(awk -F= '$1 == "POSTGRES_PASSWORD" {print $2}' .env)
+          sed -i "s#DATABASE_URL=.*#DATABASE_URL=postgresql://hypergendoc:${DB_PASSWORD}@postgres:5432/hypergendoc#" .env
+      - name: Start verified local Compose entry point
+        run: docker compose up --build --wait --wait-timeout 300
+      - run: pnpm test:e2e:browser
+        env:
+          E2E_ORIGIN: http://localhost:8080
+      - if: always()
+        run: docker compose down --volumes --remove-orphans

@@ -2,14 +2,16 @@ import type {
   Document,
   DocumentFormat,
   ResolvedStyleAssets,
+  ResolvedTemplateAssets,
   StyleDefinition,
+  TemplateDefinition,
 } from "@hypergendoc/contracts";
 import type { AuditWriter } from "../../platform/audit.js";
 import type { CompanyDocumentGitStore } from "./git-store.js";
 import type { Renderer } from "./renderer-client.js";
 
 export interface ResolvedDocumentSource {
-  /** Exact user input, never normalized. */
+  /** Validated source; HTML is canonicalized by the sanitizer. */
   readonly body: string;
   /** Complete server-owned resolved HTML, never persisted. */
   readonly source: string;
@@ -62,6 +64,22 @@ export interface DocumentRepository {
     companyId: string,
     styleVersionId: string,
   ): Promise<{ id: string; definition: StyleDefinition } | undefined>;
+  findActiveTemplate(
+    workspaceId: string,
+    companyId: string,
+    templateId: string,
+  ): Promise<
+    | { templateId: string; versionId: string; definition: TemplateDefinition }
+    | undefined
+  >;
+  findTemplateVersion(
+    workspaceId: string,
+    companyId: string,
+    templateVersionId: string,
+  ): Promise<
+    | { templateId: string; versionId: string; definition: TemplateDefinition }
+    | undefined
+  >;
   findDocument(
     workspaceId: string,
     documentId: string,
@@ -72,7 +90,13 @@ export interface DocumentRepository {
     documentId: string,
   ): Promise<Document | undefined>;
   insertDocument(
-    input: Readonly<{ workspaceId: string; companyId: string; title: string }>,
+    input: Readonly<{
+      workspaceId: string;
+      companyId: string;
+      templateId?: string | undefined;
+      title: string;
+      metadata?: Record<string, string>;
+    }>,
   ): Promise<Document>;
   touchDocument(
     workspaceId: string,
@@ -85,14 +109,30 @@ export interface DocumentRepository {
   ): Promise<void>;
 }
 
+export interface TemplateAssetResolver {
+  resolve(
+    workspaceId: string,
+    companyId: string,
+    imageIds: readonly string[],
+  ): Promise<ResolvedTemplateAssets>;
+}
+
 export interface DocumentServiceDependencies {
   readonly repository: DocumentRepository;
   readonly git: Pick<
     CompanyDocumentGitStore,
-    "write" | "readCurrent" | "readHistorical" | "history" | "revert"
+    | "write"
+    | "readCurrent"
+    | "readHistorical"
+    | "history"
+    | "revert"
+    | "checkpoint"
+    | "restoreCheckpoint"
+    | "completeCheckpoint"
   >;
   readonly renderer: Renderer;
   readonly sourceBuilder: DocumentSourceBuilder;
   readonly styleAssetResolver?: StyleAssetResolver;
+  readonly templateAssetResolver?: TemplateAssetResolver;
   readonly audit?: AuditWriter;
 }
