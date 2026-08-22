@@ -61,7 +61,7 @@ describe("EmailActionForm", () => {
     resolveRequest!();
     await waitFor(() => {
       expect(screen.getByRole("status")).toHaveTextContent(
-        "Check your email for the next step.",
+        "If an account exists, check your inbox shortly. Delivery may be delayed.",
       );
     });
     expect(

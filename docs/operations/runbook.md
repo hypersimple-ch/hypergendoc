@@ -36,3 +36,19 @@ Garage is single-node `replication_factor=1` and has no redundancy. Keep its met
 ## Incident response
 
 For suspected tenant exposure, revoke credentials or contain sessions, preserve safe request IDs and audit metadata, and verify that cross-tenant probes remain `not_found`. Do not copy bodies, tokens, commit source, or renderer transcripts into tickets. See the [security runbook](../security/runbook.md).
+
+## Authentication mail queue
+
+Authentication email is accepted only after its `mail_jobs` row commits in PostgreSQL. The server dispatcher claims at most 10 due jobs at a time with `FOR UPDATE SKIP LOCKED` and a 60-second lease. It retries transport failures with exponential backoff from 30 seconds, capped at one hour. Attempt 8 is terminal.
+
+Safe events are `mail.delivered`, `mail.retry_scheduled`, `mail.dead_lettered`, `mail.leases_recovered`, `mail.dispatch_failed`, and `mail.dispatcher_unavailable`. They contain a job ID, kind, attempt, and delay/count only. Never add recipients, message bodies, SMTP errors, or single-use URLs to logs or tickets.
+
+On startup the dispatcher returns expired leases to `pending`; graceful shutdown stops new polls and waits for the active bounded batch. After an SMTP incident:
+
+1. Restore and verify SMTP configuration without copying credentials into logs or commands recorded in tickets.
+2. Restart the server. Confirm `mail.leases_recovered` if the old process died mid-batch.
+3. Query aggregate status and age only, for example `SELECT status, count(*), min(created_at) FROM mail_jobs GROUP BY status`.
+4. Confirm pending counts fall and deliveries rise. A `sent` row means SMTP accepted the message, not that the recipient read it.
+5. Investigate `dead` jobs by safe job ID. Their single-use URL has already been erased. Do not replay them. Ask the user to request a fresh verification or reset link after the transport is healthy.
+
+When SMTP is absent the dispatcher does not run and emits `mail.dispatcher_unavailable`; jobs remain pending. This is durable acceptance, not delivery. Configure SMTP and restart to recover them.

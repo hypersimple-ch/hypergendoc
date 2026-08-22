@@ -25,3 +25,9 @@ Do not log passwords, session cookies, links, MCP tokens, document bodies, commi
 PostgreSQL stores reusable template indexes and immutable declarative template definitions, analogous to structured style versions. It does not store instantiated document bodies or generated PDFs. Template-backed document instances are authoritative canonical JSON files in the company Git repository and pin their exact template and style versions in commit metadata.
 
 Private object storage additionally holds validated PNG, JPEG, and WebP company media used by template fields. Media objects are workspace/company scoped, hash verified before rendering, never exposed as public object-store URLs, and are embedded only into the isolated no-network render job.
+
+## Authentication mail retention
+
+Pending and leased mail rows temporarily contain the recipient, display name, and single-use authentication URL because they are the durable delivery payload. Successful and dead-letter transitions erase the URL immediately. Dead jobs must never retain or be used to reconstruct a link.
+
+Run a scheduled maintenance transaction that deletes `sent` and `dead` rows after 30 days. Retain pending rows while an incident is active, but alert on age and resolve or dead-letter them through the dispatcher rather than manually extracting payloads. Backups can retain earlier encrypted copies until the normal finite backup-retention window expires. Access to queue rows is operational database access and must not be exposed in dashboards, logs, support tickets, or analytics.

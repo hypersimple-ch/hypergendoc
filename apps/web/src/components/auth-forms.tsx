@@ -7,7 +7,10 @@ import { authClient } from "../lib/auth-client";
 import { ApiError } from "../lib/api-client";
 import { Button, FormField, Input, Status } from "./primitives";
 
-function useSubmit(action: () => Promise<unknown>) {
+function useSubmit(
+  action: () => Promise<unknown>,
+  successMessage = "Request completed.",
+) {
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
@@ -24,7 +27,7 @@ function useSubmit(action: () => Promise<unknown>) {
     setMessage(undefined);
     try {
       await action();
-      setMessage("Check your email for the next step.");
+      setMessage(successMessage);
     } catch (reason) {
       setError(
         reason instanceof ApiError ? reason.message : "Something went wrong.",
@@ -87,7 +90,10 @@ export function RegisterForm() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const state = useSubmit(() => authClient.register(name, email, password));
+  const state = useSubmit(
+    () => authClient.register(name, email, password),
+    "Verification email accepted for delivery. Check your inbox shortly.",
+  );
   return (
     <form
       onSubmit={state.submit}
@@ -133,10 +139,14 @@ export function RegisterForm() {
 
 export function EmailActionForm({ kind }: { kind: "forgot" | "verify" }) {
   const [email, setEmail] = useState("");
-  const state = useSubmit(() =>
+  const state = useSubmit(
+    () =>
+      kind === "forgot"
+        ? authClient.forgotPassword(email)
+        : authClient.sendVerification(email),
     kind === "forgot"
-      ? authClient.forgotPassword(email)
-      : authClient.sendVerification(email),
+      ? "If an account exists, check your inbox shortly. Delivery may be delayed."
+      : "Verification email accepted for delivery. Check your inbox shortly.",
   );
   return (
     <form
