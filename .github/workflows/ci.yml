@@ -27,7 +27,6 @@ jobs:
       - run: pnpm db:migrations:check
       - run: pnpm compose:check
       - run: pnpm audit --prod --audit-level high
-        continue-on-error: true
 
   server-image-smoke:
     runs-on: ubuntu-latest
@@ -77,8 +76,22 @@ jobs:
           sed -i "s#DATABASE_URL=.*#DATABASE_URL=postgresql://hypergendoc:${DB_PASSWORD}@postgres:5432/hypergendoc#" .env
       - name: Start verified local Compose entry point
         run: docker compose up --build --wait --wait-timeout 300
+      - name: Run real PostgreSQL, Garage, and repository integration tests
+        run: >-
+          docker compose exec -T server sh -lc
+          'RUN_PLATFORM_INTEGRATION=true
+          HYPERGENDOC_TEST_DATABASE_URL="$DATABASE_URL"
+          pnpm --filter @hypergendoc/server test:run'
       - run: pnpm test:e2e:browser
         env:
           E2E_ORIGIN: http://localhost:8080
+      - name: Upload browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-failure-evidence
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7
       - if: always()
         run: docker compose down --volumes --remove-orphans
