@@ -13,6 +13,10 @@ Dokploy deploys the standalone Compose service. Traefik is the only public entry
 
 Run exactly one `server` replica while authentication and MCP rate-limit counters are process-local. Do not configure Dokploy or Traefik horizontal scaling for the server. Before adding a second replica, implement and load-test a shared atomic rate-limit store as required by [ADR 0001](../architecture/decisions/0001-lifecycle-and-scaling-boundaries.md).
 
+## Browser security headers
+
+The Next.js web service emits CSP, frame protection, MIME protection, referrer, permissions, cross-origin isolation, and production HSTS headers for every page. Development Caddy and production Traefik must preserve these upstream response headers. After an ingress change, verify `/`, `/login`, and an authenticated `/workspace` page and confirm that browser console output contains no CSP violation.
+
 ## Git history operations
 
 One durable private Git repository belongs to each company. It is source-history authority and is not directly served. Company archival retains the repository. Purge is out of scope; do not delete repository contents ad hoc.
