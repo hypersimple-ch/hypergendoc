@@ -37,6 +37,8 @@ MCP is stateless Streamable HTTP at `/mcp` over HTTPS and requires `Authorizatio
 - `read_document_commit({ documentId, commitSha })` — `documents:read`
 - `revert_document({ documentId, commitSha })` — `documents:write`
 
+Pagination cursors are opaque references to the last item returned. An unknown, deleted, or stale cursor fails with `validation_failed`; it never restarts pagination at the first page.
+
 Numeric-version tools do not exist.
 
 ## Input and limits

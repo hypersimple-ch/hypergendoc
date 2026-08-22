@@ -21,4 +21,12 @@ describe("page", () => {
       items: commits.slice(2),
     });
   });
+
+  it("rejects an unknown cursor instead of restarting at page one", () => {
+    const items = [{ id: "first" }, { id: "second" }];
+
+    expect(() => page(items, "deleted", 1)).toThrow(
+      expect.objectContaining({ code: "validation_failed", statusCode: 400 }),
+    );
+  });
 });
