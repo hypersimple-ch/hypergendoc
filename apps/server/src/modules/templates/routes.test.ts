@@ -44,7 +44,7 @@ function appFor() {
   registerSafeErrorHandler(app);
   void app.register(
     createTemplateRoutes({
-      authenticate: () => Promise.resolve(actor),
+      actorFor: () => actor,
       service: {
         list,
         create,

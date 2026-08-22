@@ -32,7 +32,7 @@ async function appFor(fileSize = 1024) {
   registerSafeErrorHandler(app);
   await app.register(
     createCompanyAssetRoutes({
-      authenticate: () => Promise.resolve(actor),
+      actorFor: () => actor,
       service: {
         list: vi.fn(),
         uploadFont,
@@ -43,7 +43,7 @@ async function appFor(fileSize = 1024) {
   );
   await app.register(
     createCompanyLogoRoutes({
-      authenticate: () => Promise.resolve(actor),
+      actorFor: () => actor,
       service: { upload: uploadLogo },
     }),
   );

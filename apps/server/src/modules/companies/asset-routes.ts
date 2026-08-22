@@ -1,12 +1,10 @@
 import type { FastifyPluginAsync } from "fastify";
+import type { PreauthenticatedActor } from "../auth/request-actor.js";
 import { uploadValidationError } from "../../platform/errors.js";
-import type { HumanActor } from "../auth/actors.js";
 import type { createCompanyAssetService } from "./assets.js";
 
 export interface CompanyAssetRouteDependencies {
-  readonly authenticate: (request: {
-    readonly id: string;
-  }) => Promise<HumanActor>;
+  readonly actorFor: PreauthenticatedActor;
   readonly service: ReturnType<typeof createCompanyAssetService>;
 }
 
@@ -36,10 +34,7 @@ export function createCompanyAssetRoutes(
     app.get<{ Params: { companyId: string } }>(
       "/api/companies/:companyId/assets",
       async (request) =>
-        deps.service.list(
-          await deps.authenticate(request),
-          request.params.companyId,
-        ),
+        deps.service.list(deps.actorFor(request), request.params.companyId),
     );
     app.post<{ Params: { companyId: string } }>(
       "/api/companies/:companyId/assets/fonts",
@@ -56,7 +51,7 @@ export function createCompanyAssetRoutes(
           .code(201)
           .send(
             await deps.service.uploadFont(
-              await deps.authenticate(request),
+              deps.actorFor(request),
               request.params.companyId,
               upload.bytes,
             ),
@@ -78,7 +73,7 @@ export function createCompanyAssetRoutes(
           .code(201)
           .send(
             await deps.service.uploadImage(
-              await deps.authenticate(request),
+              deps.actorFor(request),
               request.params.companyId,
               upload.bytes,
             ),
@@ -90,7 +85,7 @@ export function createCompanyAssetRoutes(
         `/api/companies/:companyId/assets/${kind}s/:objectId/content`,
         async (request, reply) => {
           const content = await deps.service.content(
-            await deps.authenticate(request),
+            deps.actorFor(request),
             request.params.companyId,
             kind,
             request.params.objectId,

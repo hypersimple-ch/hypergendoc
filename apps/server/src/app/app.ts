@@ -11,6 +11,10 @@ import { z, ZodError } from "zod";
 import { createAuth } from "../modules/auth/better-auth.js";
 import type { HumanActor } from "../modules/auth/actors.js";
 import {
+  preauthenticatedActor,
+  registerHumanActorPreHandler,
+} from "../modules/auth/request-actor.js";
+import {
   createCompanyAssetRepository,
   createCompanyAssetRoutes,
   createCompanyAssetService,
@@ -334,7 +338,7 @@ export async function createApplication(
     void reply.status(safe.statusCode).send(safe.body);
   });
 
-  const authenticate = async (request: {
+  const resolveHumanActor = async (request: {
     id: string;
     headers?: FastifyRequest["headers"];
   }): Promise<HumanActor> => {
@@ -366,18 +370,8 @@ export async function createApplication(
     };
   };
   const actorFor = (request: FastifyRequest) =>
-    (request as FastifyRequest & { actor?: ActorContext }).actor;
-  app.addHook("preHandler", async (request) => {
-    if (
-      !request.url.startsWith("/api/") ||
-      request.url.startsWith("/api/auth/") ||
-      request.url === "/api/workspaces"
-    )
-      return;
-    (request as FastifyRequest & { actor?: ActorContext }).actor = actorContext(
-      await authenticate(request),
-    );
-  });
+    actorContext(preauthenticatedActor(request));
+  registerHumanActorPreHandler(app, resolveHumanActor);
 
   app.route({
     method: ["GET", "POST"],
@@ -422,15 +416,20 @@ export async function createApplication(
   });
   await app.register(
     createMembershipRoutes({
-      authenticate,
+      actorFor: preauthenticatedActor,
       memberships: createMembershipRepository(db),
       audit,
     }),
   );
-  await app.register(createCompanyRoutes({ authenticate, service: companies }));
+  await app.register(
+    createCompanyRoutes({
+      actorFor: preauthenticatedActor,
+      service: companies,
+    }),
+  );
   await app.register(
     createCompanyLogoRoutes({
-      authenticate,
+      actorFor: preauthenticatedActor,
       service: {
         upload: (actor, companyId, bytes) =>
           companyAssets.uploadLogo(actor, companyId, bytes),
@@ -438,11 +437,19 @@ export async function createApplication(
     }),
   );
   await app.register(
-    createCompanyAssetRoutes({ authenticate, service: companyAssets }),
+    createCompanyAssetRoutes({
+      actorFor: preauthenticatedActor,
+      service: companyAssets,
+    }),
   );
-  await app.register(createStyleRoutes({ authenticate, service: styles }));
   await app.register(
-    createTemplateRoutes({ authenticate, service: templates }),
+    createStyleRoutes({ actorFor: preauthenticatedActor, service: styles }),
+  );
+  await app.register(
+    createTemplateRoutes({
+      actorFor: preauthenticatedActor,
+      service: templates,
+    }),
   );
   const credentials = createCredentialService({
     repository: createCredentialRepository(db),
@@ -450,11 +457,14 @@ export async function createApplication(
     pepper: environment.credentialPepper,
   });
   await app.register(
-    createCredentialRoutes({ authenticate, service: credentials }),
+    createCredentialRoutes({
+      actorFor: preauthenticatedActor,
+      service: credentials,
+    }),
   );
   await app.register(
     createWorkspaceReadRoutes({
-      authenticate,
+      actorFor: preauthenticatedActor,
       service: createWorkspaceReadService(createWorkspaceReadRepository(db)),
     }),
   );

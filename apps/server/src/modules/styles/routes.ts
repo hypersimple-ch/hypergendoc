@@ -5,7 +5,7 @@ import {
 } from "@hypergendoc/contracts";
 import { z } from "zod";
 import type { FastifyPluginAsync } from "fastify";
-import type { HumanActor } from "../auth/actors.js";
+import type { PreauthenticatedActor } from "../auth/request-actor.js";
 import type { createStyleService } from "./service.js";
 
 const ActivateSchema = z.object({ versionId: z.string().uuid() }).strict();
@@ -19,9 +19,7 @@ const PreviewSchema = z
     message: "A versionId or draft definition is required",
   });
 export interface StyleRouteDependencies {
-  readonly authenticate: (request: {
-    readonly id: string;
-  }) => Promise<HumanActor>;
+  readonly actorFor: PreauthenticatedActor;
   readonly service: ReturnType<typeof createStyleService>;
 }
 export function createStyleRoutes(
@@ -31,10 +29,7 @@ export function createStyleRoutes(
     app.get<{ Params: { companyId: string } }>(
       "/api/companies/:companyId/styles",
       async (request) =>
-        deps.service.list(
-          await deps.authenticate(request),
-          request.params.companyId,
-        ),
+        deps.service.list(deps.actorFor(request), request.params.companyId),
     );
     app.post<{ Params: { companyId: string } }>(
       "/api/companies/:companyId/styles",
@@ -45,26 +40,18 @@ export function createStyleRoutes(
         });
         return reply
           .code(201)
-          .send(
-            await deps.service.create(await deps.authenticate(request), input),
-          );
+          .send(await deps.service.create(deps.actorFor(request), input));
       },
     );
     app.get<{ Params: { styleId: string } }>(
       "/api/styles/:styleId",
       async (request) =>
-        deps.service.get(
-          await deps.authenticate(request),
-          request.params.styleId,
-        ),
+        deps.service.get(deps.actorFor(request), request.params.styleId),
     );
     app.get<{ Params: { styleId: string } }>(
       "/api/styles/:styleId/versions",
       async (request) =>
-        deps.service.history(
-          await deps.authenticate(request),
-          request.params.styleId,
-        ),
+        deps.service.history(deps.actorFor(request), request.params.styleId),
     );
     app.post<{ Params: { styleId: string } }>(
       "/api/styles/:styleId/versions",
@@ -74,7 +61,7 @@ export function createStyleRoutes(
           .code(201)
           .send(
             await deps.service.createVersion(
-              await deps.authenticate(request),
+              deps.actorFor(request),
               request.params.styleId,
               input.definition,
               input.activate,
@@ -86,7 +73,7 @@ export function createStyleRoutes(
       "/api/styles/:styleId/activate",
       async (request, reply) => {
         await deps.service.activate(
-          await deps.authenticate(request),
+          deps.actorFor(request),
           request.params.styleId,
           ActivateSchema.parse(request.body).versionId,
         );
@@ -97,7 +84,7 @@ export function createStyleRoutes(
       "/api/styles/:styleId/preview",
       async (request) =>
         deps.service.preview(
-          await deps.authenticate(request),
+          deps.actorFor(request),
           request.params.styleId,
           PreviewSchema.parse(request.body),
         ),

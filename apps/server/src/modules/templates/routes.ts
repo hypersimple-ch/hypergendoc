@@ -5,15 +5,13 @@ import {
 } from "@hypergendoc/contracts";
 import { z } from "zod";
 import type { FastifyPluginAsync } from "fastify";
-import type { HumanActor } from "../auth/actors.js";
+import type { PreauthenticatedActor } from "../auth/request-actor.js";
 import type { createTemplateService } from "./service.js";
 
 const ActivateSchema = z.object({ versionId: z.string().uuid() }).strict();
 
 export interface TemplateRouteDependencies {
-  readonly authenticate: (request: {
-    readonly id: string;
-  }) => Promise<HumanActor>;
+  readonly actorFor: PreauthenticatedActor;
   readonly service: ReturnType<typeof createTemplateService>;
 }
 
@@ -24,10 +22,7 @@ export function createTemplateRoutes(
     app.get<{ Params: { companyId: string } }>(
       "/api/companies/:companyId/templates",
       async (request) =>
-        deps.service.list(
-          await deps.authenticate(request),
-          request.params.companyId,
-        ),
+        deps.service.list(deps.actorFor(request), request.params.companyId),
     );
 
     app.post<{ Params: { companyId: string } }>(
@@ -39,28 +34,20 @@ export function createTemplateRoutes(
         });
         return reply
           .code(201)
-          .send(
-            await deps.service.create(await deps.authenticate(request), input),
-          );
+          .send(await deps.service.create(deps.actorFor(request), input));
       },
     );
 
     app.get<{ Params: { templateId: string } }>(
       "/api/templates/:templateId",
       async (request) =>
-        deps.service.get(
-          await deps.authenticate(request),
-          request.params.templateId,
-        ),
+        deps.service.get(deps.actorFor(request), request.params.templateId),
     );
 
     app.get<{ Params: { templateId: string } }>(
       "/api/templates/:templateId/versions",
       async (request) =>
-        deps.service.history(
-          await deps.authenticate(request),
-          request.params.templateId,
-        ),
+        deps.service.history(deps.actorFor(request), request.params.templateId),
     );
 
     app.post<{ Params: { templateId: string } }>(
@@ -71,7 +58,7 @@ export function createTemplateRoutes(
           .code(201)
           .send(
             await deps.service.createVersion(
-              await deps.authenticate(request),
+              deps.actorFor(request),
               request.params.templateId,
               input.definition,
               input.activate,
@@ -84,7 +71,7 @@ export function createTemplateRoutes(
       "/api/templates/:templateId/activate",
       async (request, reply) => {
         await deps.service.activate(
-          await deps.authenticate(request),
+          deps.actorFor(request),
           request.params.templateId,
           ActivateSchema.parse(request.body).versionId,
         );
@@ -96,7 +83,7 @@ export function createTemplateRoutes(
       "/api/templates/:templateId/preview",
       async (request) =>
         deps.service.preview(
-          await deps.authenticate(request),
+          deps.actorFor(request),
           request.params.templateId,
           RenderTemplatePreviewInputSchema.parse(request.body),
         ),

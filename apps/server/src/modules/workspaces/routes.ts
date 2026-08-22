@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
+import type { PreauthenticatedActor } from "../auth/request-actor.js";
 import { z } from "zod";
-import type { HumanActor } from "../auth/actors.js";
 import type { createWorkspaceReadService } from "./service.js";
 
 const AuditQuerySchema = z.object({
@@ -9,9 +9,7 @@ const AuditQuerySchema = z.object({
 });
 
 export interface WorkspaceRouteDependencies<Workspace, Member, AuditEvent> {
-  readonly authenticate: (request: {
-    readonly id: string;
-  }) => Promise<HumanActor>;
+  readonly actorFor: PreauthenticatedActor;
   readonly service: ReturnType<
     typeof createWorkspaceReadService<Workspace, Member, AuditEvent>
   >;
@@ -25,7 +23,7 @@ export function createWorkspaceReadRoutes<
 ): FastifyPluginAsync {
   return (app) => {
     app.get("/api/workspaces/current", async (request) => {
-      const actor = await deps.authenticate(request);
+      const actor = deps.actorFor(request);
       return {
         ...(await deps.service.current(actor)),
         membership: {
@@ -36,10 +34,10 @@ export function createWorkspaceReadRoutes<
       };
     });
     app.get("/api/workspaces/current/members", async (request) =>
-      deps.service.members(await deps.authenticate(request)),
+      deps.service.members(deps.actorFor(request)),
     );
     app.get("/api/workspaces/current/audit", async (request) => {
-      const actor = await deps.authenticate(request);
+      const actor = deps.actorFor(request);
       const query = AuditQuerySchema.parse(request.query);
       return deps.service.audit(actor, query.limit, query.offset);
     });

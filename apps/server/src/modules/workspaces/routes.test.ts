@@ -21,7 +21,7 @@ function fixture() {
   const app = Fastify();
   void app.register(
     createWorkspaceReadRoutes({
-      authenticate: vi.fn().mockResolvedValue(actor),
+      actorFor: vi.fn().mockReturnValue(actor),
       service: createWorkspaceReadService(repository),
     }),
   );

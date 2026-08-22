@@ -76,7 +76,7 @@ describe("membership mutation routes", () => {
     registerSafeErrorHandler(app);
     await app.register(
       createMembershipRoutes({
-        authenticate: vi.fn().mockResolvedValue(actor),
+        actorFor: vi.fn().mockReturnValue(actor),
         memberships: repository(rows),
         audit,
       }),

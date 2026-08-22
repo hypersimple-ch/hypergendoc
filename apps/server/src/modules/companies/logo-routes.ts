@@ -1,12 +1,10 @@
 import type { FastifyPluginAsync } from "fastify";
+import type { PreauthenticatedActor } from "../auth/request-actor.js";
 import { uploadValidationError } from "../../platform/errors.js";
-import type { HumanActor } from "../auth/actors.js";
 import type { createCompanyLogoService } from "./logo.js";
 
 export interface CompanyLogoRouteDependencies {
-  readonly authenticate: (request: {
-    readonly id: string;
-  }) => Promise<HumanActor>;
+  readonly actorFor: PreauthenticatedActor;
   readonly service: ReturnType<typeof createCompanyLogoService>;
 }
 /** Composition must register multipart parsing with a bounded file size before this plugin. */
@@ -39,7 +37,7 @@ export function createCompanyLogoRoutes(
           .code(201)
           .send(
             await deps.service.upload(
-              await deps.authenticate(request),
+              deps.actorFor(request),
               request.params.companyId,
               Buffer.concat(chunks),
             ),

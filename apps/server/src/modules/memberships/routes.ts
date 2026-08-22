@@ -1,8 +1,8 @@
 import type { WorkspaceRole } from "@hypergendoc/contracts";
 import type { FastifyPluginAsync } from "fastify";
+import type { PreauthenticatedActor } from "../auth/request-actor.js";
 import { z } from "zod";
 import type { AuditWriter } from "../../platform/audit.js";
-import type { HumanActor } from "../auth/actors.js";
 import {
   changeMemberRole,
   inviteMember,
@@ -26,15 +26,13 @@ const MemberParamsSchema = z.object({
 });
 
 export function createMembershipRoutes(deps: {
-  readonly authenticate: (request: {
-    readonly id: string;
-  }) => Promise<HumanActor>;
+  readonly actorFor: PreauthenticatedActor;
   readonly memberships: MembershipRepository;
   readonly audit: AuditWriter;
 }): FastifyPluginAsync {
   return (app) => {
     app.post("/api/workspaces/current/members", async (request, reply) => {
-      const actor = await deps.authenticate(request);
+      const actor = deps.actorFor(request);
       const membership = await inviteMember(
         { memberships: deps.memberships },
         actor,
@@ -54,7 +52,7 @@ export function createMembershipRoutes(deps: {
       return reply.code(201).send(membership);
     });
     app.patch("/api/workspaces/current/members/:userId", async (request) => {
-      const actor = await deps.authenticate(request);
+      const actor = deps.actorFor(request);
       const { userId } = MemberParamsSchema.parse(request.params);
       const { role } = ChangeRoleSchema.parse(request.body);
       const membership = await changeMemberRole(
@@ -79,7 +77,7 @@ export function createMembershipRoutes(deps: {
     app.delete(
       "/api/workspaces/current/members/:userId",
       async (request, reply) => {
-        const actor = await deps.authenticate(request);
+        const actor = deps.actorFor(request);
         const { userId } = MemberParamsSchema.parse(request.params);
         await removeMember({ memberships: deps.memberships }, actor, userId);
         await deps.audit.write({
