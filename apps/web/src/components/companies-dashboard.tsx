@@ -4,6 +4,10 @@ import { useMemo, useRef, useState } from "react";
 import { Archive, Building2, Plus, RotateCcw, Upload } from "lucide-react";
 import type { Company } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
+import {
+  IMAGE_UPLOAD_ACCEPT,
+  IMAGE_UPLOAD_GUIDANCE,
+} from "../lib/upload-policy";
 import { useActiveCompany } from "./active-company";
 import { Empty, LoadState, safeError } from "./dashboard-state";
 import {
@@ -255,8 +259,11 @@ function CompanyRow({
       setBusy(false);
     }
   }
-  async function upload(file?: File) {
-    if (pendingAction.current || !file) return;
+  async function upload(file: File | undefined, input: HTMLInputElement) {
+    if (pendingAction.current || !file) {
+      input.value = "";
+      return;
+    }
     pendingAction.current = true;
     setBusy(true);
     setMessage(undefined);
@@ -267,10 +274,13 @@ function CompanyRow({
     } catch (e) {
       setMessage({ text: safeError(e), error: true });
     } finally {
+      input.value = "";
       pendingAction.current = false;
       setBusy(false);
     }
   }
+
+  const logoGuidanceId = `company-logo-guidance-${company.id}`;
 
   return (
     <>
@@ -333,17 +343,28 @@ function CompanyRow({
                 Rename
               </Button>
             )}
-            <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-muted">
-              <Upload className="size-3.5" aria-hidden="true" />
-              Upload logo
-              <input
-                className="sr-only"
-                type="file"
-                accept="image/*"
-                disabled={busy}
-                onChange={(e) => void upload(e.target.files?.[0])}
-              />
-            </label>
+            <div className="grid gap-1">
+              <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-muted">
+                <Upload className="size-3.5" aria-hidden="true" />
+                Upload logo
+                <input
+                  className="sr-only"
+                  type="file"
+                  accept={IMAGE_UPLOAD_ACCEPT}
+                  aria-describedby={logoGuidanceId}
+                  disabled={busy}
+                  onChange={(event) =>
+                    void upload(
+                      event.currentTarget.files?.[0],
+                      event.currentTarget,
+                    )
+                  }
+                />
+              </label>
+              <small id={logoGuidanceId} className="text-muted-foreground">
+                {IMAGE_UPLOAD_GUIDANCE}
+              </small>
+            </div>
             {company.archivedAt ? (
               <Button
                 tone="quiet"

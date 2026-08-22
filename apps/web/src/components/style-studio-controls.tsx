@@ -13,6 +13,12 @@ import {
 import { FontPicker } from "./font-picker";
 import { FormField, Input, Select, Status } from "./primitives";
 import { dashboardApi } from "../lib/dashboard-api";
+import {
+  FONT_UPLOAD_ACCEPT,
+  FONT_UPLOAD_GUIDANCE,
+  IMAGE_UPLOAD_ACCEPT,
+  IMAGE_UPLOAD_GUIDANCE,
+} from "../lib/upload-policy";
 import { safeError } from "./dashboard-state";
 import { ColorControl } from "./style-studio-color-controls";
 import { Range } from "./style-studio-number-controls";
@@ -50,8 +56,14 @@ export function TypographyControls({
     ),
     ...catalogFonts.filter((font) => font.source === "uploaded"),
   ];
-  const uploadFont = async (file?: File) => {
-    if (!file || uploading) return;
+  const uploadFont = async (
+    file: File | undefined,
+    input: HTMLInputElement,
+  ) => {
+    if (!file || uploading) {
+      input.value = "";
+      return;
+    }
     setUploading(true);
     setUploadError(undefined);
     try {
@@ -60,6 +72,7 @@ export function TypographyControls({
     } catch (reason) {
       setUploadError(safeError(reason));
     } finally {
+      input.value = "";
       setUploading(false);
     }
   };
@@ -112,14 +125,18 @@ export function TypographyControls({
         <div className="typography-upload">
           <div className="typography-upload__heading">
             <span>Company fonts</span>
-            <small>TTF, OTF or WOFF2</small>
           </div>
-          <FormField label="Upload company font">
+          <FormField label="Upload company font" hint={FONT_UPLOAD_GUIDANCE}>
             <Input
               type="file"
-              accept=".ttf,.otf,.woff2,font/ttf,font/otf,font/woff2"
+              accept={FONT_UPLOAD_ACCEPT}
               disabled={uploading}
-              onChange={(event) => void uploadFont(event.target.files?.[0])}
+              onChange={(event) =>
+                void uploadFont(
+                  event.currentTarget.files?.[0],
+                  event.currentTarget,
+                )
+              }
             />
           </FormField>
           {uploadError && <Status kind="error">{uploadError}</Status>}
@@ -262,8 +279,14 @@ export function BrandControls({
 }) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string>();
-  const uploadLogo = async (file?: File) => {
-    if (!file || uploading) return;
+  const uploadLogo = async (
+    file: File | undefined,
+    input: HTMLInputElement,
+  ) => {
+    if (!file || uploading) {
+      input.value = "";
+      return;
+    }
     setUploading(true);
     setUploadError(undefined);
     try {
@@ -272,6 +295,7 @@ export function BrandControls({
     } catch (reason) {
       setUploadError(safeError(reason));
     } finally {
+      input.value = "";
       setUploading(false);
     }
   };
@@ -339,12 +363,17 @@ export function BrandControls({
             </button>
           ))}
         </div>
-        <FormField label="Upload company logo">
+        <FormField label="Upload company logo" hint={IMAGE_UPLOAD_GUIDANCE}>
           <Input
             type="file"
-            accept="image/png,image/jpeg,image/webp"
+            accept={IMAGE_UPLOAD_ACCEPT}
             disabled={uploading}
-            onChange={(event) => void uploadLogo(event.target.files?.[0])}
+            onChange={(event) =>
+              void uploadLogo(
+                event.currentTarget.files?.[0],
+                event.currentTarget,
+              )
+            }
           />
         </FormField>
         {uploadError && <Status kind="error">{uploadError}</Status>}

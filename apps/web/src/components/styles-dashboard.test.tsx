@@ -32,6 +32,7 @@ const {
   useActiveCompany: vi.fn(),
 }));
 vi.mock("../lib/dashboard-api", () => ({
+  ApiError: class ApiError extends Error {},
   dashboardApi: {
     styles,
     assets,
@@ -507,6 +508,38 @@ describe("StylesDashboard", () => {
         screen.queryByLabelText("Primary color hex"),
       ).not.toBeInTheDocument(),
     );
+  });
+
+  it("resets a failed font upload so selecting the same file retries", async () => {
+    uploadFont.mockRejectedValue(new Error("invalid font"));
+    await openEditor();
+
+    const input = screen.getByLabelText("Upload company font");
+    const file = new File(["invalid"], "brand.ttf", { type: "font/ttf" });
+    let selectedPath = "C:\\fakepath\\brand.ttf";
+    Object.defineProperty(input, "value", {
+      configurable: true,
+      get: () => selectedPath,
+      set: (value: string) => {
+        selectedPath = value;
+      },
+    });
+
+    expect(input).toHaveAttribute(
+      "accept",
+      ".ttf,.otf,.woff2,font/ttf,font/otf,font/woff2",
+    );
+    expect(
+      screen.getAllByText("TTF, OTF, or WOFF2; maximum 10 MiB.").length,
+    ).toBeGreaterThan(0);
+
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(selectedPath).toBe(""));
+
+    selectedPath = "C:\\fakepath\\brand.ttf";
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(uploadFont).toHaveBeenCalledTimes(2));
+    expect(selectedPath).toBe("");
   });
 
   it("groups typography and page layout controls with clear accessible context", async () => {

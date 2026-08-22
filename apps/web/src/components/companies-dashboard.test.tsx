@@ -161,15 +161,32 @@ describe("CompaniesDashboard", () => {
     );
     render(<CompaniesDashboard />);
 
-    fireEvent.change(screen.getByLabelText("Upload logo"), {
-      target: {
-        files: [new File(["invalid"], "logo.txt", { type: "text/plain" })],
+    const input = screen.getByLabelText("Upload logo");
+    const file = new File(["invalid"], "logo.png", { type: "image/png" });
+    let selectedPath = "C:\\fakepath\\logo.png";
+    Object.defineProperty(input, "value", {
+      configurable: true,
+      get: () => selectedPath,
+      set: (value: string) => {
+        selectedPath = value;
       },
     });
 
+    expect(input).toHaveAttribute("accept", "image/png,image/jpeg,image/webp");
+    expect(
+      screen.getByText("PNG, JPEG, or WebP; maximum 10 MiB."),
+    ).toBeVisible();
+
+    fireEvent.change(input, { target: { files: [file] } });
     expect(
       await screen.findByText("Choose a PNG, JPEG, or WebP image."),
     ).toBeVisible();
+    await waitFor(() => expect(selectedPath).toBe(""));
+
+    selectedPath = "C:\\fakepath\\logo.png";
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(api.uploadLogo).toHaveBeenCalledTimes(2));
+    expect(selectedPath).toBe("");
     expect(
       screen.queryByText(/could not be completed/i),
     ).not.toBeInTheDocument();

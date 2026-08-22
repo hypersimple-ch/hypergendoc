@@ -13,6 +13,10 @@ import type {
   TemplateVersion,
 } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
+import {
+  IMAGE_UPLOAD_ACCEPT,
+  IMAGE_UPLOAD_GUIDANCE,
+} from "../lib/upload-policy";
 import { useActiveCompany } from "./active-company";
 import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
 import { Button, FormField, Input, PageHeader, Status } from "./primitives";
@@ -255,8 +259,11 @@ function TemplateField({
   }
 
   if (field.type === "image") {
-    async function upload(file: File | undefined) {
-      if (!file || uploadPending.current) return;
+    async function upload(file: File | undefined, input: HTMLInputElement) {
+      if (!file || uploadPending.current) {
+        input.value = "";
+        return;
+      }
       uploadPending.current = true;
       setUploading(true);
       setUploadError(undefined);
@@ -266,24 +273,30 @@ function TemplateField({
       } catch (reason) {
         setUploadError(safeError(reason));
       } finally {
+        input.value = "";
         uploadPending.current = false;
         setUploading(false);
       }
     }
+    const uploadGuidance = field.description
+      ? `${field.description} ${IMAGE_UPLOAD_GUIDANCE}`
+      : IMAGE_UPLOAD_GUIDANCE;
     return (
       <div className="grid gap-2">
         <FormField
           label={label}
-          {...(field.description ? { hint: field.description } : {})}
+          hint={uploadGuidance}
           {...(uploadError ? { error: uploadError } : {})}
         >
           <Input
             id={inputId}
             type="file"
-            accept="image/png,image/jpeg,image/webp"
+            accept={IMAGE_UPLOAD_ACCEPT}
             required={field.required && typeof value !== "string"}
             disabled={disabled || uploading}
-            onChange={(event) => void upload(event.target.files?.[0])}
+            onChange={(event) =>
+              void upload(event.currentTarget.files?.[0], event.currentTarget)
+            }
           />
         </FormField>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -292,7 +305,7 @@ function TemplateField({
             ? "Uploading image…"
             : typeof value === "string"
               ? "Image ready for this document."
-              : "PNG, JPEG, or WebP; maximum 10 MiB."}
+              : "Choose an image for this document."}
           {typeof value === "string" && (
             <Button
               tone="quiet"
