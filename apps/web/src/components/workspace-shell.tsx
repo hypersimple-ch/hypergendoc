@@ -91,8 +91,14 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
   }, [attempt, pathname, router]);
   if (state === "checking")
     return (
-      <main id="main-content" className="session-loading" aria-live="polite">
-        Checking your secure session…
+      <main
+        id="main-content"
+        className="session-loading"
+        role="status"
+        aria-live="polite"
+      >
+        <strong>HyperGenDoc</strong>
+        <p>Checking your secure session…</p>
       </main>
     );
   if (state === "ambiguous")

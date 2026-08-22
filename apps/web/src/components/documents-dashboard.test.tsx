@@ -182,6 +182,13 @@ describe("DocumentsDashboard", () => {
     expect(
       await screen.findByText("No documents for Acme Studio"),
     ).toBeVisible();
+    expect(screen.getByText(/Create and activate a template/)).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "Create document" }),
+    ).toHaveAttribute("href", "/workspace/documents/new");
+    expect(
+      screen.getByRole("link", { name: "Set up document creation" }),
+    ).toBeVisible();
     fireEvent.change(
       screen.getByLabelText("Search documents in this company"),
       {

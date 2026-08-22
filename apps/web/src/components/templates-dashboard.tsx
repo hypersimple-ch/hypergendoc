@@ -129,73 +129,88 @@ export function TemplatesDashboard() {
         </section>
       ) : (
         <>
-          <section
-            className="rounded-lg border border-border bg-card p-5 shadow-sm"
-            aria-labelledby="new-template-title"
-          >
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <p className="eyebrow">New template</p>
-                <h2
-                  id="new-template-title"
-                  className="mt-1 text-lg font-semibold"
-                >
-                  Start with an active style
-                </h2>
-              </div>
-              <Plus className="size-5 text-primary" aria-hidden="true" />
-            </div>
-            <LoadState {...data} />
-            {data.value && (
-              <TemplateCreate
-                companyId={activeCompany.id}
-                styles={data.value.styles}
-                existingNames={data.value.templates.map(
-                  (template) => template.name,
-                )}
-              />
-            )}
-          </section>
-          <section
-            className="rounded-lg border border-border bg-card shadow-sm"
-            aria-labelledby="template-library-title"
-          >
-            <div className="flex items-center justify-between border-b border-border p-5">
-              <div>
-                <p className="eyebrow">Library</p>
-                <h2
-                  id="template-library-title"
-                  className="mt-1 text-lg font-semibold"
-                >
-                  Templates for {activeCompany.name}
-                </h2>
-              </div>
-              {data.value && (
-                <span className="font-mono text-xs text-muted-foreground">
-                  {data.value.templates.length} total
-                </span>
-              )}
-            </div>
-            <div className="p-5">
-              <LoadState {...data} />
-              {data.value &&
-                (data.value.templates.length ? (
-                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {data.value.templates.map((template) => (
-                      <TemplateCard key={template.id} template={template} />
-                    ))}
+          <LoadState {...data} />
+          {data.value && (
+            <>
+              <section
+                className="rounded-lg border border-border bg-card p-5 shadow-sm"
+                aria-labelledby="new-template-title"
+              >
+                <div className="mb-4 flex items-start justify-between gap-3">
+                  <div>
+                    <p className="eyebrow">New template</p>
+                    <h2
+                      id="new-template-title"
+                      className="mt-1 text-lg font-semibold"
+                    >
+                      Start with an active style
+                    </h2>
                   </div>
-                ) : (
-                  <Empty>
-                    <strong>No templates for {activeCompany.name}</strong>
-                    <p>
-                      Create a template above, then configure its fields and
-                      layout in the studio.
-                    </p>
-                  </Empty>
-                ))}
-            </div>
-          </section>
+                  <Plus className="size-5 text-primary" aria-hidden="true" />
+                </div>
+                <TemplateCreate
+                  companyId={activeCompany.id}
+                  styles={data.value.styles}
+                  existingNames={data.value.templates.map(
+                    (template) => template.name,
+                  )}
+                />
+              </section>
+              <section
+                className="rounded-lg border border-border bg-card shadow-sm"
+                aria-labelledby="template-library-title"
+              >
+                <div className="flex items-center justify-between border-b border-border p-5">
+                  <div>
+                    <p className="eyebrow">Library</p>
+                    <h2
+                      id="template-library-title"
+                      className="mt-1 text-lg font-semibold"
+                    >
+                      Templates for {activeCompany.name}
+                    </h2>
+                  </div>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {data.value.templates.length} total
+                  </span>
+                </div>
+                <div className="p-5">
+                  {data.value.templates.length ? (
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                      {data.value.templates.map((template) => (
+                        <TemplateCard key={template.id} template={template} />
+                      ))}
+                    </div>
+                  ) : (
+                    <Empty>
+                      <strong>No templates for {activeCompany.name}</strong>
+                      {data.value.styles.some(
+                        (style) => style.activeVersionId,
+                      ) ? (
+                        <p>
+                          Create a template above, then configure its fields and
+                          layout in the studio.
+                        </p>
+                      ) : (
+                        <>
+                          <p>
+                            Create and activate a style before creating the
+                            first template.
+                          </p>
+                          <Link
+                            className="mt-3 inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline"
+                            href="/workspace/styles"
+                          >
+                            Open style library
+                          </Link>
+                        </>
+                      )}
+                    </Empty>
+                  )}
+                </div>
+              </section>
+            </>
+          )}
         </>
       )}
     </div>

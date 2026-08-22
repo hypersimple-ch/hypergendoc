@@ -89,7 +89,7 @@ export function DocumentsDashboard() {
               className="button inline-flex items-center"
               href="/workspace/documents/new"
             >
-              Create document
+              Set up document creation
             </Link>
           </div>
         }
@@ -197,7 +197,23 @@ function NoDocumentsForCompany({ companyName }: { companyName: string }) {
   return (
     <Empty>
       <strong>No documents for {companyName}</strong>
-      <p>Wait for an authorized agent to create one.</p>
+      <p>
+        Create and activate a template, then create the first governed document.
+      </p>
+      <div className="mt-3 flex flex-wrap justify-center gap-3">
+        <Link
+          className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+          href="/workspace/templates"
+        >
+          Review templates
+        </Link>
+        <Link
+          className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+          href="/workspace/documents/new"
+        >
+          Create document
+        </Link>
+      </div>
     </Empty>
   );
 }
@@ -205,7 +221,7 @@ function NoMatchingDocuments({ onClear }: { onClear: () => void }) {
   return (
     <Empty>
       <strong>No matching documents</strong>
-      <p>Try another search, or wait for an authorized agent to create one.</p>
+      <p>Try another search or clear the current filter.</p>
       <Button tone="quiet" onClick={onClear}>
         Clear search
       </Button>
