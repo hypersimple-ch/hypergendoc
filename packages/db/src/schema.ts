@@ -397,6 +397,50 @@ export const mcpCompanyScopes = pgTable(
   ],
 );
 
+export const mutationOperationStatus = pgEnum("mutation_operation_status", [
+  "pending",
+  "external_applied",
+  "completed",
+  "reconcile_required",
+]);
+export const mutationOperations = pgTable(
+  "mutation_operations",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    idempotencyKey: text("idempotency_key").notNull(),
+    operationType: text("operation_type").notNull(),
+    targetType: text("target_type").notNull(),
+    targetId: text("target_id"),
+    externalReference: text("external_reference"),
+    status: mutationOperationStatus("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    safeErrorCode: text("safe_error_code"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("mutation_operation_idempotency_unique").on(
+      table.workspaceId,
+      table.idempotencyKey,
+    ),
+    index("mutation_operation_reconcile_idx").on(table.status, table.updatedAt),
+    check(
+      "mutation_operation_attempts_nonnegative",
+      sql`${table.attempts} >= 0`,
+    ),
+    check(
+      "mutation_operation_safe_error_code",
+      sql`${table.safeErrorCode} is null or ${table.safeErrorCode} ~ '^[a-z0-9_]{1,64}$'`,
+    ),
+  ],
+);
+
 export const deletionJobs = pgTable(
   "deletion_jobs",
   {

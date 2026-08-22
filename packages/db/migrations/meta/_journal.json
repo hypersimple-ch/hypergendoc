@@ -50,6 +50,13 @@
       "when": 1786247200000,
       "tag": "0006_durable_mail",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787415504001,
+      "tag": "0007_mutation_operations",
+      "breakpoints": true
     }
   ]
 }

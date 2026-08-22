@@ -52,3 +52,13 @@ On startup the dispatcher returns expired leases to `pending`; graceful shutdown
 5. Investigate `dead` jobs by safe job ID. Their single-use URL has already been erased. Do not replay them. Ask the user to request a fresh verification or reset link after the transport is healthy.
 
 When SMTP is absent the dispatcher does not run and emits `mail.dispatcher_unavailable`; jobs remain pending. This is durable acceptance, not delivery. Configure SMTP and restart to recover them.
+
+## Recovering partial Git and object-store mutations
+
+External side effects must create a `mutation_operations` row before writing Git or S3. The row uses a workspace-scoped idempotency key. It stores only safe coordinates: operation type, target IDs, and an opaque Git checkpoint or object key. It must never store tokens, request bodies, document bodies, file bytes, or raw error text.
+
+State transitions are `pending` → `external_applied` → `completed`. A process interruption or final database failure moves the row to `reconcile_required` with an allow-listed `safe_error_code`. Operators run the bounded reconciler with operation-specific Git/S3 handlers. Handlers must verify the target and external reference before completing or removing an orphan. Retrying `begin` with the same workspace and idempotency key returns the existing operation; a different operation type is rejected.
+
+Alert on old `pending`, `external_applied`, or `reconcile_required` rows. Do not delete journal rows to hide failures. Investigate the safe code and run the reconciler again after fixing the dependency.
+
+PostgreSQL-only domain mutations write their success audit event through the same Drizzle transaction. An audit insert error therefore rolls the business mutation back. Credential creation returns its one-time token only after that transaction commits.

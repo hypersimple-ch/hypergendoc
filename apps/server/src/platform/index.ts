@@ -7,5 +7,6 @@ export * from "./health.js";
 export * from "./logger.js";
 export * from "./logo-upload.js";
 export * from "./mail.js";
+export * from "./mutation-operations.js";
 export * from "./object-store.js";
 export * from "./rate-limit.js";
