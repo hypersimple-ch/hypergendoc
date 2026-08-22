@@ -1,6 +1,8 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { EmailActionForm } from "../../../components/auth-forms";
 
+export const metadata: Metadata = { title: "Recover account" };
 export default function ForgotPasswordPage() {
   return (
     <>

@@ -297,6 +297,35 @@ describe("WorkspaceShell", () => {
     ).toBeVisible();
   });
 
+  it("keeps parent navigation current on nested workspace routes", async () => {
+    mockCompanies();
+    navigation.pathname = "/workspace/templates/template-1";
+    const view = render(
+      <WorkspaceShell>
+        <p>Template studio</p>
+      </WorkspaceShell>,
+    );
+
+    expect(
+      await screen.findByRole("link", { name: "Templates" }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Overview" })).not.toHaveAttribute(
+      "aria-current",
+    );
+
+    navigation.pathname = "/workspace/documents/new";
+    view.rerender(
+      <WorkspaceShell>
+        <p>Document creation</p>
+      </WorkspaceShell>,
+    );
+    expect(screen.getByRole("link", { name: "Documents" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("link", { name: "MCP credentials" })).toBeVisible();
+  });
+
   it("groups navigation and manages mobile-menu focus, Escape, and sign-out retry", async () => {
     mockCompanies();
     signOut.mockRejectedValueOnce(new Error("offline"));

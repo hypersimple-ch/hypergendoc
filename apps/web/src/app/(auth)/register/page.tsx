@@ -1,6 +1,8 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { RegisterForm } from "../../../components/auth-forms";
 
+export const metadata: Metadata = { title: "Create account" };
 export default function RegisterPage() {
   return (
     <>

@@ -1,7 +1,9 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { LoginForm } from "../../../components/auth-forms";
 import { Status } from "../../../components/primitives";
 
+export const metadata: Metadata = { title: "Sign in" };
 const verifiedMessage = "Email verified. You can now sign in.";
 const invalidVerificationMessage =
   "This verification link is invalid or has expired. Request a new one.";

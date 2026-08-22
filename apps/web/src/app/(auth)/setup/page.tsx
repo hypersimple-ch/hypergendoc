@@ -1,6 +1,8 @@
+import type { Metadata } from "next";
 import { WorkspaceForm } from "../../../components/auth-forms";
 import { WorkspaceSetupBoundary } from "../../../components/workspace-shell";
 
+export const metadata: Metadata = { title: "Set up workspace" };
 export default function WorkspaceBootstrapPage() {
   return (
     <WorkspaceSetupBoundary>

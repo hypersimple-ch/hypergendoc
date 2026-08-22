@@ -1,5 +1,7 @@
+import type { Metadata } from "next";
 import { EmailActionForm } from "../../../components/auth-forms";
 
+export const metadata: Metadata = { title: "Verify email" };
 export default function VerifyEmailPage() {
   return (
     <>

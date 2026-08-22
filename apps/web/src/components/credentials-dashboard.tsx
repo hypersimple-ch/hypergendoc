@@ -131,7 +131,7 @@ export function CredentialsDashboard() {
             aria-hidden="true"
           />
           <div>
-            <p className="eyebrow">Governance / MCP access</p>
+            <p className="eyebrow">Governance / MCP credentials</p>
             <h1 className="mt-1">Owner access required.</h1>
             <Status kind="warning">
               Only workspace owners can view or manage MCP credentials.
@@ -144,7 +144,7 @@ export function CredentialsDashboard() {
   return (
     <>
       <PageHeader
-        eyebrow="Governance / MCP access"
+        eyebrow="Governance / MCP credentials"
         title="Scoped agent access"
         description="Issue narrowly scoped credentials for MCP agents. Secrets are shown once and cannot be retrieved later."
         aside={

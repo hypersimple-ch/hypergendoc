@@ -7,6 +7,15 @@ import { useActiveCompany } from "./active-company";
 import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
 import { Button, PageHeader, Status, Table } from "./primitives";
 
+const auditDateTime = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZoneName: "short",
+});
+
 export function AuditDashboard() {
   const { context, loading, error, reload } = useActiveCompany();
   if (loading || error)
@@ -185,7 +194,11 @@ function OwnerAuditLog() {
                         {event.outcome}
                       </span>
                     </td>
-                    <td>{new Date(event.createdAt).toLocaleString()}</td>
+                    <td>
+                      <time dateTime={event.createdAt}>
+                        {auditDateTime.format(new Date(event.createdAt))}
+                      </time>
+                    </td>
                   </tr>
                 ))}
               </Table>

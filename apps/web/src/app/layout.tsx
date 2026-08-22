@@ -3,7 +3,10 @@ import type { ReactNode } from "react";
 import "./styles.css";
 
 export const metadata: Metadata = {
-  title: "HyperGenDoc",
+  title: {
+    default: "HyperGenDoc",
+    template: "%s | HyperGenDoc",
+  },
   description: "Branded documents for agencies and their agents.",
 };
 

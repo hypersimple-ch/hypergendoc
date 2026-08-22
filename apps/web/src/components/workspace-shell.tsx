@@ -45,7 +45,11 @@ const navigationGroups = [
     label: "Administration",
     links: [
       { href: "/workspace/members", label: "Members", icon: Users },
-      { href: "/workspace/credentials", label: "MCP access", icon: KeyRound },
+      {
+        href: "/workspace/credentials",
+        label: "MCP credentials",
+        icon: KeyRound,
+      },
       { href: "/workspace/audit", label: "Audit log", icon: ScrollText },
     ],
   },
@@ -373,7 +377,13 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
                   <li key={href}>
                     <Link
                       href={href}
-                      aria-current={pathname === href ? "page" : undefined}
+                      aria-current={
+                        pathname === href ||
+                        (href !== "/workspace" &&
+                          pathname.startsWith(`${href}/`))
+                          ? "page"
+                          : undefined
+                      }
                       onClick={() => closeMenu()}
                     >
                       <Icon size={17} strokeWidth={1.8} aria-hidden="true" />
