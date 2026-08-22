@@ -21,7 +21,7 @@ export function TemplateDocumentEditor({
 }: {
   document: Document;
   current: DocumentCurrentSource;
-  onSaved: () => void;
+  onSaved: (message: string) => void;
 }) {
   const stored = useMemo(() => {
     try {
@@ -74,11 +74,7 @@ export function TemplateDocumentEditor({
         templateVersionId: stored.templateVersionId,
         data,
       });
-      setMessage({
-        text: "Template data committed as a new revision.",
-        error: false,
-      });
-      onSaved();
+      onSaved("Template data committed as a new revision.");
     } catch (error) {
       setMessage({ text: safeError(error), error: true });
     } finally {

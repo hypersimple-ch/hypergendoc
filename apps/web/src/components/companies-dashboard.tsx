@@ -269,7 +269,6 @@ function CompanyRow({
     setMessage(undefined);
     try {
       await dashboardApi.uploadLogo(company.id, file);
-      onChange();
       setMessage({ text: "Logo uploaded.", error: false });
     } catch (e) {
       setMessage({ text: safeError(e), error: true });

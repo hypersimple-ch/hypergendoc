@@ -127,7 +127,7 @@ describe("CompaniesDashboard", () => {
     );
   });
 
-  it("prevents duplicate uploads and reloads shared state after an uploaded logo", async () => {
+  it("prevents duplicate uploads and keeps success feedback visible", async () => {
     const reload = vi.fn();
     activeCompany.mockReturnValue(workspace({ reload }));
     let finish!: () => void;
@@ -144,7 +144,7 @@ describe("CompaniesDashboard", () => {
     expect(input).toBeDisabled();
 
     finish();
-    await waitFor(() => expect(reload).toHaveBeenCalledOnce());
+    expect(reload).not.toHaveBeenCalled();
     const announcement = await screen.findByText("Logo uploaded.");
     expect(announcement).toBeVisible();
     expect(announcement.parentElement).toHaveAttribute("aria-live", "polite");

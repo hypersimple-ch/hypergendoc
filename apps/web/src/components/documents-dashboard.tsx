@@ -378,7 +378,10 @@ function DocumentDetail({
                     <TemplateDocumentEditor
                       document={document}
                       current={activeSource}
-                      onSaved={() => detail.reload()}
+                      onSaved={(successMessage) => {
+                        setMessage({ text: successMessage, error: false });
+                        detail.reload();
+                      }}
                     />
                   ) : (
                     <pre className="document-source">
