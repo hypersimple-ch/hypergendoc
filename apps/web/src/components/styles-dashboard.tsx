@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight, Palette, Plus } from "lucide-react";
 import type { Company, CompanyAssets, Style } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
@@ -22,32 +22,46 @@ export function StylesDashboard() {
   const [styles, setStyles] = useState<Style[]>();
   const [assets, setAssets] = useState<CompanyAssets>();
   const [error, setError] = useState<string>();
+  const [stylesLoading, setStylesLoading] = useState(false);
   const [selected, setSelected] = useState<Style>();
   const stylesRequest = useRef(0);
 
-  useEffect(() => {
+  const loadStyles = useCallback(async (companyId: string) => {
     const request = ++stylesRequest.current;
     setError(undefined);
+    setStylesLoading(true);
     setStyles(undefined);
     setAssets(undefined);
+    try {
+      const [nextStyles, nextAssets] = await Promise.all([
+        dashboardApi.styles(companyId),
+        dashboardApi.assets(companyId),
+      ]);
+      if (stylesRequest.current !== request) return;
+      setStyles(nextStyles);
+      setAssets(nextAssets);
+    } catch (reason) {
+      if (stylesRequest.current === request) setError(safeError(reason));
+    } finally {
+      if (stylesRequest.current === request) setStylesLoading(false);
+    }
+  }, []);
+
+  const activeCompanyId = activeCompany?.id;
+  useEffect(() => {
     setSelected(undefined);
-    if (!activeCompany) return;
-    Promise.all([
-      dashboardApi.styles(activeCompany.id),
-      dashboardApi.assets(activeCompany.id),
-    ])
-      .then(([nextStyles, nextAssets]) => {
-        if (stylesRequest.current !== request) return;
-        setStyles(nextStyles);
-        setAssets(nextAssets);
-      })
-      .catch((reason) => {
-        if (stylesRequest.current === request) setError(safeError(reason));
-      });
+    if (activeCompanyId) void loadStyles(activeCompanyId);
+    else {
+      stylesRequest.current++;
+      setStyles(undefined);
+      setAssets(undefined);
+      setError(undefined);
+      setStylesLoading(false);
+    }
     return () => {
-      if (stylesRequest.current === request) stylesRequest.current++;
+      stylesRequest.current++;
     };
-  }, [activeCompany?.id]);
+  }, [activeCompanyId, loadStyles]);
 
   if (selected) {
     return (
@@ -62,17 +76,9 @@ export function StylesDashboard() {
             return next;
           }}
           onClose={() => {
-            setStyles((current) =>
-              current
-                ? [
-                    ...current.filter(
-                      (currentStyle) => currentStyle.id !== selected.id,
-                    ),
-                    selected,
-                  ]
-                : [selected],
-            );
+            const companyId = selected.companyId;
             setSelected(undefined);
+            void loadStyles(companyId);
           }}
         />
       </div>
@@ -94,118 +100,131 @@ export function StylesDashboard() {
       />
       {activeCompany ? (
         <>
-          <section className="panel dashboard-panel !rounded-lg !border-border !bg-card !p-5 !shadow-sm">
-            <div className="panel-heading !mb-4 !items-center">
-              <div>
-                <p className="eyebrow !font-mono !text-primary">New style</p>
-                <h2 className="!mt-1 !text-lg !font-semibold text-foreground">
-                  Create for {activeCompany.name}
-                </h2>
-              </div>
-              <span className="hidden rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-foreground sm:inline-flex">
-                <Plus className="mr-1 size-3.5" aria-hidden="true" /> New system
-              </span>
-            </div>
-            <StyleCreate
-              company={activeCompany}
-              existingNames={styles?.map((style) => style.name) ?? []}
-              onCreated={(created) => {
-                setStyles((current) =>
-                  current
-                    ? [
-                        ...current.filter((style) => style.id !== created.id),
-                        created,
-                      ]
-                    : [created],
-                );
-                setSelected(created);
-              }}
-            />
-          </section>
-          <section
-            className="panel dashboard-panel !rounded-lg !border-border !bg-card !p-5 !shadow-sm"
-            aria-labelledby="style-library-title"
-          >
-            <div className="panel-heading !mb-4 !flex !flex-row !items-center">
-              <div className="min-w-0">
-                <p className="eyebrow !font-mono !text-primary">Library</p>
-                <h2
-                  id="style-library-title"
-                  className="!mt-1 !text-lg !font-semibold text-foreground"
-                >
-                  Your style systems
-                </h2>
-              </div>
-              {styles && (
-                <span className="font-mono text-xs text-muted-foreground">
-                  {styles.length} total
-                </span>
-              )}
-            </div>
-            {error && <Status kind="error">{error}</Status>}
-            {styles &&
-              (styles.length ? (
-                <div className="style-card-grid">
-                  {styles.map((style) => (
-                    <article
-                      className="style-card !gap-4 !rounded-lg !border-border !bg-card !p-4 !shadow-none hover:!border-primary hover:!shadow-sm"
-                      key={style.id}
-                    >
-                      <div className="style-card__head !text-xs !text-muted-foreground">
-                        <span
-                          className={`badge ${style.activeVersionId ? "" : "badge--quiet"}`}
-                        >
-                          {style.activeVersionId ? "Active" : "Inactive"}
-                        </span>
-                        <time dateTime={style.createdAt}>
-                          Created{" "}
-                          {new Date(style.createdAt).toLocaleDateString()}
-                        </time>
-                      </div>
-                      <h3 className="!font-sans !text-base !font-semibold !tracking-tight text-foreground">
-                        {style.name}
-                      </h3>
-                      <div
-                        className="style-card__swatches"
-                        aria-label="Example color palette"
-                      >
-                        <span
-                          style={{
-                            backgroundColor:
-                              initialStyleDefinition.colors.primary,
-                          }}
-                        />
-                        <span
-                          style={{
-                            backgroundColor:
-                              initialStyleDefinition.colors.accent,
-                          }}
-                        />
-                        <span
-                          style={{
-                            backgroundColor:
-                              initialStyleDefinition.colors.muted,
-                          }}
-                        />
-                      </div>
-                      <Button
-                        className="!justify-between"
-                        tone="quiet"
-                        onClick={() => setSelected(style)}
-                      >
-                        Edit versions{" "}
-                        <ArrowRight className="size-4" aria-hidden="true" />
-                      </Button>
-                    </article>
-                  ))}
+          <LoadState
+            loading={stylesLoading}
+            error={error}
+            reload={() => void loadStyles(activeCompany.id)}
+          />
+          {styles && assets && (
+            <>
+              <section className="panel dashboard-panel !rounded-lg !border-border !bg-card !p-5 !shadow-sm">
+                <div className="panel-heading !mb-4 !items-center">
+                  <div>
+                    <p className="eyebrow !font-mono !text-primary">
+                      New style
+                    </p>
+                    <h2 className="!mt-1 !text-lg !font-semibold text-foreground">
+                      Create for {activeCompany.name}
+                    </h2>
+                  </div>
+                  <span className="hidden rounded-md bg-accent px-2.5 py-1 text-xs font-medium text-accent-foreground sm:inline-flex">
+                    <Plus className="mr-1 size-3.5" aria-hidden="true" /> New
+                    system
+                  </span>
                 </div>
-              ) : (
-                <Empty>
-                  <strong>No styles for {activeCompany.name}</strong>
-                  <p>Create a style using the structured controls above.</p>
-                </Empty>
-              ))}
-          </section>
+                <StyleCreate
+                  company={activeCompany}
+                  existingNames={styles?.map((style) => style.name) ?? []}
+                  onCreated={(created) => {
+                    setStyles((current) =>
+                      current
+                        ? [
+                            ...current.filter(
+                              (style) => style.id !== created.id,
+                            ),
+                            created,
+                          ]
+                        : [created],
+                    );
+                    setSelected(created);
+                  }}
+                />
+              </section>
+              <section
+                className="panel dashboard-panel !rounded-lg !border-border !bg-card !p-5 !shadow-sm"
+                aria-labelledby="style-library-title"
+              >
+                <div className="panel-heading !mb-4 !flex !flex-row !items-center">
+                  <div className="min-w-0">
+                    <p className="eyebrow !font-mono !text-primary">Library</p>
+                    <h2
+                      id="style-library-title"
+                      className="!mt-1 !text-lg !font-semibold text-foreground"
+                    >
+                      Your style systems
+                    </h2>
+                  </div>
+                  {styles && (
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {styles.length} total
+                    </span>
+                  )}
+                </div>
+                {styles &&
+                  (styles.length ? (
+                    <div className="style-card-grid">
+                      {styles.map((style) => (
+                        <article
+                          className="style-card !gap-4 !rounded-lg !border-border !bg-card !p-4 !shadow-none hover:!border-primary hover:!shadow-sm"
+                          key={style.id}
+                        >
+                          <div className="style-card__head !text-xs !text-muted-foreground">
+                            <span
+                              className={`badge ${style.activeVersionId ? "" : "badge--quiet"}`}
+                            >
+                              {style.activeVersionId ? "Active" : "Inactive"}
+                            </span>
+                            <time dateTime={style.createdAt}>
+                              Created{" "}
+                              {new Date(style.createdAt).toLocaleDateString()}
+                            </time>
+                          </div>
+                          <h3 className="!font-sans !text-base !font-semibold !tracking-tight text-foreground">
+                            {style.name}
+                          </h3>
+                          <div
+                            className="style-card__swatches"
+                            aria-label="Example color palette"
+                          >
+                            <span
+                              style={{
+                                backgroundColor:
+                                  initialStyleDefinition.colors.primary,
+                              }}
+                            />
+                            <span
+                              style={{
+                                backgroundColor:
+                                  initialStyleDefinition.colors.accent,
+                              }}
+                            />
+                            <span
+                              style={{
+                                backgroundColor:
+                                  initialStyleDefinition.colors.muted,
+                              }}
+                            />
+                          </div>
+                          <Button
+                            className="!justify-between"
+                            tone="quiet"
+                            onClick={() => setSelected(style)}
+                          >
+                            Edit versions{" "}
+                            <ArrowRight className="size-4" aria-hidden="true" />
+                          </Button>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <Empty>
+                      <strong>No styles for {activeCompany.name}</strong>
+                      <p>Create a style using the structured controls above.</p>
+                    </Empty>
+                  ))}
+              </section>
+            </>
+          )}
         </>
       ) : (
         <section className="panel dashboard-panel">

@@ -168,7 +168,7 @@ describe("StylesDashboard", () => {
     expect(
       screen.getByRole("heading", { name: "Structured brand systems." }),
     ).toBeVisible();
-    expect(screen.getByLabelText("New style name")).toBeVisible();
+    expect(await screen.findByLabelText("New style name")).toBeVisible();
     expect(screen.queryByLabelText("Company")).not.toBeInTheDocument();
     expect(
       screen.queryByLabelText("Filter styles by company"),
@@ -204,11 +204,11 @@ describe("StylesDashboard", () => {
   });
 
   it("creates a style for the active company", async () => {
-    styles.mockResolvedValue([]);
+    styles.mockResolvedValueOnce([]).mockResolvedValueOnce([styleB]);
     style.mockResolvedValue({ style: styleB, versions: [version()] });
     createStyle.mockResolvedValue(styleB);
     renderWithActiveCompany();
-    fireEvent.change(screen.getByLabelText("New style name"), {
+    fireEvent.change(await screen.findByLabelText("New style name"), {
       target: { value: "Beta style" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Create style" }));
@@ -221,7 +221,7 @@ describe("StylesDashboard", () => {
       await screen.findByRole("button", { name: "Back to style library" }),
     );
     expect(
-      screen.getByRole("heading", { name: "Beta style", level: 3 }),
+      await screen.findByRole("heading", { name: "Beta style", level: 3 }),
     ).toBeVisible();
     fireEvent.change(screen.getByLabelText("New style name"), {
       target: { value: " beta STYLE " },
@@ -251,6 +251,23 @@ describe("StylesDashboard", () => {
     expect(createStyle).not.toHaveBeenCalled();
   });
 
+  it("shows one recoverable load error and disables creation until retry succeeds", async () => {
+    styles
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce([styleB]);
+    renderWithActiveCompany();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "We could not load this page. Please try again.",
+    );
+    expect(screen.queryByLabelText("New style name")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Beta style")).toBeVisible();
+    expect(screen.getByLabelText("New style name")).toBeEnabled();
+    expect(styles).toHaveBeenCalledTimes(2);
+  });
+
   it("ignores stale style results and errors after an active-company switch", async () => {
     let rejectFirst!: (reason: Error) => void;
     let resolveSecond!: (value: (typeof styleB)[]) => void;
@@ -276,8 +293,12 @@ describe("StylesDashboard", () => {
     );
   });
 
-  it("replaces browse with the selected style studio and restores browse when returning", async () => {
-    styles.mockResolvedValue([styleB]);
+  it("restores and refetches the style library when returning from the studio", async () => {
+    styles
+      .mockResolvedValueOnce([styleB])
+      .mockResolvedValueOnce([
+        { ...styleB, activeVersionId: "version-active" },
+      ]);
     style.mockResolvedValue({ style: styleB, versions: [version()] });
     renderWithActiveCompany();
     fireEvent.click(
@@ -304,8 +325,10 @@ describe("StylesDashboard", () => {
     expect(
       screen.getByRole("heading", { name: "Structured brand systems." }),
     ).toBeVisible();
-    expect(screen.getByLabelText("New style name")).toBeVisible();
+    expect(await screen.findByLabelText("New style name")).toBeVisible();
     expect(screen.getByRole("button", { name: "Edit versions" })).toBeVisible();
+    expect(screen.getByText("Active")).toBeVisible();
+    expect(styles).toHaveBeenCalledTimes(2);
     expect(
       screen.queryByRole("button", { name: "Back to style library" }),
     ).not.toBeInTheDocument();
