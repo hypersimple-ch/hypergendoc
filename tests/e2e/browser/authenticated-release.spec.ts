@@ -44,7 +44,7 @@ test("disposable verified account reaches every protected workspace route", asyn
     await page.getByRole("button", { name: "Create account" }).click();
     expect((await registration).ok()).toBe(true);
     await expect(
-      page.getByText("Check your email for the next step."),
+      page.getByText(/Verification email accepted for delivery/),
     ).toBeVisible();
 
     sql(`UPDATE "user" SET email_verified = true WHERE email = '${email}'`);

@@ -80,7 +80,7 @@ test("verified owner completes the governed document and credential journey", as
     await page.getByRole("button", { name: "Create account" }).click();
     expect((await registration).status()).toBe(200);
     await expect(
-      page.getByText("Check your email for the next step."),
+      page.getByText(/Verification email accepted for delivery/),
     ).toBeVisible();
 
     verify(email);
