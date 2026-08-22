@@ -72,7 +72,6 @@ function repository(): TemplateRepository {
         companyId: input.companyId,
         name: input.name,
         activeVersionId: null,
-        archivedAt: null,
         createdAt: new Date().toISOString(),
       };
       templates.push(created);

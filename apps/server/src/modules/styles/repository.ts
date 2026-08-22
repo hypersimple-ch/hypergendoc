@@ -20,7 +20,6 @@ const style = (row: typeof styles.$inferSelect): Style => ({
   companyId: row.companyId,
   name: row.name,
   activeVersionId: row.activeVersionId,
-  archivedAt: row.archivedAt?.toISOString() ?? null,
   createdAt: row.createdAt.toISOString(),
 });
 const version = (row: typeof styleVersions.$inferSelect): StyleVersion => ({

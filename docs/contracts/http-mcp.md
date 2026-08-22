@@ -59,6 +59,8 @@ Additive response changes require optional fields; breaking changes require a ve
 - `POST /api/companies/:companyId/assets/images`
 - `GET /api/companies/:companyId/assets/images/:objectId/content`
 
+Company archive/restore is an explicit lifecycle. Style and template responses do not expose archive state because archive/restore commands for those resources are not part of the current contract.
+
 The complete field, path, expression, node, page-master, and failure contract is documented in [Declarative template contract](./template-ast.md).
 
 Template definitions are strict, versioned declarative ASTs. They pin a style version and may define typed fields, computed expressions, page masters, components, conditions, repeaters, tables, image bindings, contents navigation, and generic layout nodes. Document data and definitions retain the existing explicit byte, expansion, renderer, and tenant-isolation limits. Unknown fields, arbitrary HTML/CSS/JavaScript, remote assets, invalid expressions, and foreign-company media references are rejected.

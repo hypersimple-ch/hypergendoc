@@ -1049,7 +1049,6 @@ export const TemplateSchema = z
     companyId: UuidSchema,
     name: z.string().min(1).max(120),
     activeVersionId: UuidSchema.nullable(),
-    archivedAt: TimestampSchema.nullable(),
     createdAt: TimestampSchema,
   })
   .strict();

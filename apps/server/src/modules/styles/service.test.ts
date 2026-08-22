@@ -85,7 +85,6 @@ function repository(): StyleRepository {
         companyId: input.companyId,
         name: input.name,
         activeVersionId: null,
-        archivedAt: null,
         createdAt: new Date().toISOString(),
       };
       styles.push(style);

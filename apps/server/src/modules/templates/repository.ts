@@ -19,7 +19,6 @@ const template = (row: typeof templates.$inferSelect): Template => ({
   companyId: row.companyId,
   name: row.name,
   activeVersionId: row.activeVersionId,
-  archivedAt: row.archivedAt?.toISOString() ?? null,
   createdAt: row.createdAt.toISOString(),
 });
 

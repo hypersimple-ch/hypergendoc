@@ -47,7 +47,6 @@ const style: Style = {
   companyId,
   name: "Example Style",
   activeVersionId: styleVersionId,
-  archivedAt: null,
   createdAt: timestamp,
 };
 const document: Document = {

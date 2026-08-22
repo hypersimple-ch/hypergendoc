@@ -28,6 +28,8 @@ PDFs are generated only when the current-PDF endpoint is requested. The renderer
 
 Workspaces own companies, documents, styles, memberships, credentials, and audit records. Human sessions and MCP credentials establish the workspace; MCP permissions also require action scope and company allow-list membership. Cross-workspace/company document, commit, revert, and PDF requests are masked as `not_found`.
 
+Company archive and restore are explicit product operations. Style and template versions are immutable, but style/template archive state is not part of the public lifecycle contract. The reserved database columns and single-replica rate-limit boundary are governed by [ADR 0001](./decisions/0001-lifecycle-and-scaling-boundaries.md).
+
 The renderer has no network, database, object-store, or application secrets. It runs non-root with a read-only filesystem, narrow capabilities, `no-new-privileges`, seccomp, bounded resources, and per-job cleanup.
 
 ## Operations

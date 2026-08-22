@@ -9,6 +9,10 @@ Dokploy deploys the standalone Compose service. Traefik is the only public entry
 3. Run `pnpm check` before release.
 4. Monitor server, PostgreSQL, Git-volume capacity, object storage, renderer, and backup/restore failures. Do not log document source, tokens, or renderer transcripts.
 
+## Scaling guard
+
+Run exactly one `server` replica while authentication and MCP rate-limit counters are process-local. Do not configure Dokploy or Traefik horizontal scaling for the server. Before adding a second replica, implement and load-test a shared atomic rate-limit store as required by [ADR 0001](../architecture/decisions/0001-lifecycle-and-scaling-boundaries.md).
+
 ## Git history operations
 
 One durable private Git repository belongs to each company. It is source-history authority and is not directly served. Company archival retains the repository. Purge is out of scope; do not delete repository contents ad hoc.

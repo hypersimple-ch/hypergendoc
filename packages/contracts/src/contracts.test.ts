@@ -12,6 +12,8 @@ import {
   RevertDocumentToolInputSchema,
   ResolvedStyleAssetsSchema,
   StyleDefinitionSchema,
+  StyleSchema,
+  TemplateSchema,
   UpdateDocumentToolInputSchema,
   UpdateMcpCredentialInputSchema,
   RestoreCompanyInputSchema,
@@ -467,6 +469,23 @@ describe("shared contracts", () => {
       }),
     ).toThrow();
   });
+  it("does not expose unsupported style or template archive lifecycle fields", () => {
+    const shared = {
+      id,
+      companyId: id,
+      name: "Governed item",
+      activeVersionId: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    expect(StyleSchema.parse(shared)).toEqual(shared);
+    expect(TemplateSchema.parse(shared)).toEqual(shared);
+    expect(() => StyleSchema.parse({ ...shared, archivedAt: null })).toThrow();
+    expect(() =>
+      TemplateSchema.parse({ ...shared, archivedAt: null }),
+    ).toThrow();
+  });
+
   it("validates credential updates and the explicit company restore command", () => {
     expect(
       UpdateMcpCredentialInputSchema.parse({
