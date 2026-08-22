@@ -10,6 +10,7 @@ import type {
 } from "@hypergendoc/contracts";
 import type { ActorContext } from "../../platform/context.js";
 import { AppError } from "../../platform/errors.js";
+import type { BeginMutationOperation } from "../../platform/mutation-operations.js";
 import { CompanyDocumentGitStore } from "./git-store.js";
 import type { Renderer } from "./renderer-client.js";
 import { createDocumentService } from "./service.js";
@@ -65,13 +66,19 @@ async function fixture(
   options: {
     failWrite?: boolean;
     failTouch?: boolean;
+    failAudit?: boolean;
+    failRestore?: boolean;
     styleAssetResolver?: StyleAssetResolver;
   } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), "hypergendoc-service-"));
   roots.push(root);
   const documents: Document[] = [];
-  const audit = vi.fn(() => Promise.resolve());
+  const audit = vi.fn(() =>
+    options.failAudit
+      ? Promise.reject(new Error("audit unavailable"))
+      : Promise.resolve(),
+  );
   const lockCompanyForGitWrites = vi.fn(() => Promise.resolve());
   const touchDocument = vi.fn((_workspaceId: string, documentId: string) =>
     options.failTouch
@@ -90,7 +97,7 @@ async function fixture(
       });
       await previous;
       try {
-        return await operation(repository);
+        return await operation(repository, { write: audit });
       } finally {
         release();
       }
@@ -187,18 +194,39 @@ async function fixture(
   });
   const renderer: Renderer = { render };
   const actualGit = new CompanyDocumentGitStore({ rootDir: root });
-  const git = options.failWrite
-    ? {
-        write: vi.fn(() => Promise.reject(new Error("disk"))),
-        readCurrent: actualGit.readCurrent.bind(actualGit),
-        readHistorical: actualGit.readHistorical.bind(actualGit),
-        history: actualGit.history.bind(actualGit),
-        revert: actualGit.revert.bind(actualGit),
-        checkpoint: actualGit.checkpoint.bind(actualGit),
-        restoreCheckpoint: actualGit.restoreCheckpoint.bind(actualGit),
-        completeCheckpoint: actualGit.completeCheckpoint.bind(actualGit),
-      }
-    : actualGit;
+  const git =
+    options.failWrite || options.failRestore
+      ? {
+          write: options.failWrite
+            ? vi.fn(() => Promise.reject(new Error("disk")))
+            : actualGit.write.bind(actualGit),
+          readCurrent: actualGit.readCurrent.bind(actualGit),
+          readHistorical: actualGit.readHistorical.bind(actualGit),
+          history: actualGit.history.bind(actualGit),
+          revert: actualGit.revert.bind(actualGit),
+          checkpoint: actualGit.checkpoint.bind(actualGit),
+          restoreCheckpoint: options.failRestore
+            ? vi.fn(() => Promise.reject(new Error("restore failed")))
+            : actualGit.restoreCheckpoint.bind(actualGit),
+          completeCheckpoint: actualGit.completeCheckpoint.bind(actualGit),
+        }
+      : actualGit;
+  const operations = {
+    begin: vi.fn((input: BeginMutationOperation) =>
+      Promise.resolve({
+        ...input,
+        id: "operation",
+        targetId: input.targetId ?? null,
+        externalReference: input.externalReference ?? null,
+        status: "pending" as const,
+        attempts: 0,
+        replayed: false,
+      }),
+    ),
+    markExternalApplied: vi.fn(() => Promise.resolve()),
+    requireReconciliation: vi.fn(() => Promise.resolve()),
+    complete: vi.fn(() => Promise.resolve()),
+  };
   return {
     service: createDocumentService({
       repository,
@@ -209,12 +237,14 @@ async function fixture(
         ? { styleAssetResolver: options.styleAssetResolver }
         : {}),
       audit: { write: audit },
+      operations,
     }),
     git: actualGit,
     render,
     audit,
     lockCompanyForGitWrites,
     touchDocument,
+    operations,
   };
 }
 
@@ -359,5 +389,31 @@ describe("DocumentService Git history", () => {
     await expect(
       failed.service.create(human, createInput),
     ).rejects.toBeInstanceOf(AppError);
+  });
+
+  it("compensates Git and closes the journal when transactional audit fails", async () => {
+    const state = await fixture({ failAudit: true });
+    await expect(state.service.create(human, createInput)).rejects.toThrow(
+      "audit unavailable",
+    );
+    expect(state.operations.markExternalApplied).toHaveBeenCalledOnce();
+    expect(state.operations.complete).toHaveBeenCalledWith("operation");
+    expect(state.operations.requireReconciliation).not.toHaveBeenCalled();
+  });
+
+  it("keeps the Git checkpoint recoverable when compensation fails", async () => {
+    const state = await fixture({ failAudit: true, failRestore: true });
+    await expect(
+      state.service.create(human, createInput),
+    ).rejects.toMatchObject({
+      statusCode: 503,
+    });
+    expect(state.operations.requireReconciliation).toHaveBeenCalledWith(
+      "operation",
+      "git_compensation_failed",
+    );
+    const begin = state.operations.begin.mock.calls[0]?.[0];
+    expect(begin).not.toHaveProperty("body");
+    expect(begin?.externalReference).not.toContain("# Exact");
   });
 });

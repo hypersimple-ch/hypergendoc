@@ -169,7 +169,7 @@ function documentApp(actorFor: () => ActorContext) {
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
   const repository: DocumentRepository = {
-    transaction: async (operation) => operation(repository),
+    transaction: async (operation) => operation(repository, audit),
     companyExists: vi.fn(async () => true),
     findActiveStyle: vi.fn(async () => undefined),
     findStyleVersion: vi.fn(async () => undefined),

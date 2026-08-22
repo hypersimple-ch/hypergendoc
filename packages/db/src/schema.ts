@@ -400,6 +400,7 @@ export const mcpCompanyScopes = pgTable(
 export const mutationOperationStatus = pgEnum("mutation_operation_status", [
   "pending",
   "external_applied",
+  "reconciling",
   "completed",
   "reconcile_required",
 ]);

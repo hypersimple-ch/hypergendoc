@@ -42,6 +42,7 @@ export interface LogoUpload {
   readonly workspaceId: string;
   readonly companyId: string;
   readonly bytes: Uint8Array;
+  readonly objectKey?: string;
 }
 export interface LogoUploadResult extends StoredObject {
   readonly id: string;
@@ -66,6 +67,7 @@ export async function uploadLogo(
   const object = await store.putPrivate({
     bytes: upload.bytes,
     contentType,
+    ...(upload.objectKey ? { key: upload.objectKey } : {}),
     metadata: { kind: "logo" },
   });
   try {

@@ -15,6 +15,7 @@ export interface ObjectStore {
   putPrivate(input: {
     readonly bytes: Uint8Array;
     readonly contentType: string;
+    readonly key?: string;
     readonly metadata?: Readonly<Record<string, string>>;
   }): Promise<StoredObject>;
   delete(key: string): Promise<void>;
@@ -60,7 +61,8 @@ export function createPrivateObjectStore(
   return {
     async putPrivate(input) {
       const hash = sha256(input.bytes);
-      const key = `private/${Buffer.from(random(24)).toString("hex")}`;
+      const key =
+        input.key ?? `private/${Buffer.from(random(24)).toString("hex")}`;
       await client.put({
         bucket,
         key,

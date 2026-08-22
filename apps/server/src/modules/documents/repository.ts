@@ -14,12 +14,19 @@ import type {
   TemplateDefinition,
 } from "@hypergendoc/contracts";
 import type { DocumentRepository } from "./service-types.js";
+import {
+  createTransactionAuditWriter,
+  type AuditWriter,
+} from "../../platform/audit.js";
 
 type Db = Database;
 
 export interface GitDocumentRepository {
   transaction<T>(
-    operation: (repository: GitDocumentRepository) => Promise<T>,
+    operation: (
+      repository: GitDocumentRepository,
+      audit: AuditWriter,
+    ) => Promise<T>,
   ): Promise<T>;
   companyExists(workspaceId: string, companyId: string): Promise<boolean>;
   findActiveStyle(
@@ -291,7 +298,9 @@ export function createDocumentRepository(db: Database): DocumentRepository {
   const bind = (client: Db): GitDocumentRepository => ({
     ...operations(client),
     transaction: (operation) =>
-      client.transaction((tx) => operation(bind(tx as Db))),
+      client.transaction((tx) =>
+        operation(bind(tx as Db), createTransactionAuditWriter(tx)),
+      ),
   });
   return bind(db);
 }

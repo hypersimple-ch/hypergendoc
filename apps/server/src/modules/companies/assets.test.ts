@@ -68,6 +68,12 @@ describe("company assets", () => {
       store: { authorizedGet } as never,
       logoOwnership: { create: vi.fn() },
       audit: { write: () => Promise.resolve() },
+      operations: {
+        begin: vi.fn(),
+        markExternalApplied: vi.fn(),
+        requireReconciliation: vi.fn(),
+        complete: vi.fn(),
+      },
     });
     await expect(service.list(actor, "company-b")).rejects.toMatchObject({
       code: "not_found",
@@ -87,5 +93,69 @@ describe("company assets", () => {
       "font-id",
     );
     expect(authorizedGet).toHaveBeenCalledOnce();
+  });
+
+  it("records a recoverable state when S3 ownership succeeds but audit fails", async () => {
+    const calls: string[] = [];
+    const repository: CompanyAssetRepository = {
+      list: vi.fn().mockResolvedValue(assets),
+      findContent: vi.fn(),
+      create: vi.fn(),
+      createImage: vi.fn().mockImplementation(() => {
+        calls.push("ownership");
+        return Promise.resolve({ id: "object-id" });
+      }),
+    };
+    const begin = vi.fn().mockImplementation(() => {
+      calls.push("journal");
+      return Promise.resolve({
+        id: "operation-id",
+        status: "pending",
+        targetId: null,
+        replayed: false,
+      });
+    });
+    const markExternalApplied = vi.fn().mockImplementation(() => {
+      calls.push("external_applied");
+      return Promise.resolve();
+    });
+    const requireReconciliation = vi.fn().mockResolvedValue(undefined);
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    );
+    const service = createCompanyAssetService({
+      companies: { get: () => Promise.resolve({}) } as never,
+      repository,
+      logoOwnership: { create: vi.fn() },
+      store: {
+        putPrivate: vi.fn().mockImplementation((input: { key: string }) => {
+          calls.push("s3");
+          return Promise.resolve({
+            key: input.key,
+            sha256: "a".repeat(64),
+            bytes: png.byteLength,
+            contentType: "image/png",
+          });
+        }),
+        delete: vi.fn().mockResolvedValue(undefined),
+      } as never,
+      audit: { write: () => Promise.reject(new Error("audit unavailable")) },
+      operations: {
+        begin,
+        markExternalApplied,
+        requireReconciliation,
+        complete: vi.fn(),
+      },
+    });
+    await expect(service.uploadImage(actor, "company-a", png)).rejects.toThrow(
+      "audit unavailable",
+    );
+    expect(calls).toEqual(["journal", "s3", "ownership", "external_applied"]);
+    expect(requireReconciliation).toHaveBeenCalledWith(
+      "operation-id",
+      "s3_mutation_incomplete",
+    );
+    expect(begin.mock.calls[0]?.[0]).not.toHaveProperty("bytes");
   });
 });

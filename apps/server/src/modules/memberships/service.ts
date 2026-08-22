@@ -1,5 +1,6 @@
 import type { WorkspaceRole } from "@hypergendoc/contracts";
 import type { HumanActor } from "../auth/actors.js";
+import type { AuditWriter } from "../../platform/audit.js";
 
 export class AuthorizationError extends Error {
   public constructor(
@@ -42,7 +43,10 @@ export interface MembershipRepository {
   countOwners(workspaceId: string): Promise<number>;
   /** Must execute callback against transaction-bound operations with owner row locks. */
   transaction<T>(
-    operation: (repository: MembershipOperations) => Promise<T>,
+    operation: (
+      repository: MembershipOperations,
+      audit: AuditWriter,
+    ) => Promise<T>,
   ): Promise<T>;
 }
 export type MembershipOperations = Omit<MembershipRepository, "transaction">;
@@ -89,16 +93,28 @@ export async function inviteMember(
   input: Readonly<{ email: string; role: WorkspaceRole }>,
 ): Promise<MembershipRecord> {
   requireOwner(actor);
-  return deps.memberships.transaction(async (memberships) => {
+  return deps.memberships.transaction(async (memberships, audit) => {
     const userId = await memberships.findUserIdByVerifiedEmail(input.email);
     if (!userId) throw new AuthorizationError("not_found");
     const existing = await memberships.findAnyMembership(userId);
     if (existing) throw new AuthorizationError("conflict");
-    return memberships.insertMembership({
+    const membership = await memberships.insertMembership({
       workspaceId: actor.workspaceId,
       userId,
       role: input.role,
     });
+    await audit.write({
+      workspaceId: actor.workspaceId,
+      requestId: actor.requestId,
+      event: "membership.added",
+      actorType: "user",
+      actorId: actor.userId,
+      targetType: "membership",
+      targetId: membership.id,
+      outcome: "success",
+      metadata: { role: membership.role },
+    });
+    return membership;
   });
 }
 
@@ -109,7 +125,7 @@ export async function changeMemberRole(
   role: WorkspaceRole,
 ): Promise<MembershipRecord> {
   requireOwner(actor);
-  return deps.memberships.transaction(async (memberships) => {
+  return deps.memberships.transaction(async (memberships, audit) => {
     const current = await memberships.findMembership(actor.workspaceId, userId);
     if (!current) throw new AuthorizationError("not_found");
     if (
@@ -124,6 +140,17 @@ export async function changeMemberRole(
       role,
     });
     if (!updated) throw new AuthorizationError("not_found");
+    await audit.write({
+      workspaceId: actor.workspaceId,
+      requestId: actor.requestId,
+      event: "membership.role_changed",
+      actorType: "user",
+      actorId: actor.userId,
+      targetType: "membership",
+      targetId: updated.id,
+      outcome: "success",
+      metadata: { role },
+    });
     return updated;
   });
 }
@@ -134,7 +161,7 @@ export async function removeMember(
   userId: string,
 ): Promise<void> {
   requireOwner(actor);
-  await deps.memberships.transaction(async (memberships) => {
+  await deps.memberships.transaction(async (memberships, audit) => {
     const current = await memberships.findMembership(actor.workspaceId, userId);
     if (!current) throw new AuthorizationError("not_found");
     if (
@@ -144,5 +171,15 @@ export async function removeMember(
       throw new AuthorizationError("conflict");
     if (!(await memberships.deleteMembership(actor.workspaceId, userId)))
       throw new AuthorizationError("not_found");
+    await audit.write({
+      workspaceId: actor.workspaceId,
+      requestId: actor.requestId,
+      event: "membership.removed",
+      actorType: "user",
+      actorId: actor.userId,
+      targetType: "user",
+      targetId: userId,
+      outcome: "success",
+    });
   });
 }

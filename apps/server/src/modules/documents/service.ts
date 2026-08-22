@@ -19,7 +19,7 @@ import {
   templateImageIds,
   sourceHash as resolvedSourceHash,
 } from "@hypergendoc/document";
-import { auditActor } from "../../platform/audit.js";
+import { auditActor, type AuditWriter } from "../../platform/audit.js";
 import type { ActorContext } from "../../platform/context.js";
 import { AppError } from "../../platform/errors.js";
 import type {
@@ -93,59 +93,81 @@ export class DocumentService {
 
     let checkpoint: GitDocumentCheckpoint | undefined;
     let mutationCommitId: string | undefined;
+    let operationId: string | undefined;
     let document!: Document;
     try {
-      document = await this.deps.repository.transaction(async (repository) => {
-        if (
-          !(await repository.companyExists(
+      document = await this.deps.repository.transaction(
+        async (repository, audit) => {
+          if (
+            !(await repository.companyExists(
+              actor.workspaceId,
+              parsed.data.companyId,
+            ))
+          )
+            throw notFound();
+          const style = await repository.findActiveStyle(
             actor.workspaceId,
             parsed.data.companyId,
-          ))
-        )
-          throw notFound();
-        const style = await repository.findActiveStyle(
-          actor.workspaceId,
-          parsed.data.companyId,
-          parsed.data.styleId,
-        );
-        if (!style?.activeVersionId) throw notFound();
-        await repository.lockCompanyForGitWrites(
-          actor.workspaceId,
-          parsed.data.companyId,
-        );
-        checkpoint = await this.deps.git.checkpoint(
-          actor.workspaceId,
-          parsed.data.companyId,
-        );
-        const created = await repository.insertDocument({
-          workspaceId: actor.workspaceId,
-          companyId: parsed.data.companyId,
-          title: parsed.data.title,
-          metadata: parsed.data.metadata ?? {},
-        });
-        const source = this.resolveSource(
-          parsed.data.format,
-          parsed.data.body,
-          style.definition,
-          await this.resolveStyleAssets(
+            parsed.data.styleId,
+          );
+          if (!style?.activeVersionId) throw notFound();
+          await repository.lockCompanyForGitWrites(
             actor.workspaceId,
             parsed.data.companyId,
+          );
+          checkpoint = await this.deps.git.checkpoint(
+            actor.workspaceId,
+            parsed.data.companyId,
+          );
+          const created = await repository.insertDocument({
+            workspaceId: actor.workspaceId,
+            companyId: parsed.data.companyId,
+            title: parsed.data.title,
+            metadata: parsed.data.metadata ?? {},
+          });
+          const source = this.resolveSource(
+            parsed.data.format,
+            parsed.data.body,
             style.definition,
-          ),
-        );
-        mutationCommitId = await this.writeGit(actor, created, {
-          format: parsed.data.format,
-          body: source.body,
-          styleVersionId: style.activeVersionId,
-        });
-        return created;
-      });
+            await this.resolveStyleAssets(
+              actor.workspaceId,
+              parsed.data.companyId,
+              style.definition,
+            ),
+          );
+          operationId = await this.beginGitOperation(
+            actor,
+            "document.create",
+            created,
+            checkpoint,
+          );
+          mutationCommitId = await this.writeGit(actor, created, {
+            format: parsed.data.format,
+            body: source.body,
+            styleVersionId: style.activeVersionId,
+          });
+          await this.markGitApplied(operationId, mutationCommitId, checkpoint);
+          await this.audit(
+            actor,
+            "document.create",
+            created.id,
+            "success",
+            audit,
+          );
+          return created;
+        },
+      );
       if (checkpoint) this.deps.git.completeCheckpoint(checkpoint);
+      if (operationId) await this.deps.operations?.complete(operationId);
     } catch (error) {
-      await this.compensateGit(checkpoint, mutationCommitId, error);
+      await this.compensateGit(
+        checkpoint,
+        mutationCommitId,
+        operationId,
+        error,
+      );
     }
     const current = await this.currentSource(actor.workspaceId, document);
-    await this.audit(actor, "document.create", document.id, "success");
     return { document, current };
   }
 
@@ -160,66 +182,83 @@ export class DocumentService {
 
     let checkpoint: GitDocumentCheckpoint | undefined;
     let mutationCommitId: string | undefined;
+    let operationId: string | undefined;
     let document!: Document;
     try {
-      document = await this.deps.repository.transaction(async (repository) => {
-        if (
-          !(await repository.companyExists(
+      document = await this.deps.repository.transaction(
+        async (repository, audit) => {
+          if (
+            !(await repository.companyExists(
+              actor.workspaceId,
+              parsed.data.companyId,
+            ))
+          )
+            throw notFound();
+          const template = await repository.findActiveTemplate(
             actor.workspaceId,
             parsed.data.companyId,
-          ))
-        )
-          throw notFound();
-        const template = await repository.findActiveTemplate(
-          actor.workspaceId,
-          parsed.data.companyId,
-          parsed.data.templateId,
-        );
-        if (!template) throw notFound();
-        const resolved = await this.resolveTemplate(
-          actor.workspaceId,
-          parsed.data.companyId,
-          template.definition,
-          parsed.data.data,
-        );
-        await repository.lockCompanyForGitWrites(
-          actor.workspaceId,
-          parsed.data.companyId,
-        );
-        checkpoint = await this.deps.git.checkpoint(
-          actor.workspaceId,
-          parsed.data.companyId,
-        );
-        const created = await repository.insertDocument({
-          workspaceId: actor.workspaceId,
-          companyId: parsed.data.companyId,
-          templateId: template.templateId,
-          title: parsed.data.title,
-          metadata: parsed.data.metadata ?? {},
-        });
-        const body = canonicalTemplateBody(
-          template.versionId,
-          parsed.data.data,
-        );
-        mutationCommitId = await this.writeTemplateGit(actor, created, {
-          body,
-          styleVersionId: template.definition.styleVersionId,
-          templateVersionId: template.versionId,
-        });
-        if (!resolved.source) throw new Error("invalid source");
-        return created;
-      });
+            parsed.data.templateId,
+          );
+          if (!template) throw notFound();
+          const resolved = await this.resolveTemplate(
+            actor.workspaceId,
+            parsed.data.companyId,
+            template.definition,
+            parsed.data.data,
+          );
+          await repository.lockCompanyForGitWrites(
+            actor.workspaceId,
+            parsed.data.companyId,
+          );
+          checkpoint = await this.deps.git.checkpoint(
+            actor.workspaceId,
+            parsed.data.companyId,
+          );
+          const created = await repository.insertDocument({
+            workspaceId: actor.workspaceId,
+            companyId: parsed.data.companyId,
+            templateId: template.templateId,
+            title: parsed.data.title,
+            metadata: parsed.data.metadata ?? {},
+          });
+          const body = canonicalTemplateBody(
+            template.versionId,
+            parsed.data.data,
+          );
+          operationId = await this.beginGitOperation(
+            actor,
+            "document.create_from_template",
+            created,
+            checkpoint,
+          );
+          mutationCommitId = await this.writeTemplateGit(actor, created, {
+            body,
+            styleVersionId: template.definition.styleVersionId,
+            templateVersionId: template.versionId,
+          });
+          if (!resolved.source) throw new Error("invalid source");
+          await this.markGitApplied(operationId, mutationCommitId, checkpoint);
+          await this.audit(
+            actor,
+            "document.create_from_template",
+            created.id,
+            "success",
+            audit,
+          );
+          return created;
+        },
+      );
       if (checkpoint) this.deps.git.completeCheckpoint(checkpoint);
+      if (operationId) await this.deps.operations?.complete(operationId);
     } catch (error) {
-      await this.compensateGit(checkpoint, mutationCommitId, error);
+      await this.compensateGit(
+        checkpoint,
+        mutationCommitId,
+        operationId,
+        error,
+      );
     }
     const current = await this.currentSource(actor.workspaceId, document);
-    await this.audit(
-      actor,
-      "document.create_from_template",
-      document.id,
-      "success",
-    );
     return { document, current };
   }
 
@@ -233,63 +272,80 @@ export class DocumentService {
     if (!parsed.success) throw invalid();
     let checkpoint: GitDocumentCheckpoint | undefined;
     let mutationCommitId: string | undefined;
+    let operationId: string | undefined;
     let document!: Document;
     try {
-      document = await this.deps.repository.transaction(async (repository) => {
-        const locked = await repository.lockDocument(
-          actor.workspaceId,
-          documentId,
-        );
-        if (!locked?.templateId) throw notFound();
-        requireAction(actor, "documents:write", locked.companyId);
-        const previous = await this.readCurrentRevision(
-          actor.workspaceId,
-          locked,
-        );
-        if (previous.format !== "template" || !previous.templateVersionId)
-          throw notFound();
-        const template = await repository.findTemplateVersion(
-          actor.workspaceId,
-          locked.companyId,
-          parsed.data.templateVersionId ?? previous.templateVersionId,
-        );
-        if (!template || template.templateId !== locked.templateId)
-          throw notFound();
-        await this.resolveTemplate(
-          actor.workspaceId,
-          locked.companyId,
-          template.definition,
-          parsed.data.data,
-        );
-        await repository.lockCompanyForGitWrites(
-          actor.workspaceId,
-          locked.companyId,
-        );
-        checkpoint = await this.deps.git.checkpoint(
-          actor.workspaceId,
-          locked.companyId,
-        );
-        const touched =
-          (await repository.touchDocument(actor.workspaceId, documentId)) ??
-          locked;
-        mutationCommitId = await this.writeTemplateGit(actor, locked, {
-          body: canonicalTemplateBody(template.versionId, parsed.data.data),
-          styleVersionId: template.definition.styleVersionId,
-          templateVersionId: template.versionId,
-        });
-        return touched;
-      });
+      document = await this.deps.repository.transaction(
+        async (repository, audit) => {
+          const locked = await repository.lockDocument(
+            actor.workspaceId,
+            documentId,
+          );
+          if (!locked?.templateId) throw notFound();
+          requireAction(actor, "documents:write", locked.companyId);
+          const previous = await this.readCurrentRevision(
+            actor.workspaceId,
+            locked,
+          );
+          if (previous.format !== "template" || !previous.templateVersionId)
+            throw notFound();
+          const template = await repository.findTemplateVersion(
+            actor.workspaceId,
+            locked.companyId,
+            parsed.data.templateVersionId ?? previous.templateVersionId,
+          );
+          if (!template || template.templateId !== locked.templateId)
+            throw notFound();
+          await this.resolveTemplate(
+            actor.workspaceId,
+            locked.companyId,
+            template.definition,
+            parsed.data.data,
+          );
+          await repository.lockCompanyForGitWrites(
+            actor.workspaceId,
+            locked.companyId,
+          );
+          checkpoint = await this.deps.git.checkpoint(
+            actor.workspaceId,
+            locked.companyId,
+          );
+          const touched =
+            (await repository.touchDocument(actor.workspaceId, documentId)) ??
+            locked;
+          operationId = await this.beginGitOperation(
+            actor,
+            "document.update_from_template",
+            locked,
+            checkpoint,
+          );
+          mutationCommitId = await this.writeTemplateGit(actor, locked, {
+            body: canonicalTemplateBody(template.versionId, parsed.data.data),
+            styleVersionId: template.definition.styleVersionId,
+            templateVersionId: template.versionId,
+          });
+          await this.markGitApplied(operationId, mutationCommitId, checkpoint);
+          await this.audit(
+            actor,
+            "document.update_from_template",
+            touched.id,
+            "success",
+            audit,
+          );
+          return touched;
+        },
+      );
       if (checkpoint) this.deps.git.completeCheckpoint(checkpoint);
+      if (operationId) await this.deps.operations?.complete(operationId);
     } catch (error) {
-      await this.compensateGit(checkpoint, mutationCommitId, error);
+      await this.compensateGit(
+        checkpoint,
+        mutationCommitId,
+        operationId,
+        error,
+      );
     }
     const current = await this.currentSource(actor.workspaceId, document);
-    await this.audit(
-      actor,
-      "document.update_from_template",
-      document.id,
-      "success",
-    );
     return current;
   }
 
@@ -304,65 +360,87 @@ export class DocumentService {
 
     let checkpoint: GitDocumentCheckpoint | undefined;
     let mutationCommitId: string | undefined;
+    let operationId: string | undefined;
     let document!: Document;
     try {
-      document = await this.deps.repository.transaction(async (repository) => {
-        const locked = await repository.lockDocument(
-          actor.workspaceId,
-          documentId,
-        );
-        if (!locked) throw notFound();
-        requireAction(actor, "documents:write", locked.companyId);
-        await repository.lockCompanyForGitWrites(
-          actor.workspaceId,
-          locked.companyId,
-        );
-        const previous = await this.readCurrentRevision(
-          actor.workspaceId,
-          locked,
-        );
-        const style = parsed.data.styleVersionId
-          ? await repository.findActiveStyleVersion(
-              actor.workspaceId,
-              locked.companyId,
-              parsed.data.styleVersionId,
-            )
-          : await repository.findStyleVersion(
-              actor.workspaceId,
-              locked.companyId,
-              previous.styleVersionId,
-            );
-        if (!style) throw notFound();
-        const source = this.resolveSource(
-          parsed.data.format,
-          parsed.data.body,
-          style.definition,
-          await this.resolveStyleAssets(
+      document = await this.deps.repository.transaction(
+        async (repository, audit) => {
+          const locked = await repository.lockDocument(
+            actor.workspaceId,
+            documentId,
+          );
+          if (!locked) throw notFound();
+          requireAction(actor, "documents:write", locked.companyId);
+          await repository.lockCompanyForGitWrites(
             actor.workspaceId,
             locked.companyId,
+          );
+          const previous = await this.readCurrentRevision(
+            actor.workspaceId,
+            locked,
+          );
+          const style = parsed.data.styleVersionId
+            ? await repository.findActiveStyleVersion(
+                actor.workspaceId,
+                locked.companyId,
+                parsed.data.styleVersionId,
+              )
+            : await repository.findStyleVersion(
+                actor.workspaceId,
+                locked.companyId,
+                previous.styleVersionId,
+              );
+          if (!style) throw notFound();
+          const source = this.resolveSource(
+            parsed.data.format,
+            parsed.data.body,
             style.definition,
-          ),
-        );
-        checkpoint = await this.deps.git.checkpoint(
-          actor.workspaceId,
-          locked.companyId,
-        );
-        const touched =
-          (await repository.touchDocument(actor.workspaceId, documentId)) ??
-          locked;
-        mutationCommitId = await this.writeGit(actor, locked, {
-          format: parsed.data.format,
-          body: source.body,
-          styleVersionId: style.id,
-        });
-        return touched;
-      });
+            await this.resolveStyleAssets(
+              actor.workspaceId,
+              locked.companyId,
+              style.definition,
+            ),
+          );
+          checkpoint = await this.deps.git.checkpoint(
+            actor.workspaceId,
+            locked.companyId,
+          );
+          const touched =
+            (await repository.touchDocument(actor.workspaceId, documentId)) ??
+            locked;
+          operationId = await this.beginGitOperation(
+            actor,
+            "document.update",
+            locked,
+            checkpoint,
+          );
+          mutationCommitId = await this.writeGit(actor, locked, {
+            format: parsed.data.format,
+            body: source.body,
+            styleVersionId: style.id,
+          });
+          await this.markGitApplied(operationId, mutationCommitId, checkpoint);
+          await this.audit(
+            actor,
+            "document.update",
+            touched.id,
+            "success",
+            audit,
+          );
+          return touched;
+        },
+      );
       if (checkpoint) this.deps.git.completeCheckpoint(checkpoint);
+      if (operationId) await this.deps.operations?.complete(operationId);
     } catch (error) {
-      await this.compensateGit(checkpoint, mutationCommitId, error);
+      await this.compensateGit(
+        checkpoint,
+        mutationCommitId,
+        operationId,
+        error,
+      );
     }
     const current = await this.currentSource(actor.workspaceId, document);
-    await this.audit(actor, "document.update", document.id, "success");
     return current;
   }
 
@@ -458,70 +536,92 @@ export class DocumentService {
     if (!parsed.success) throw invalid();
     let checkpoint: GitDocumentCheckpoint | undefined;
     let mutationCommitId: string | undefined;
+    let operationId: string | undefined;
     let document!: Document;
     try {
-      document = await this.deps.repository.transaction(async (repository) => {
-        const locked = await repository.lockDocument(
-          actor.workspaceId,
-          documentId,
-        );
-        if (!locked) throw notFound();
-        requireAction(actor, "documents:write", locked.companyId);
-        await repository.lockCompanyForGitWrites(
-          actor.workspaceId,
-          locked.companyId,
-        );
-        const historical = await this.readRevision(
-          actor.workspaceId,
-          locked,
-          parsed.data.commitSha,
-        );
-        if (
-          !(await repository.findStyleVersion(
+      document = await this.deps.repository.transaction(
+        async (repository, audit) => {
+          const locked = await repository.lockDocument(
             actor.workspaceId,
-            locked.companyId,
-            historical.styleVersionId,
-          ))
-        )
-          throw notFound();
-        if (historical.format === "template") {
-          if (!historical.templateVersionId || !locked.templateId)
-            throw notFound();
-          const template = await repository.findTemplateVersion(
-            actor.workspaceId,
-            locked.companyId,
-            historical.templateVersionId,
+            documentId,
           );
-          if (!template || template.templateId !== locked.templateId)
+          if (!locked) throw notFound();
+          requireAction(actor, "documents:write", locked.companyId);
+          await repository.lockCompanyForGitWrites(
+            actor.workspaceId,
+            locked.companyId,
+          );
+          const historical = await this.readRevision(
+            actor.workspaceId,
+            locked,
+            parsed.data.commitSha,
+          );
+          if (
+            !(await repository.findStyleVersion(
+              actor.workspaceId,
+              locked.companyId,
+              historical.styleVersionId,
+            ))
+          )
             throw notFound();
-        }
-        checkpoint = await this.deps.git.checkpoint(
-          actor.workspaceId,
-          locked.companyId,
-        );
-        const touched =
-          (await repository.touchDocument(actor.workspaceId, documentId)) ??
-          locked;
-        try {
-          const revision = await this.deps.git.revert({
-            workspaceId: actor.workspaceId,
-            companyId: locked.companyId,
-            documentId: locked.id,
-            commitId: parsed.data.commitSha,
-            actor: { type: actorType(actor), id: actorId(actor) },
-          });
-          mutationCommitId = revision.commitId;
-        } catch (error) {
-          mapGitError(error);
-        }
-        return touched;
-      });
+          if (historical.format === "template") {
+            if (!historical.templateVersionId || !locked.templateId)
+              throw notFound();
+            const template = await repository.findTemplateVersion(
+              actor.workspaceId,
+              locked.companyId,
+              historical.templateVersionId,
+            );
+            if (!template || template.templateId !== locked.templateId)
+              throw notFound();
+          }
+          checkpoint = await this.deps.git.checkpoint(
+            actor.workspaceId,
+            locked.companyId,
+          );
+          const touched =
+            (await repository.touchDocument(actor.workspaceId, documentId)) ??
+            locked;
+          operationId = await this.beginGitOperation(
+            actor,
+            "document.revert",
+            locked,
+            checkpoint,
+          );
+          try {
+            const revision = await this.deps.git.revert({
+              workspaceId: actor.workspaceId,
+              companyId: locked.companyId,
+              documentId: locked.id,
+              commitId: parsed.data.commitSha,
+              actor: { type: actorType(actor), id: actorId(actor) },
+            });
+            mutationCommitId = revision.commitId;
+          } catch (error) {
+            mapGitError(error);
+          }
+          await this.markGitApplied(operationId, mutationCommitId, checkpoint);
+          await this.audit(
+            actor,
+            "document.revert",
+            touched.id,
+            "success",
+            audit,
+          );
+          return touched;
+        },
+      );
       if (checkpoint) this.deps.git.completeCheckpoint(checkpoint);
+      if (operationId) await this.deps.operations?.complete(operationId);
     } catch (error) {
-      await this.compensateGit(checkpoint, mutationCommitId, error);
+      await this.compensateGit(
+        checkpoint,
+        mutationCommitId,
+        operationId,
+        error,
+      );
     }
     const current = await this.currentSource(actor.workspaceId, document);
-    await this.audit(actor, "document.revert", document.id, "success");
     return current;
   }
 
@@ -798,16 +898,61 @@ export class DocumentService {
   private async compensateGit(
     checkpoint: GitDocumentCheckpoint | undefined,
     expectedHeadCommitId: string | undefined,
+    operationId: string | undefined,
     cause: unknown,
   ): Promise<never> {
     if (checkpoint) {
       try {
         await this.deps.git.restoreCheckpoint(checkpoint, expectedHeadCommitId);
+        if (operationId) await this.deps.operations?.complete(operationId);
       } catch {
+        if (operationId)
+          await this.deps.operations?.requireReconciliation(
+            operationId,
+            "git_compensation_failed",
+          );
         throw new AppError("dependency_unavailable", 503);
       }
     }
     throw cause;
+  }
+
+  private async beginGitOperation(
+    actor: ActorContext,
+    event: string,
+    document: Document,
+    checkpoint: GitDocumentCheckpoint | undefined,
+  ): Promise<string | undefined> {
+    if (!this.deps.operations || !checkpoint) return undefined;
+    const item = await this.deps.operations.begin({
+      workspaceId: actor.workspaceId,
+      idempotencyKey: `${event}:${actor.requestId}`,
+      operationType: event,
+      targetType: "document",
+      targetId: document.id,
+      externalReference: JSON.stringify({
+        companyId: document.companyId,
+        before: checkpoint.headCommitId,
+      }),
+    });
+    if (item.replayed) throw new AppError("conflict", 409);
+    return item.id;
+  }
+
+  private async markGitApplied(
+    operationId: string | undefined,
+    commitId: string | undefined,
+    checkpoint: GitDocumentCheckpoint | undefined,
+  ): Promise<void> {
+    if (!operationId || !commitId || !checkpoint || !this.deps.operations)
+      return;
+    await this.deps.operations.markExternalApplied(operationId, {
+      externalReference: JSON.stringify({
+        companyId: checkpoint.companyId,
+        before: checkpoint.headCommitId,
+        after: commitId,
+      }),
+    });
   }
 
   private async audit(
@@ -815,8 +960,9 @@ export class DocumentService {
     event: string,
     targetId: string,
     outcome: "success" | "failure",
+    writer: AuditWriter | undefined = this.deps.audit,
   ): Promise<void> {
-    await this.deps.audit?.write({
+    await writer?.write({
       workspaceId: actor.workspaceId,
       requestId: actor.requestId,
       event,

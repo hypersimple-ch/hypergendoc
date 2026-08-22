@@ -14,7 +14,10 @@ const actor: HumanActor = {
   requestId: "request",
 };
 
-function repository(rows: MembershipRecord[]): MembershipRepository {
+function repository(
+  rows: MembershipRecord[],
+  audit: AuditWriter,
+): MembershipRepository {
   const result: MembershipRepository = {
     findMembership: (workspaceId, userId) =>
       Promise.resolve(
@@ -49,7 +52,7 @@ function repository(rows: MembershipRecord[]): MembershipRepository {
           (row) => row.workspaceId === workspaceId && row.role === "owner",
         ).length,
       ),
-    transaction: (operation) => operation(result),
+    transaction: (operation) => operation(result, audit),
   };
   return result;
 }
@@ -77,8 +80,7 @@ describe("membership mutation routes", () => {
     await app.register(
       createMembershipRoutes({
         actorFor: vi.fn().mockReturnValue(actor),
-        memberships: repository(rows),
-        audit,
+        memberships: repository(rows, audit),
       }),
     );
 

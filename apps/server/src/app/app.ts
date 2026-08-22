@@ -2,9 +2,14 @@ import { S3Client, HeadBucketCommand } from "@aws-sdk/client-s3";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
-import { createDatabase, memberships } from "@hypergendoc/db";
+import {
+  auditEvents,
+  createDatabase,
+  memberships,
+  storedObjects,
+} from "@hypergendoc/db";
 import { fromNodeHeaders } from "better-auth/node";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import nodemailer from "nodemailer";
 import { z, ZodError } from "zod";
@@ -74,6 +79,11 @@ import {
 } from "../modules/workspaces/index.js";
 import { createMcpPlugin, type DomainServices } from "../mcp/index.js";
 import { createAuditWriter } from "../platform/audit.js";
+import {
+  MutationOperationJournal,
+  reconcileMutationOperations,
+} from "../platform/mutation-operations.js";
+import type { MutationOperation } from "../platform/mutation-operations.js";
 import type { ActorContext } from "../platform/context.js";
 import {
   loadServerEnvironment,
@@ -138,6 +148,7 @@ export async function createApplication(
     environment.s3.bucket,
   );
   const audit = createAuditWriter(createAuditEventRepository(db));
+  const operations = new MutationOperationJournal(db);
   const companies = createCompanyService({
     repository: createCompanyRepository(db),
   });
@@ -148,6 +159,7 @@ export async function createApplication(
     store: objects,
     logoOwnership: createLogoOwnershipRepository(db),
     audit,
+    operations,
   });
   const styleAssetResolver = createCompanyStyleAssetResolver(
     companyAssetRepository,
@@ -237,15 +249,124 @@ export async function createApplication(
       },
     },
   });
+  const documentGit = new CompanyDocumentGitStore({
+    rootDir: environment.documentGitRoot,
+  });
   const documents = createDocumentService({
     repository: documentRepository,
-    git: new CompanyDocumentGitStore({ rootDir: environment.documentGitRoot }),
+    git: documentGit,
     renderer,
     sourceBuilder: createHtmlDocumentSourceBuilder(),
     styleAssetResolver,
     templateAssetResolver,
     audit,
+    operations,
   });
+  const reconcile = async () =>
+    reconcileMutationOperations(operations, {
+      "company.logo_uploaded": reconcileStoredObject,
+      "company.image_uploaded": reconcileStoredObject,
+      "company.font_uploaded": reconcileStoredObject,
+      "document.create": reconcileGit,
+      "document.create_from_template": reconcileGit,
+      "document.update": reconcileGit,
+      "document.update_from_template": reconcileGit,
+      "document.revert": reconcileGit,
+    });
+
+  async function committedOperation(item: MutationOperation) {
+    const requestId = item.idempotencyKey.slice(item.operationType.length + 1);
+    const [existing] = await db
+      .select({ id: auditEvents.id })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.workspaceId, item.workspaceId),
+          eq(auditEvents.action, item.operationType),
+          eq(auditEvents.targetId, item.targetId ?? ""),
+          eq(auditEvents.requestId, requestId),
+        ),
+      );
+    return { committed: existing !== undefined, requestId };
+  }
+
+  async function reconcileStoredObject(item: MutationOperation) {
+    if (!item.externalReference?.startsWith("private/"))
+      return { retry: "invalid_external_reference" } as const;
+    const [stored] = await db
+      .select({ id: storedObjects.id })
+      .from(storedObjects)
+      .where(
+        and(
+          eq(storedObjects.workspaceId, item.workspaceId),
+          eq(storedObjects.objectKey, item.externalReference),
+        ),
+      );
+    if (!stored) {
+      await objects.delete(item.externalReference);
+      return "completed" as const;
+    }
+    const state = await committedOperation({ ...item, targetId: stored.id });
+    if (!state.committed)
+      await audit.write({
+        workspaceId: item.workspaceId,
+        requestId: state.requestId,
+        event: item.operationType,
+        actorType: "system",
+        actorId: null,
+        targetType: "stored_object",
+        targetId: stored.id,
+        outcome: "success",
+        metadata: { recovered: true },
+      });
+    return "completed" as const;
+  }
+
+  async function reconcileGit(item: MutationOperation) {
+    if ((await committedOperation(item)).committed) return "completed" as const;
+    let reference: { companyId?: unknown; before?: unknown; after?: unknown };
+    try {
+      reference = JSON.parse(item.externalReference ?? "") as typeof reference;
+    } catch {
+      return { retry: "invalid_external_reference" } as const;
+    }
+    if (
+      typeof reference.companyId !== "string" ||
+      (reference.before !== null && typeof reference.before !== "string") ||
+      (reference.after !== undefined && typeof reference.after !== "string")
+    )
+      return { retry: "invalid_external_reference" } as const;
+    try {
+      await documentGit.restoreCheckpoint(
+        {
+          workspaceId: item.workspaceId,
+          companyId: reference.companyId,
+          headCommitId: reference.before,
+          release: () => undefined,
+        },
+        reference.after,
+      );
+      return "completed" as const;
+    } catch {
+      return { retry: "git_recovery_conflict" } as const;
+    }
+  }
+
+  await reconcile();
+  const reconcileTimer = setInterval(() => {
+    void reconcile().catch(() => {
+      app.log.error(
+        { event: "mutation_reconcile.failed" },
+        "Mutation reconciliation failed",
+      );
+    });
+  }, 30_000);
+  reconcileTimer.unref();
+  app.addHook("onClose", () => {
+    clearInterval(reconcileTimer);
+    return Promise.resolve();
+  });
+
   const smtp = environment.smtp
     ? nodemailer.createTransport({
         host: environment.smtp.host,
@@ -450,7 +571,6 @@ export async function createApplication(
     createMembershipRoutes({
       actorFor: preauthenticatedActor,
       memberships: createMembershipRepository(db),
-      audit,
     }),
   );
   await app.register(
@@ -617,6 +737,7 @@ export async function createApplication(
     ]),
   );
   app.closeDependencies = async () => {
+    clearInterval(reconcileTimer);
     await mailDispatcher?.stop();
     await app.close();
     await pool.end();

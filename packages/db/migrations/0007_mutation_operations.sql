@@ -1,4 +1,4 @@
-CREATE TYPE "public"."mutation_operation_status" AS ENUM('pending', 'external_applied', 'completed', 'reconcile_required');--> statement-breakpoint
+CREATE TYPE "public"."mutation_operation_status" AS ENUM('pending', 'external_applied', 'reconciling', 'completed', 'reconcile_required');--> statement-breakpoint
 CREATE TABLE "mutation_operations" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"workspace_id" uuid NOT NULL,

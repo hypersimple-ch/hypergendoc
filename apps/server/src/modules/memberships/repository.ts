@@ -3,6 +3,7 @@ import type { Database } from "@hypergendoc/db";
 import { auditEvents, memberships, users, workspaces } from "@hypergendoc/db";
 import type { WorkspaceRole } from "@hypergendoc/contracts";
 import type { AuditEventRepository } from "../../platform/audit.js";
+import { createTransactionAuditWriter } from "../../platform/audit.js";
 import type {
   MembershipOperations,
   MembershipRecord,
@@ -104,7 +105,12 @@ export function createMembershipRepository(db: Database): MembershipRepository {
   return {
     ...operations,
     transaction: (operation) =>
-      db.transaction((tx) => operation(membershipOperations(tx as Db))),
+      db.transaction((tx) =>
+        operation(
+          membershipOperations(tx as Db),
+          createTransactionAuditWriter(tx),
+        ),
+      ),
   };
 }
 

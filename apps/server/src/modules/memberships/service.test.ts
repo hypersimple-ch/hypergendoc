@@ -56,7 +56,8 @@ function repository(rows: MembershipRecord[]): MembershipRepository {
           (row) => row.workspaceId === workspaceId && row.role === "owner",
         ).length,
       ),
-    transaction: async (operation) => operation(result),
+    transaction: async (operation) =>
+      operation(result, { write: () => Promise.resolve() }),
   };
   return result;
 }

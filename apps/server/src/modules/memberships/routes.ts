@@ -2,7 +2,6 @@ import type { WorkspaceRole } from "@hypergendoc/contracts";
 import type { FastifyPluginAsync } from "fastify";
 import type { PreauthenticatedActor } from "../auth/request-actor.js";
 import { z } from "zod";
-import type { AuditWriter } from "../../platform/audit.js";
 import {
   changeMemberRole,
   inviteMember,
@@ -28,7 +27,6 @@ const MemberParamsSchema = z.object({
 export function createMembershipRoutes(deps: {
   readonly actorFor: PreauthenticatedActor;
   readonly memberships: MembershipRepository;
-  readonly audit: AuditWriter;
 }): FastifyPluginAsync {
   return (app) => {
     app.post("/api/workspaces/current/members", async (request, reply) => {
@@ -38,17 +36,6 @@ export function createMembershipRoutes(deps: {
         actor,
         InviteSchema.parse(request.body),
       );
-      await deps.audit.write({
-        workspaceId: actor.workspaceId,
-        requestId: actor.requestId,
-        event: "membership.added",
-        actorType: "user",
-        actorId: actor.userId,
-        targetType: "membership",
-        targetId: membership.id,
-        outcome: "success",
-        metadata: { role: membership.role },
-      });
       return reply.code(201).send(membership);
     });
     app.patch("/api/workspaces/current/members/:userId", async (request) => {
@@ -61,17 +48,6 @@ export function createMembershipRoutes(deps: {
         userId,
         role,
       );
-      await deps.audit.write({
-        workspaceId: actor.workspaceId,
-        requestId: actor.requestId,
-        event: "membership.role_changed",
-        actorType: "user",
-        actorId: actor.userId,
-        targetType: "membership",
-        targetId: membership.id,
-        outcome: "success",
-        metadata: { role },
-      });
       return membership;
     });
     app.delete(
@@ -80,16 +56,6 @@ export function createMembershipRoutes(deps: {
         const actor = deps.actorFor(request);
         const { userId } = MemberParamsSchema.parse(request.params);
         await removeMember({ memberships: deps.memberships }, actor, userId);
-        await deps.audit.write({
-          workspaceId: actor.workspaceId,
-          requestId: actor.requestId,
-          event: "membership.removed",
-          actorType: "user",
-          actorId: actor.userId,
-          targetType: "user",
-          targetId: userId,
-          outcome: "success",
-        });
         return reply.code(204).send();
       },
     );

@@ -40,6 +40,7 @@ export async function uploadImage(
     workspaceId: string;
     companyId: string;
     bytes: Uint8Array;
+    objectKey?: string | undefined;
     displayName?: string | undefined;
   }>,
   store: ObjectStore,
@@ -59,6 +60,7 @@ export async function uploadImage(
   const object = await store.putPrivate({
     bytes: upload.bytes,
     contentType,
+    ...(upload.objectKey ? { key: upload.objectKey } : {}),
     metadata: { kind: "template-image" },
   });
   try {

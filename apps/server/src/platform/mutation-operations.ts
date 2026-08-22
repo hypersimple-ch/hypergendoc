@@ -2,7 +2,11 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { mutationOperations, type Database } from "@hypergendoc/db";
 
 export type MutationOperationStatus =
-  "pending" | "external_applied" | "completed" | "reconcile_required";
+  | "pending"
+  | "external_applied"
+  | "reconciling"
+  | "completed"
+  | "reconcile_required";
 export interface MutationOperation {
   readonly id: string;
   readonly workspaceId: string;
@@ -13,6 +17,7 @@ export interface MutationOperation {
   readonly externalReference: string | null;
   readonly status: MutationOperationStatus;
   readonly attempts: number;
+  readonly replayed?: boolean;
 }
 export interface BeginMutationOperation {
   readonly workspaceId: string;
@@ -53,7 +58,7 @@ export class MutationOperationJournal {
           ],
         })
         .returning();
-      if (inserted) return operation(inserted);
+      if (inserted) return { ...operation(inserted), replayed: false };
       const [existing] = await tx
         .select()
         .from(mutationOperations)
@@ -67,20 +72,31 @@ export class MutationOperationJournal {
       if (!existing) throw new Error("mutation operation disappeared");
       if (
         existing.operationType !== input.operationType ||
-        existing.targetType !== input.targetType
+        existing.targetType !== input.targetType ||
+        (input.targetId !== undefined &&
+          existing.targetId !== input.targetId) ||
+        (input.externalReference !== undefined &&
+          existing.externalReference !== input.externalReference)
       )
         throw new Error("mutation idempotency conflict");
-      return operation(existing);
+      return { ...operation(existing), replayed: true };
     });
   }
 
-  async markExternalApplied(id: string): Promise<void> {
+  async markExternalApplied(
+    id: string,
+    update?: Readonly<{ externalReference?: string; targetId?: string }>,
+  ): Promise<void> {
     await this.db
       .update(mutationOperations)
       .set({
         status: "external_applied",
         updatedAt: new Date(),
         safeErrorCode: null,
+        ...(update?.externalReference
+          ? { externalReference: update.externalReference }
+          : {}),
+        ...(update?.targetId ? { targetId: update.targetId } : {}),
       })
       .where(
         and(
@@ -104,7 +120,12 @@ export class MutationOperationJournal {
         safeErrorCode,
         updatedAt: new Date(),
       })
-      .where(eq(mutationOperations.id, id));
+      .where(
+        and(
+          eq(mutationOperations.id, id),
+          sql`${mutationOperations.status} <> 'completed'`,
+        ),
+      );
   }
 
   async complete(id: string): Promise<void> {
@@ -120,20 +141,42 @@ export class MutationOperationJournal {
       .where(eq(mutationOperations.id, id));
   }
 
-  async pending(limit = 50): Promise<readonly MutationOperation[]> {
-    return (
-      await this.db
+  async claim(limit = 50): Promise<readonly MutationOperation[]> {
+    return this.db.transaction(async (tx) => {
+      const stale = new Date(Date.now() - 5 * 60_000);
+      const rows = await tx
         .select()
         .from(mutationOperations)
         .where(
-          inArray(mutationOperations.status, [
-            "external_applied",
-            "reconcile_required",
-          ]),
+          sql`${mutationOperations.status} in ('external_applied', 'reconcile_required') or (${mutationOperations.status} in ('pending', 'reconciling') and ${mutationOperations.updatedAt} < ${stale})`,
         )
         .orderBy(asc(mutationOperations.updatedAt))
         .limit(limit)
-    ).map(operation);
+        .for("update", { skipLocked: true });
+      if (!rows.length) return [];
+      const now = new Date();
+      await tx
+        .update(mutationOperations)
+        .set({
+          status: "reconciling",
+          attempts: sql`${mutationOperations.attempts} + 1`,
+          updatedAt: now,
+        })
+        .where(
+          inArray(
+            mutationOperations.id,
+            rows.map((row) => row.id),
+          ),
+        );
+      return rows.map((row) =>
+        operation({
+          ...row,
+          status: "reconciling",
+          attempts: row.attempts + 1,
+          updatedAt: now,
+        }),
+      );
+    });
   }
 }
 
@@ -147,7 +190,7 @@ export async function reconcileMutationOperations(
   handlers: Readonly<Record<string, MutationReconcileHandler>>,
   limit = 50,
 ): Promise<number> {
-  const pending = await journal.pending(limit);
+  const pending = await journal.claim(limit);
   for (const item of pending) {
     const handler = handlers[item.operationType];
     if (!handler) {

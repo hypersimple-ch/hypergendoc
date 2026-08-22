@@ -60,6 +60,7 @@ export async function uploadFont(
     workspaceId: string;
     companyId: string;
     bytes: Uint8Array;
+    objectKey?: string | undefined;
   }>,
   store: ObjectStore,
   ownership: FontOwnershipRepository,
@@ -89,6 +90,7 @@ export async function uploadFont(
   const object = await store.putPrivate({
     bytes: input.bytes,
     contentType,
+    ...(input.objectKey ? { key: input.objectKey } : {}),
     metadata: { kind: "font" },
   });
   try {

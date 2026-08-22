@@ -7,6 +7,7 @@ import type {
   TemplateDefinition,
 } from "@hypergendoc/contracts";
 import type { AuditWriter } from "../../platform/audit.js";
+import type { MutationOperationJournal } from "../../platform/mutation-operations.js";
 import type { CompanyDocumentGitStore } from "./git-store.js";
 import type { Renderer } from "./renderer-client.js";
 
@@ -39,7 +40,10 @@ export interface StyleAssetResolver {
 export interface DocumentRepository {
   /** Callback operations are bound to the same database transaction. */
   transaction<T>(
-    operation: (repository: DocumentRepository) => Promise<T>,
+    operation: (
+      repository: DocumentRepository,
+      audit: AuditWriter,
+    ) => Promise<T>,
   ): Promise<T>;
   companyExists(workspaceId: string, companyId: string): Promise<boolean>;
   findActiveStyle(
@@ -135,4 +139,8 @@ export interface DocumentServiceDependencies {
   readonly styleAssetResolver?: StyleAssetResolver;
   readonly templateAssetResolver?: TemplateAssetResolver;
   readonly audit?: AuditWriter;
+  readonly operations?: Pick<
+    MutationOperationJournal,
+    "begin" | "markExternalApplied" | "requireReconciliation" | "complete"
+  >;
 }

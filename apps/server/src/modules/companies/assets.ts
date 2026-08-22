@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   CompanyAssets,
   CompanyFontAsset,
@@ -17,6 +18,7 @@ import {
   type ImageOwnershipRepository,
 } from "../../platform/media-upload.js";
 import type { ObjectStore } from "../../platform/object-store.js";
+import type { MutationOperationJournal } from "../../platform/mutation-operations.js";
 import type { HumanActor } from "../auth/actors.js";
 import { AuthorizationError } from "../memberships/service.js";
 import type { createCompanyService } from "./service.js";
@@ -46,9 +48,55 @@ export function createCompanyAssetService(deps: {
   store: ObjectStore;
   logoOwnership: LogoOwnershipRepository;
   audit: AuditWriter;
+  operations: Pick<
+    MutationOperationJournal,
+    "begin" | "markExternalApplied" | "requireReconciliation" | "complete"
+  >;
 }) {
   async function company(actor: HumanActor, companyId: string) {
     await deps.companies.get(actor, companyId);
+  }
+  async function durableUpload<T extends { readonly id: string }>(
+    actor: HumanActor,
+    companyId: string,
+    event: string,
+    upload: (objectKey: string) => Promise<T>,
+  ): Promise<T> {
+    const objectKey = `private/${createHash("sha256")
+      .update(`${actor.workspaceId}:${event}:${actor.requestId}`)
+      .digest("hex")}`;
+    const operation = await deps.operations.begin({
+      workspaceId: actor.workspaceId,
+      idempotencyKey: `${event}:${actor.requestId}`,
+      operationType: event,
+      targetType: "stored_object",
+      externalReference: objectKey,
+    });
+    if (operation.replayed) throw new AuthorizationError("conflict");
+    try {
+      const result = await upload(objectKey);
+      await deps.operations.markExternalApplied(operation.id, {
+        targetId: result.id,
+        externalReference: objectKey,
+      });
+      await deps.audit.write({
+        workspaceId: actor.workspaceId,
+        requestId: actor.requestId,
+        event,
+        ...auditActor({ type: "human", ...actor }),
+        targetType: "stored_object",
+        targetId: result.id,
+        outcome: "success",
+      });
+      await deps.operations.complete(operation.id);
+      return result;
+    } catch (error) {
+      await deps.operations.requireReconciliation(
+        operation.id,
+        "s3_mutation_incomplete",
+      );
+      throw error;
+    }
   }
   return {
     async list(actor: HumanActor, companyId: string): Promise<CompanyAssets> {
@@ -57,21 +105,17 @@ export function createCompanyAssetService(deps: {
     },
     async uploadLogo(actor: HumanActor, companyId: string, bytes: Uint8Array) {
       await company(actor, companyId);
-      const logo = await uploadLogo(
-        { workspaceId: actor.workspaceId, companyId, bytes },
-        deps.store,
-        deps.logoOwnership,
+      return durableUpload(
+        actor,
+        companyId,
+        "company.logo_uploaded",
+        (objectKey) =>
+          uploadLogo(
+            { workspaceId: actor.workspaceId, companyId, bytes, objectKey },
+            deps.store,
+            deps.logoOwnership,
+          ),
       );
-      await deps.audit.write({
-        workspaceId: actor.workspaceId,
-        requestId: actor.requestId,
-        event: "company.logo_uploaded",
-        ...auditActor({ type: "human", ...actor }),
-        targetType: "stored_object",
-        targetId: logo.id,
-        outcome: "success",
-      });
-      return logo;
     },
     async uploadImage(
       actor: HumanActor,
@@ -80,25 +124,23 @@ export function createCompanyAssetService(deps: {
       displayName?: string,
     ): Promise<CompanyImageAsset> {
       await company(actor, companyId);
-      const image = await uploadImage(
-        {
-          workspaceId: actor.workspaceId,
-          companyId,
-          bytes,
-          ...(displayName ? { displayName } : {}),
-        },
-        deps.store,
-        deps.repository,
+      const image = await durableUpload(
+        actor,
+        companyId,
+        "company.image_uploaded",
+        (objectKey) =>
+          uploadImage(
+            {
+              workspaceId: actor.workspaceId,
+              companyId,
+              bytes,
+              objectKey,
+              ...(displayName ? { displayName } : {}),
+            },
+            deps.store,
+            deps.repository,
+          ),
       );
-      await deps.audit.write({
-        workspaceId: actor.workspaceId,
-        requestId: actor.requestId,
-        event: "company.image_uploaded",
-        ...auditActor({ type: "human", ...actor }),
-        targetType: "stored_object",
-        targetId: image.id,
-        outcome: "success",
-      });
       return {
         id: image.id,
         displayName: displayName ?? null,
@@ -115,20 +157,17 @@ export function createCompanyAssetService(deps: {
       bytes: Uint8Array,
     ): Promise<CompanyFontAsset> {
       await company(actor, companyId);
-      const font: FontUploadResult = await uploadFont(
-        { workspaceId: actor.workspaceId, companyId, bytes },
-        deps.store,
-        deps.repository,
+      const font: FontUploadResult = await durableUpload(
+        actor,
+        companyId,
+        "company.font_uploaded",
+        (objectKey) =>
+          uploadFont(
+            { workspaceId: actor.workspaceId, companyId, bytes, objectKey },
+            deps.store,
+            deps.repository,
+          ),
       );
-      await deps.audit.write({
-        workspaceId: actor.workspaceId,
-        requestId: actor.requestId,
-        event: "company.font_uploaded",
-        ...auditActor({ type: "human", ...actor }),
-        targetType: "stored_object",
-        targetId: font.id,
-        outcome: "success",
-      });
       return {
         id: font.id,
         source: "uploaded",
