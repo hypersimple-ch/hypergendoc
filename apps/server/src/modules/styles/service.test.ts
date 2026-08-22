@@ -56,7 +56,7 @@ function repository(): StyleRepository {
   const styles: Style[] = [];
   const versions: StyleVersion[] = [];
   const result: StyleRepository = {
-    transaction: async (work) => work(result),
+    transaction: async (work) => work(result, audit),
     companyExists: async (workspace, company) =>
       workspace === "workspace-a" && company === "company-a",
     logoBelongsToCompany: async () => false,
@@ -124,7 +124,6 @@ describe("style versions", () => {
   it("writes immutable versions, atomically activates a new version, and keeps history pinned", async () => {
     const service = createStyleService({
       repository: repository(),
-      audit,
       renderer: {
         renderPreview: async () => ({
           url: "data:application/pdf;base64,AA==",
@@ -153,7 +152,6 @@ describe("style versions", () => {
   it("hides foreign companies and rejects unowned uploaded logos", async () => {
     const service = createStyleService({
       repository: repository(),
-      audit,
       renderer: {
         renderPreview: async () => ({
           url: "data:application/pdf;base64,AA==",
@@ -181,7 +179,6 @@ describe("style versions", () => {
     };
     const service = createStyleService({
       repository: repo,
-      audit,
       renderer: { renderPreview: async () => ({ url: "preview" }) },
     });
     const created = await service.create(actor, {
@@ -257,7 +254,6 @@ describe("style versions", () => {
     const customFont = "00000000-0000-4000-8000-000000000001";
     const service = createStyleService({
       repository: repository(),
-      audit,
       renderer: { renderPreview: async () => ({ url: "preview" }) },
     });
     await expect(
@@ -278,7 +274,6 @@ describe("style versions", () => {
     };
     const service = createStyleService({
       repository: repo,
-      audit,
       renderer: { renderPreview: async () => ({ url: "preview" }) },
     });
 
@@ -298,7 +293,6 @@ describe("style versions", () => {
     };
     const service = createStyleService({
       repository: repo,
-      audit,
       renderer: { renderPreview: async () => ({ url: "preview" }) },
     });
 

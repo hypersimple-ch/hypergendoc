@@ -3,6 +3,7 @@ import type { Database } from "@hypergendoc/db";
 import { companies, mcpCompanyScopes, mcpCredentials } from "@hypergendoc/db";
 import type { McpAction, McpCredential } from "@hypergendoc/contracts";
 import type { CredentialOperations, CredentialRepository } from "./service.js";
+import { createTransactionAuditWriter } from "../../platform/audit.js";
 
 type Db = Database;
 type CredentialRow = typeof mcpCredentials.$inferSelect;
@@ -180,6 +181,8 @@ export function createCredentialRepository(db: Database): CredentialRepository {
   return {
     ...root,
     transaction: (operation) =>
-      db.transaction((tx) => operation(operations(tx as Db))),
+      db.transaction((tx) =>
+        operation(operations(tx as Db), createTransactionAuditWriter(tx)),
+      ),
   };
 }

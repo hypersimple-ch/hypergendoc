@@ -41,7 +41,7 @@ function repository(): TemplateRepository {
   const templates: Template[] = [];
   const versions: TemplateVersion[] = [];
   const result: TemplateRepository = {
-    transaction: async (work) => work(result),
+    transaction: async (work) => work(result, audit),
     companyExists: async (workspaceId, companyId) =>
       workspaceId === "workspace-a" && companyId === "company-a",
     styleVersionBelongsToCompany: async (workspaceId, companyId, versionId) =>
@@ -110,7 +110,6 @@ describe("template versions", () => {
   it("creates immutable versions and atomically activates the requested version", async () => {
     const service = createTemplateService({
       repository: repository(),
-      audit,
       renderer: { renderPreview: async () => ({ url: "preview" }) },
     });
     const created = await service.create(actor, {
@@ -141,7 +140,6 @@ describe("template versions", () => {
   it("rejects definitions whose style version is outside the template company", async () => {
     const service = createTemplateService({
       repository: repository(),
-      audit,
       renderer: { renderPreview: async () => ({ url: "preview" }) },
     });
     await expect(

@@ -23,7 +23,10 @@ export interface TemplatePreviewRenderer {
 
 export interface TemplateRepository {
   transaction<T>(
-    operation: (repository: TemplateOperations) => Promise<T>,
+    operation: (
+      repository: TemplateOperations,
+      audit: AuditWriter,
+    ) => Promise<T>,
   ): Promise<T>;
   companyExists(workspaceId: string, companyId: string): Promise<boolean>;
   /** Proves that a referenced style version is scoped to this company/workspace. */
@@ -68,7 +71,6 @@ export type TemplateOperations = Omit<TemplateRepository, "transaction">;
 
 export function createTemplateService(deps: {
   repository: TemplateRepository;
-  audit: AuditWriter;
   renderer: TemplatePreviewRenderer;
 }) {
   async function validateDefinition(
@@ -87,8 +89,13 @@ export function createTemplateService(deps: {
       throw new AuthorizationError("not_found");
   }
 
-  const emit = (actor: HumanActor, event: string, templateId: string) =>
-    deps.audit.write({
+  const emit = (
+    writer: AuditWriter,
+    actor: HumanActor,
+    event: string,
+    templateId: string,
+  ) =>
+    writer.write({
       workspaceId: actor.workspaceId,
       requestId: actor.requestId,
       event,
@@ -157,38 +164,42 @@ export function createTemplateService(deps: {
 
       let result: { template: Template; version: TemplateVersion };
       try {
-        result = await deps.repository.transaction(async (repository) => {
-          await validateDefinition(
-            repository,
-            actor,
-            input.companyId,
-            input.definition,
-          );
-          const template = await repository.createTemplate({
-            workspaceId: actor.workspaceId,
-            companyId: input.companyId,
-            name: input.name,
-          });
-          const version = await repository.createNextVersion({
-            workspaceId: actor.workspaceId,
-            companyId: input.companyId,
-            templateId: template.id,
-            definition: input.definition,
-            createdByUserId: actor.userId,
-          });
-          if (
-            !(await repository.setActiveVersion(
-              actor.workspaceId,
-              template.id,
-              version.id,
-            ))
-          )
-            throw new Error("new template was not activated");
-          return {
-            template: { ...template, activeVersionId: version.id },
-            version,
-          };
-        });
+        result = await deps.repository.transaction(
+          async (repository, writer) => {
+            await validateDefinition(
+              repository,
+              actor,
+              input.companyId,
+              input.definition,
+            );
+            const template = await repository.createTemplate({
+              workspaceId: actor.workspaceId,
+              companyId: input.companyId,
+              name: input.name,
+            });
+            const version = await repository.createNextVersion({
+              workspaceId: actor.workspaceId,
+              companyId: input.companyId,
+              templateId: template.id,
+              definition: input.definition,
+              createdByUserId: actor.userId,
+            });
+            if (
+              !(await repository.setActiveVersion(
+                actor.workspaceId,
+                template.id,
+                version.id,
+              ))
+            )
+              throw new Error("new template was not activated");
+            const result = {
+              template: { ...template, activeVersionId: version.id },
+              version,
+            };
+            await emit(writer, actor, "template.created", template.id);
+            return result;
+          },
+        );
       } catch (error) {
         if (
           typeof error === "object" &&
@@ -201,7 +212,6 @@ export function createTemplateService(deps: {
           throw new AuthorizationError("conflict");
         throw error;
       }
-      await emit(actor, "template.created", result.template.id);
       return result;
     },
 
@@ -212,32 +222,34 @@ export function createTemplateService(deps: {
       activate: boolean,
     ): Promise<TemplateVersion> {
       const template = await this.get(actor, templateId);
-      const version = await deps.repository.transaction(async (repository) => {
-        await validateDefinition(
-          repository,
-          actor,
-          template.companyId,
-          definition,
-        );
-        const created = await repository.createNextVersion({
-          workspaceId: actor.workspaceId,
-          companyId: template.companyId,
-          templateId,
-          definition,
-          createdByUserId: actor.userId,
-        });
-        if (
-          activate &&
-          !(await repository.setActiveVersion(
-            actor.workspaceId,
+      const version = await deps.repository.transaction(
+        async (repository, writer) => {
+          await validateDefinition(
+            repository,
+            actor,
+            template.companyId,
+            definition,
+          );
+          const created = await repository.createNextVersion({
+            workspaceId: actor.workspaceId,
+            companyId: template.companyId,
             templateId,
-            created.id,
-          ))
-        )
-          throw new AuthorizationError("not_found");
-        return created;
-      });
-      await emit(actor, "template.version_created", templateId);
+            definition,
+            createdByUserId: actor.userId,
+          });
+          if (
+            activate &&
+            !(await repository.setActiveVersion(
+              actor.workspaceId,
+              templateId,
+              created.id,
+            ))
+          )
+            throw new AuthorizationError("not_found");
+          await emit(writer, actor, "template.version_created", templateId);
+          return created;
+        },
+      );
       return version;
     },
 
@@ -255,15 +267,17 @@ export function createTemplateService(deps: {
         ))
       )
         throw new AuthorizationError("not_found");
-      if (
-        !(await deps.repository.setActiveVersion(
-          actor.workspaceId,
-          templateId,
-          versionId,
-        ))
-      )
-        throw new AuthorizationError("not_found");
-      await emit(actor, "template.activated", templateId);
+      await deps.repository.transaction(async (repository, writer) => {
+        if (
+          !(await repository.setActiveVersion(
+            actor.workspaceId,
+            templateId,
+            versionId,
+          ))
+        )
+          throw new AuthorizationError("not_found");
+        await emit(writer, actor, "template.activated", templateId);
+      });
     },
 
     async preview(

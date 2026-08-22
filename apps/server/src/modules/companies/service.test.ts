@@ -27,7 +27,9 @@ function dependencies() {
       ? { ...archived, archivedAt: null }
       : undefined,
   );
+  const write = vi.fn<AuditWriter["write"]>(async () => undefined);
   const repository: CompanyRepository = {
+    transaction: async (work) => work(repository, { write }),
     list: async () => [],
     find: async () => undefined,
     create: async () => archived,
@@ -35,7 +37,6 @@ function dependencies() {
     archive: async () => undefined,
     restore,
   };
-  const write = vi.fn<AuditWriter["write"]>(async () => undefined);
   return { repository, restore, write };
 }
 
@@ -44,7 +45,6 @@ describe("company restore", () => {
     const deps = dependencies();
     const service = createCompanyService({
       repository: deps.repository,
-      audit: { write: deps.write },
     });
 
     await expect(service.restore(owner, archived.id)).resolves.toMatchObject({
@@ -64,7 +64,6 @@ describe("company restore", () => {
     const deps = dependencies();
     const service = createCompanyService({
       repository: deps.repository,
-      audit: { write: deps.write },
     });
 
     await expect(

@@ -52,7 +52,7 @@ function repository(): CredentialRepository & { rows: CredentialRecord[] } {
   const rows: CredentialRecord[] = [];
   const repo: CredentialRepository & { rows: CredentialRecord[] } = {
     rows,
-    transaction: async (operation) => operation(repo),
+    transaction: async (operation) => operation(repo, audit),
     companiesExist: async (workspaceId, ids) =>
       workspaceId === "tenant-a" && ids.every((id) => id === "company-a"),
     insert: async (input) => {
@@ -219,7 +219,6 @@ describe("adversarial authorization and credential boundaries", () => {
     const repo = repository();
     const service = createCredentialService({
       repository: repo,
-      audit,
       pepper: "test-pepper",
       now: () => now,
     });
@@ -259,7 +258,6 @@ describe("adversarial authorization and credential boundaries", () => {
   it("prevents owner/member escalation and foreign-company scope injection", async () => {
     const service = createCredentialService({
       repository: repository(),
-      audit,
       pepper: "test-pepper",
     });
     await expect(

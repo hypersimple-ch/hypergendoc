@@ -21,7 +21,7 @@ export interface PreviewRenderer {
 }
 export interface StyleRepository {
   transaction<T>(
-    operation: (repository: StyleOperations) => Promise<T>,
+    operation: (repository: StyleOperations, audit: AuditWriter) => Promise<T>,
   ): Promise<T>;
   companyExists(workspaceId: string, companyId: string): Promise<boolean>;
   /** Must prove the object is an active logo uploaded for this company in this workspace. */
@@ -78,7 +78,6 @@ export type StyleOperations = Omit<StyleRepository, "transaction">;
 
 export function createStyleService(deps: {
   repository: StyleRepository;
-  audit: AuditWriter;
   renderer: PreviewRenderer;
 }) {
   async function validateDefinition(
@@ -139,8 +138,13 @@ export function createStyleService(deps: {
       ? definition
       : { ...definition, assetVersion: 1 };
   }
-  const emit = (actor: HumanActor, event: string, styleId: string) =>
-    deps.audit.write({
+  const emit = (
+    writer: AuditWriter,
+    actor: HumanActor,
+    event: string,
+    styleId: string,
+  ) =>
+    writer.write({
       workspaceId: actor.workspaceId,
       requestId: actor.requestId,
       event,
@@ -187,39 +191,46 @@ export function createStyleService(deps: {
       const definition = savedDefinition(input.definition);
       let result: { style: Style; version: StyleVersion };
       try {
-        result = await deps.repository.transaction(async (repository) => {
-          await validateDefinition(
-            repository,
-            actor,
-            input.companyId,
-            definition,
-          );
-          await repository.materializeAssets(
-            actor.workspaceId,
-            input.companyId,
-            materializedAssets(definition),
-          );
-          const style = await repository.createStyle({
-            workspaceId: actor.workspaceId,
-            companyId: input.companyId,
-            name: input.name,
-          });
-          const version = await repository.createNextVersion({
-            workspaceId: actor.workspaceId,
-            styleId: style.id,
-            definition,
-            createdByUserId: actor.userId,
-          });
-          if (
-            !(await repository.setActiveVersion(
+        result = await deps.repository.transaction(
+          async (repository, writer) => {
+            await validateDefinition(
+              repository,
+              actor,
+              input.companyId,
+              definition,
+            );
+            await repository.materializeAssets(
               actor.workspaceId,
-              style.id,
-              version.id,
-            ))
-          )
-            throw new Error("new style was not activated");
-          return { style: { ...style, activeVersionId: version.id }, version };
-        });
+              input.companyId,
+              materializedAssets(definition),
+            );
+            const style = await repository.createStyle({
+              workspaceId: actor.workspaceId,
+              companyId: input.companyId,
+              name: input.name,
+            });
+            const version = await repository.createNextVersion({
+              workspaceId: actor.workspaceId,
+              styleId: style.id,
+              definition,
+              createdByUserId: actor.userId,
+            });
+            if (
+              !(await repository.setActiveVersion(
+                actor.workspaceId,
+                style.id,
+                version.id,
+              ))
+            )
+              throw new Error("new style was not activated");
+            const result = {
+              style: { ...style, activeVersionId: version.id },
+              version,
+            };
+            await emit(writer, actor, "style.created", style.id);
+            return result;
+          },
+        );
       } catch (error) {
         if (
           typeof error === "object" &&
@@ -232,7 +243,6 @@ export function createStyleService(deps: {
           throw new AuthorizationError("conflict");
         throw error;
       }
-      await emit(actor, "style.created", result.style.id);
       return result;
     },
     async createVersion(
@@ -243,31 +253,33 @@ export function createStyleService(deps: {
     ): Promise<StyleVersion> {
       const style = await this.get(actor, styleId);
       const saved = savedDefinition(definition);
-      const version = await deps.repository.transaction(async (repository) => {
-        await validateDefinition(repository, actor, style.companyId, saved);
-        await repository.materializeAssets(
-          actor.workspaceId,
-          style.companyId,
-          materializedAssets(saved),
-        );
-        const created = await repository.createNextVersion({
-          workspaceId: actor.workspaceId,
-          styleId,
-          definition: saved,
-          createdByUserId: actor.userId,
-        });
-        if (
-          activate &&
-          !(await repository.setActiveVersion(
+      const version = await deps.repository.transaction(
+        async (repository, writer) => {
+          await validateDefinition(repository, actor, style.companyId, saved);
+          await repository.materializeAssets(
             actor.workspaceId,
+            style.companyId,
+            materializedAssets(saved),
+          );
+          const created = await repository.createNextVersion({
+            workspaceId: actor.workspaceId,
             styleId,
-            created.id,
-          ))
-        )
-          throw new AuthorizationError("not_found");
-        return created;
-      });
-      await emit(actor, "style.version_created", styleId);
+            definition: saved,
+            createdByUserId: actor.userId,
+          });
+          if (
+            activate &&
+            !(await repository.setActiveVersion(
+              actor.workspaceId,
+              styleId,
+              created.id,
+            ))
+          )
+            throw new AuthorizationError("not_found");
+          await emit(writer, actor, "style.version_created", styleId);
+          return created;
+        },
+      );
       return version;
     },
     async activate(
@@ -284,15 +296,17 @@ export function createStyleService(deps: {
         ))
       )
         throw new AuthorizationError("not_found");
-      if (
-        !(await deps.repository.setActiveVersion(
-          actor.workspaceId,
-          styleId,
-          versionId,
-        ))
-      )
-        throw new AuthorizationError("not_found");
-      await emit(actor, "style.activated", styleId);
+      await deps.repository.transaction(async (repository, writer) => {
+        if (
+          !(await repository.setActiveVersion(
+            actor.workspaceId,
+            styleId,
+            versionId,
+          ))
+        )
+          throw new AuthorizationError("not_found");
+        await emit(writer, actor, "style.activated", styleId);
+      });
     },
     async preview(
       actor: HumanActor,

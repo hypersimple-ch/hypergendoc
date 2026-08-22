@@ -14,6 +14,7 @@ import type {
   StyleVersion,
 } from "@hypergendoc/contracts";
 import type { StyleOperations, StyleRepository } from "./service.js";
+import { createTransactionAuditWriter } from "../../platform/audit.js";
 
 const style = (row: typeof styles.$inferSelect): Style => ({
   id: row.id,
@@ -208,6 +209,8 @@ export function createStyleRepository(db: Database): StyleRepository {
   return {
     ...root,
     transaction: (operation) =>
-      db.transaction((tx) => operation(operations(tx as Db))),
+      db.transaction((tx) =>
+        operation(operations(tx as Db), createTransactionAuditWriter(tx)),
+      ),
   };
 }

@@ -5,6 +5,12 @@ import type { AgentActor, HumanActor } from "../auth/actors.js";
 import { AuthorizationError } from "../memberships/service.js";
 
 export interface CompanyRepository {
+  transaction<T>(
+    operation: (
+      repository: CompanyOperations,
+      audit: AuditWriter,
+    ) => Promise<T>,
+  ): Promise<T>;
   list(workspaceId: string): Promise<readonly Company[]>;
   find(workspaceId: string, companyId: string): Promise<Company | undefined>;
   create(workspaceId: string, input: CreateCompanyInput): Promise<Company>;
@@ -16,13 +22,16 @@ export interface CompanyRepository {
   archive(workspaceId: string, companyId: string): Promise<Company | undefined>;
   restore(workspaceId: string, companyId: string): Promise<Company | undefined>;
 }
+export type CompanyOperations = Omit<CompanyRepository, "transaction">;
 
-export function createCompanyService(deps: {
-  repository: CompanyRepository;
-  audit: AuditWriter;
-}) {
-  const audit = (actor: HumanActor, event: string, targetId: string) =>
-    deps.audit.write({
+export function createCompanyService(deps: { repository: CompanyRepository }) {
+  const audit = (
+    writer: AuditWriter,
+    actor: HumanActor,
+    event: string,
+    targetId: string,
+  ) =>
+    writer.write({
       workspaceId: actor.workspaceId,
       requestId: actor.requestId,
       event,
@@ -49,43 +58,45 @@ export function createCompanyService(deps: {
       actor: HumanActor,
       input: CreateCompanyInput,
     ): Promise<Company> {
-      const company = await deps.repository.create(actor.workspaceId, input);
-      await audit(actor, "company.created", company.id);
-      return company;
+      return deps.repository.transaction(async (repository, writer) => {
+        const company = await repository.create(actor.workspaceId, input);
+        await audit(writer, actor, "company.created", company.id);
+        return company;
+      });
     },
     async update(
       actor: HumanActor,
       companyId: string,
       input: Readonly<{ name?: string | undefined }>,
     ): Promise<Company> {
-      const company = await deps.repository.update(
-        actor.workspaceId,
-        companyId,
-        input,
-      );
-      if (!company) throw new AuthorizationError("not_found");
-      await audit(actor, "company.updated", company.id);
-      return company;
+      return deps.repository.transaction(async (repository, writer) => {
+        const company = await repository.update(
+          actor.workspaceId,
+          companyId,
+          input,
+        );
+        if (!company) throw new AuthorizationError("not_found");
+        await audit(writer, actor, "company.updated", company.id);
+        return company;
+      });
     },
     async archive(actor: HumanActor, companyId: string): Promise<Company> {
       if (actor.role !== "owner") throw new AuthorizationError("forbidden");
-      const company = await deps.repository.archive(
-        actor.workspaceId,
-        companyId,
-      );
-      if (!company) throw new AuthorizationError("not_found");
-      await audit(actor, "company.archived", company.id);
-      return company;
+      return deps.repository.transaction(async (repository, writer) => {
+        const company = await repository.archive(actor.workspaceId, companyId);
+        if (!company) throw new AuthorizationError("not_found");
+        await audit(writer, actor, "company.archived", company.id);
+        return company;
+      });
     },
     async restore(actor: HumanActor, companyId: string): Promise<Company> {
       if (actor.role !== "owner") throw new AuthorizationError("forbidden");
-      const company = await deps.repository.restore(
-        actor.workspaceId,
-        companyId,
-      );
-      if (!company) throw new AuthorizationError("not_found");
-      await audit(actor, "company.restored", company.id);
-      return company;
+      return deps.repository.transaction(async (repository, writer) => {
+        const company = await repository.restore(actor.workspaceId, companyId);
+        if (!company) throw new AuthorizationError("not_found");
+        await audit(writer, actor, "company.restored", company.id);
+        return company;
+      });
     },
   };
 }

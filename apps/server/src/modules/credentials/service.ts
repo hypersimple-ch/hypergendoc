@@ -16,7 +16,10 @@ export interface CredentialRecord extends McpCredential {
 }
 export interface CredentialRepository {
   transaction<T>(
-    operation: (repository: CredentialOperations) => Promise<T>,
+    operation: (
+      repository: CredentialOperations,
+      audit: AuditWriter,
+    ) => Promise<T>,
   ): Promise<T>;
   companiesExist(
     workspaceId: string,
@@ -77,18 +80,18 @@ function safeHashMatch(actualHex: string, expected: Buffer): boolean {
 
 export function createCredentialService(deps: {
   repository: CredentialRepository;
-  audit: AuditWriter;
   pepper: string;
   now?: () => Date;
 }) {
   if (!deps.pepper) throw new Error("credential pepper is required");
   const now = deps.now ?? (() => new Date());
   const emit = (
+    writer: AuditWriter,
     actor: HumanActor | AgentActor,
     event: string,
     targetId: string,
   ) =>
-    deps.audit.write({
+    writer.write({
       workspaceId: actor.workspaceId,
       requestId: actor.requestId,
       event,
@@ -102,10 +105,11 @@ export function createCredentialService(deps: {
       outcome: "success",
     });
   async function validateScopes(
+    repository: CredentialOperations,
     workspaceId: string,
     companyIds: readonly string[],
   ) {
-    if (!(await deps.repository.companiesExist(workspaceId, companyIds)))
+    if (!(await repository.companiesExist(workspaceId, companyIds)))
       throw new AuthorizationError("not_found");
   }
   return {
@@ -114,25 +118,29 @@ export function createCredentialService(deps: {
       input: CreateMcpCredentialInput,
     ): Promise<{ credential: McpCredential; token: string }> {
       requireOwner(actor);
-      await validateScopes(actor.workspaceId, input.companyIds);
+
       if (input.expiresAt && new Date(input.expiresAt) <= now())
         throw new AuthorizationError("conflict");
       // 32 random bytes = 256 bits; neither secret nor complete token reaches storage/audit.
       const lookupPrefix = randomBytes(9).toString("base64url");
       const token = `hgd_${lookupPrefix}_${randomBytes(32).toString("base64url")}`;
-      const credential = await deps.repository.transaction((repository) =>
-        repository.insert({
-          workspaceId: actor.workspaceId,
-          name: input.name,
-          lookupPrefix,
-          tokenHash: tokenHash(deps.pepper, token).toString("hex"),
-          companyIds: input.companyIds,
-          actions: input.actions,
-          expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
-          createdByUserId: actor.userId,
-        }),
+      const credential = await deps.repository.transaction(
+        async (repository, writer) => {
+          await validateScopes(repository, actor.workspaceId, input.companyIds);
+          const created = await repository.insert({
+            workspaceId: actor.workspaceId,
+            name: input.name,
+            lookupPrefix,
+            tokenHash: tokenHash(deps.pepper, token).toString("hex"),
+            companyIds: input.companyIds,
+            actions: input.actions,
+            expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
+            createdByUserId: actor.userId,
+          });
+          await emit(writer, actor, "mcp_credential.created", created.id);
+          return created;
+        },
       );
-      await emit(actor, "mcp_credential.created", credential.id);
       return { credential, token };
     },
     list(actor: HumanActor) {
@@ -149,27 +157,33 @@ export function createCredentialService(deps: {
       }>,
     ) {
       requireOwner(actor);
-      await validateScopes(actor.workspaceId, input.companyIds);
+
       if (input.expiresAt && input.expiresAt <= now())
         throw new AuthorizationError("conflict");
-      const credential = await deps.repository.transaction((repository) =>
-        repository.replaceScopes({
+      return deps.repository.transaction(async (repository, writer) => {
+        await validateScopes(repository, actor.workspaceId, input.companyIds);
+        const credential = await repository.replaceScopes({
           workspaceId: actor.workspaceId,
           credentialId,
           ...input,
-        }),
-      );
-      if (!credential) throw new AuthorizationError("not_found");
-      await emit(actor, "mcp_credential.scopes_updated", credentialId);
-      return credential;
+        });
+        if (!credential) throw new AuthorizationError("not_found");
+        await emit(
+          writer,
+          actor,
+          "mcp_credential.scopes_updated",
+          credentialId,
+        );
+        return credential;
+      });
     },
     async revoke(actor: HumanActor, credentialId: string): Promise<void> {
       requireOwner(actor);
-      if (
-        !(await deps.repository.revoke(actor.workspaceId, credentialId, now()))
-      )
-        throw new AuthorizationError("not_found");
-      await emit(actor, "mcp_credential.revoked", credentialId);
+      await deps.repository.transaction(async (repository, writer) => {
+        if (!(await repository.revoke(actor.workspaceId, credentialId, now())))
+          throw new AuthorizationError("not_found");
+        await emit(writer, actor, "mcp_credential.revoked", credentialId);
+      });
     },
     /** Deliberately re-reads storage on every call: revocation/scope changes apply next request. */
     async verify(token: string, requestId: string): Promise<AgentActor> {
@@ -185,11 +199,6 @@ export function createCredentialService(deps: {
         (credential.expiresAt && new Date(credential.expiresAt) <= now())
       )
         throw new AuthorizationError("forbidden");
-      await deps.repository.touchLastUsed(
-        credential.workspaceId,
-        credential.id,
-        now(),
-      );
       const actor: AgentActor = {
         credentialId: credential.id,
         workspaceId: credential.workspaceId,
@@ -197,7 +206,14 @@ export function createCredentialService(deps: {
         actions: credential.actions,
         requestId,
       };
-      await emit(actor, "mcp_credential.used", credential.id);
+      await deps.repository.transaction(async (repository, writer) => {
+        await repository.touchLastUsed(
+          credential.workspaceId,
+          credential.id,
+          now(),
+        );
+        await emit(writer, actor, "mcp_credential.used", credential.id);
+      });
       return actor;
     },
   };

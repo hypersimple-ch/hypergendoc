@@ -140,7 +140,6 @@ export async function createApplication(
   const audit = createAuditWriter(createAuditEventRepository(db));
   const companies = createCompanyService({
     repository: createCompanyRepository(db),
-    audit,
   });
   const companyAssetRepository = createCompanyAssetRepository(db);
   const companyAssets = createCompanyAssetService({
@@ -165,7 +164,6 @@ export async function createApplication(
   });
   const styles = createStyleService({
     repository: createStyleRepository(db),
-    audit,
     renderer: {
       async renderPreview(input) {
         const assets = await styleAssetResolver.resolve(
@@ -200,7 +198,6 @@ export async function createApplication(
   const templateRepository = createTemplateRepository(db);
   const templates = createTemplateService({
     repository: templateRepository,
-    audit,
     renderer: {
       async renderPreview(input) {
         const style = await documentRepository.findStyleVersion(
@@ -488,7 +485,6 @@ export async function createApplication(
   );
   const credentials = createCredentialService({
     repository: createCredentialRepository(db),
-    audit,
     pepper: environment.credentialPepper,
   });
   await app.register(

@@ -1,3 +1,4 @@
+import { auditEvents, type Database } from "@hypergendoc/db";
 import type { ActorContext } from "./context.js";
 
 export interface AuditEvent {
@@ -23,6 +24,27 @@ export function createAuditWriter(
   repository: AuditEventRepository,
 ): AuditWriter {
   return { write: (event) => repository.insert(event) };
+}
+
+/** Creates an audit writer bound to this exact Drizzle database or transaction. */
+export function createTransactionAuditWriter(
+  db: Pick<Database, "insert">,
+): AuditWriter {
+  return {
+    async write(event) {
+      await db.insert(auditEvents).values({
+        workspaceId: event.workspaceId,
+        actorType: event.actorType,
+        actorId: event.actorId,
+        action: event.event,
+        targetType: event.targetType,
+        targetId: event.targetId,
+        requestId: event.requestId,
+        outcome: event.outcome,
+        metadata: event.metadata ?? {},
+      });
+    },
+  };
 }
 export function auditActor(
   actor: ActorContext | undefined,

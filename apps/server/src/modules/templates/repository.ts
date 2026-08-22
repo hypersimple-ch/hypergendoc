@@ -13,6 +13,7 @@ import type {
   TemplateVersion,
 } from "@hypergendoc/contracts";
 import type { TemplateOperations, TemplateRepository } from "./service.js";
+import { createTransactionAuditWriter } from "../../platform/audit.js";
 
 const template = (row: typeof templates.$inferSelect): Template => ({
   id: row.id,
@@ -176,6 +177,8 @@ export function createTemplateRepository(db: Database): TemplateRepository {
   return {
     ...root,
     transaction: (operation) =>
-      db.transaction((tx) => operation(operations(tx as Db))),
+      db.transaction((tx) =>
+        operation(operations(tx as Db), createTransactionAuditWriter(tx)),
+      ),
   };
 }

@@ -1,5 +1,6 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Database } from "@hypergendoc/db";
+import { createTransactionAuditWriter } from "../../platform/audit.js";
 import {
   companies,
   companyColors,
@@ -14,7 +15,7 @@ import type {
 import { FontFamilySchema } from "@hypergendoc/contracts";
 import type { LogoOwnershipRepository } from "../../platform/logo-upload.js";
 import type { CompanyAssetRepository } from "./assets.js";
-import type { CompanyRepository } from "./service.js";
+import type { CompanyOperations, CompanyRepository } from "./service.js";
 
 const company = (row: typeof companies.$inferSelect): Company => ({
   id: row.id,
@@ -26,7 +27,7 @@ const company = (row: typeof companies.$inferSelect): Company => ({
 });
 
 /** All company operations scope their target ID by the trusted workspace ID. */
-export function createCompanyRepository(db: Database): CompanyRepository {
+function companyOperations(db: Database): CompanyOperations {
   return {
     async list(workspaceId) {
       return (
@@ -98,6 +99,20 @@ export function createCompanyRepository(db: Database): CompanyRepository {
         .returning();
       return row && company(row);
     },
+  };
+}
+
+export function createCompanyRepository(db: Database): CompanyRepository {
+  const root = companyOperations(db);
+  return {
+    ...root,
+    transaction: (operation) =>
+      db.transaction((tx) =>
+        operation(
+          companyOperations(tx as Database),
+          createTransactionAuditWriter(tx),
+        ),
+      ),
   };
 }
 

@@ -16,8 +16,10 @@ const owner: HumanActor = {
   requestId: "request",
 };
 const audits: AuditEvent[] = [];
+let auditFailure = false;
 const audit: AuditWriter = {
   write: async (event) => {
+    if (auditFailure) throw new Error("injected audit failure");
     audits.push(event);
   },
 };
@@ -25,7 +27,19 @@ function repository(): CredentialRepository & { rows: CredentialRecord[] } {
   const rows: CredentialRecord[] = [];
   const result: CredentialRepository & { rows: CredentialRecord[] } = {
     rows,
-    transaction: async (work) => work(result),
+    transaction: async (work) => {
+      const before = rows.map((row) => ({
+        ...row,
+        companyIds: [...row.companyIds],
+        actions: [...row.actions],
+      }));
+      try {
+        return await work(result, audit);
+      } catch (error) {
+        rows.splice(0, rows.length, ...before);
+        throw error;
+      }
+    },
     companiesExist: async (workspaceId, ids) =>
       workspaceId === "workspace-a" && ids.every((id) => id === "company-a"),
     insert: async (input) => {
@@ -85,7 +99,6 @@ describe("MCP credentials", () => {
     const repo = repository();
     const service = createCredentialService({
       repository: repo,
-      audit,
       pepper: "test-pepper",
     });
     const created = await service.create(owner, {
@@ -109,7 +122,6 @@ describe("MCP credentials", () => {
     const repo = repository();
     const service = createCredentialService({
       repository: repo,
-      audit,
       pepper: "test-pepper",
     });
     const created = await service.create(owner, {
@@ -126,7 +138,6 @@ describe("MCP credentials", () => {
     const repo = repository();
     const service = createCredentialService({
       repository: repo,
-      audit,
       pepper: "test-pepper",
     });
     await expect(
@@ -152,7 +163,6 @@ describe("MCP credentials", () => {
     const now = new Date("2026-01-01T00:00:00.000Z");
     const service = createCredentialService({
       repository: repo,
-      audit,
       pepper: "test-pepper",
       now: () => now,
     });
@@ -180,5 +190,26 @@ describe("MCP credentials", () => {
         expiresAt: new Date("2025-01-01T00:00:00.000Z"),
       }),
     ).rejects.toMatchObject({ code: "conflict" });
+  });
+
+  it("rolls credential persistence back when audit creation fails", async () => {
+    const repo = repository();
+    const service = createCredentialService({
+      repository: repo,
+      pepper: "pepper",
+    });
+    auditFailure = true;
+    try {
+      await expect(
+        service.create(owner, {
+          name: "CI",
+          companyIds: ["company-a"],
+          actions: ["documents:read"],
+        }),
+      ).rejects.toThrow("injected audit failure");
+      expect(repo.rows).toHaveLength(0);
+    } finally {
+      auditFailure = false;
+    }
   });
 });
