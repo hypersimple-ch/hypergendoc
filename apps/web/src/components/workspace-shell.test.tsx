@@ -20,9 +20,10 @@ type MockSelectProps = Omit<
   onValueChange: (value: string) => void;
 };
 
-const { current, replace, signOut, context, companies, navigation } =
+const { current, push, replace, signOut, context, companies, navigation } =
   vi.hoisted(() => ({
     current: vi.fn(),
+    push: vi.fn(),
     replace: vi.fn(),
     signOut: vi.fn(),
     context: vi.fn(),
@@ -31,7 +32,7 @@ const { current, replace, signOut, context, companies, navigation } =
   }));
 
 vi.mock("next/navigation", () => {
-  const router = { replace };
+  const router = { push, replace };
   return {
     usePathname: () => navigation.pathname,
     useRouter: () => router,
@@ -47,20 +48,28 @@ vi.mock("../lib/api-client", async (importOriginal) => {
 vi.mock("../lib/dashboard-api", () => ({
   dashboardApi: { context, companies },
 }));
-vi.mock("./primitives", () => ({
-  Select: ({ options, onValueChange, ...props }: MockSelectProps) => (
-    <select {...props} onChange={(event) => onValueChange(event.target.value)}>
-      {options.map((option: { value: string; label: string }) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
-  ),
-}));
+vi.mock("./primitives", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./primitives")>();
+  return {
+    ...actual,
+    Select: ({ options, onValueChange, ...props }: MockSelectProps) => (
+      <select
+        {...props}
+        onChange={(event) => onValueChange(event.target.value)}
+      >
+        {options.map((option: { value: string; label: string }) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    ),
+  };
+});
 
 import { ApiError } from "../lib/api-client";
 import { useActiveCompany } from "./active-company";
+import { useUnsavedChanges } from "./unsaved-changes";
 import {
   SessionBoundary,
   WorkspaceSetupBoundary,
@@ -89,6 +98,11 @@ const company = (
 function ActiveCompanyChild() {
   const { activeCompany } = useActiveCompany();
   return <p>Route company: {activeCompany?.name ?? "none"}</p>;
+}
+
+function DirtyWorkspaceChild() {
+  useUnsavedChanges("test-editor", true);
+  return <p>Unsaved editor</p>;
 }
 
 function mockCompanies(items = [company("company-1", "Northwind")]) {
@@ -324,6 +338,60 @@ describe("WorkspaceShell", () => {
       "page",
     );
     expect(screen.getByRole("link", { name: "MCP credentials" })).toBeVisible();
+  });
+
+  it("guards unsaved work across navigation, company changes, sign-out, and browser lifecycle", async () => {
+    mockCompanies([
+      company("company-1", "Northwind"),
+      company("company-2", "Contoso"),
+    ]);
+    signOut.mockResolvedValue(undefined);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const forward = vi
+      .spyOn(window.history, "forward")
+      .mockImplementation(() => undefined);
+    render(
+      <WorkspaceShell>
+        <DirtyWorkspaceChild />
+        <ActiveCompanyChild />
+      </WorkspaceShell>,
+    );
+
+    await screen.findByText("Unsaved editor");
+    const beforeUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(beforeUnload);
+    expect(beforeUnload.defaultPrevented).toBe(true);
+
+    const companiesLink = screen.getByRole("link", { name: "Companies" });
+    companiesLink.focus();
+    fireEvent.click(companiesLink);
+    expect(
+      screen.getByRole("dialog", { name: "Leave with unsaved changes?" }),
+    ).toBeVisible();
+    expect(push).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("link", { name: "Companies" })).toHaveFocus();
+
+    fireEvent.change(
+      await screen.findByRole("combobox", { name: "Active company" }),
+      {
+        target: { value: "company-2" },
+      },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Discard and continue" }),
+    );
+    expect(await screen.findByText("Route company: Contoso")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Discard and continue" }),
+    );
+    await waitFor(() => expect(signOut).toHaveBeenCalledOnce());
+
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    expect(confirm).toHaveBeenCalled();
+    expect(forward).toHaveBeenCalled();
   });
 
   it("groups navigation and manages mobile-menu focus, Escape, and sign-out retry", async () => {

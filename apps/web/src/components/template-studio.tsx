@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Braces, Eye, FileInput, History, Save } from "lucide-react";
 import type {
@@ -13,6 +14,7 @@ import { dashboardApi } from "../lib/dashboard-api";
 import { openTemporaryPdf } from "../lib/pdf-object-url";
 import { LoadState, safeError, useLoaded } from "./dashboard-state";
 import { Button, ConfirmDialog, PageHeader, Status } from "./primitives";
+import { useUnsavedChanges } from "./unsaved-changes";
 import {
   initialTemplateData,
   requiredTemplateFieldError,
@@ -53,6 +55,7 @@ function isTemplateDefinitionShape(
 }
 
 export function TemplateStudio({ templateId }: { templateId: string }) {
+  const router = useRouter();
   const detail = useLoaded(
     () => templateApi.template(templateId),
     [templateId],
@@ -81,6 +84,10 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
     if (!savedDefinition) return false;
     return source.trim() !== JSON.stringify(savedDefinition, null, 2).trim();
   }, [savedDefinition, source]);
+  const requestNavigation = useUnsavedChanges(
+    `template-studio:${templateId}`,
+    isDirty,
+  );
 
   function parseDefinition(): TemplateDefinition | undefined {
     try {
@@ -210,12 +217,8 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
             className="button button--quiet inline-flex items-center gap-2"
             href="/workspace/templates"
             onClick={(event) => {
-              if (
-                isDirty &&
-                !window.confirm("Leave without saving this template version?")
-              ) {
-                event.preventDefault();
-              }
+              event.preventDefault();
+              requestNavigation(() => router.push("/workspace/templates"));
             }}
           >
             <ArrowLeft className="size-4" aria-hidden="true" />

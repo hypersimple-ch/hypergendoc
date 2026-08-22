@@ -22,6 +22,10 @@ import { ApiError, workspaceApi } from "../lib/api-client";
 import { authClient } from "../lib/auth-client";
 import { ActiveCompanyProvider, useActiveCompany } from "./active-company";
 import { Select } from "./primitives";
+import {
+  UnsavedChangesProvider,
+  useUnsavedNavigation,
+} from "./unsaved-changes";
 
 const navigationGroups = [
   {
@@ -195,7 +199,9 @@ export function WorkspaceSetupBoundary({ children }: { children: ReactNode }) {
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   return (
     <ActiveCompanyProvider>
-      <WorkspaceShellContent>{children}</WorkspaceShellContent>
+      <UnsavedChangesProvider>
+        <WorkspaceShellContent>{children}</WorkspaceShellContent>
+      </UnsavedChangesProvider>
     </ActiveCompanyProvider>
   );
 }
@@ -213,6 +219,7 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
     noActiveCompany,
   } = useActiveCompany();
   const router = useRouter();
+  const requestNavigation = useUnsavedNavigation();
   const [open, setOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const navigationRef = useRef<HTMLElement>(null);
@@ -286,6 +293,10 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
             className="wordmark workspace-brand"
             tabIndex={open ? -1 : undefined}
             aria-label="HyperGenDoc overview"
+            onClick={(event) => {
+              event.preventDefault();
+              requestNavigation(() => router.push("/workspace"));
+            }}
           >
             <span className="workspace-brand__mark" aria-hidden="true">
               H
@@ -320,7 +331,9 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
                 id="active-company"
                 aria-label="Active company"
                 value={activeCompany?.id ?? ""}
-                onValueChange={setActiveCompany}
+                onValueChange={(companyId) =>
+                  requestNavigation(() => setActiveCompany(companyId))
+                }
                 options={companies
                   .filter((company) => !company.archivedAt)
                   .map((company) => ({
@@ -355,7 +368,7 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
             aria-label="Sign out"
             title="Sign out"
             disabled={open || signOutState === "pending"}
-            onClick={() => void signOut()}
+            onClick={() => requestNavigation(() => void signOut())}
           >
             {signOutState === "pending" ? (
               <span aria-hidden="true">…</span>
@@ -390,7 +403,13 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
                           ? "page"
                           : undefined
                       }
-                      onClick={() => closeMenu()}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        requestNavigation(() => {
+                          closeMenu();
+                          router.push(href);
+                        });
+                      }}
                     >
                       <Icon size={17} strokeWidth={1.8} aria-hidden="true" />
                       <span>{label}</span>

@@ -19,6 +19,7 @@ import { initialStyleDefinition } from "./style-studio-definition";
 import { StyleStudioPreview } from "./style-studio-preview";
 import { LoadState, safeError, useLoaded } from "./dashboard-state";
 import { Button, ConfirmDialog, Status } from "./primitives";
+import { useUnsavedChanges } from "./unsaved-changes";
 
 export function StyleStudio({
   style,
@@ -49,6 +50,7 @@ export function StyleStudio({
       JSON.stringify(definition) !== JSON.stringify(savedDefinition),
     [definition, savedDefinition],
   );
+  useUnsavedChanges(`style-studio:${style.id}`, isDirty);
 
   useEffect(() => {
     if (!detail.value) return;
