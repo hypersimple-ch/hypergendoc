@@ -8,6 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../lib/api-client";
 
 const api = vi.hoisted(() => ({
   createCompany: vi.fn(),
@@ -147,6 +148,31 @@ describe("CompaniesDashboard", () => {
     const announcement = await screen.findByText("Logo uploaded.");
     expect(announcement).toBeVisible();
     expect(announcement.parentElement).toHaveAttribute("aria-live", "polite");
+  });
+
+  it("shows server upload validation instead of a network failure", async () => {
+    activeCompany.mockReturnValue(workspace());
+    api.uploadLogo.mockRejectedValue(
+      new ApiError(
+        "validation_failed",
+        "Choose a PNG, JPEG, or WebP image.",
+        "request-upload-123",
+      ),
+    );
+    render(<CompaniesDashboard />);
+
+    fireEvent.change(screen.getByLabelText("Upload logo"), {
+      target: {
+        files: [new File(["invalid"], "logo.txt", { type: "text/plain" })],
+      },
+    });
+
+    expect(
+      await screen.findByText("Choose a PNG, JPEG, or WebP image."),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/could not be completed/i),
+    ).not.toBeInTheDocument();
   });
 
   it("prevents duplicate create requests while creation is pending", async () => {

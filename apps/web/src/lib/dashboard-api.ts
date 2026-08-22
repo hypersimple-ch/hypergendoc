@@ -19,7 +19,7 @@ import type {
   CompanyImageAsset,
   WorkspaceRole,
 } from "@hypergendoc/contracts";
-import { ApiError, api } from "./api-client";
+import { api } from "./api-client";
 
 export type Member = {
   id: string;
@@ -115,49 +115,23 @@ export const dashboardApi = {
     api<void>(`/api/companies/${id}`, { method: "DELETE" }),
   restoreCompany: (id: string) =>
     api<Company>(`/api/companies/${id}/restore`, { method: "POST", body: {} }),
-  uploadLogo: async (id: string, file: File) => {
-    if (file.size > 10 * 1024 * 1024)
-      throw new ApiError(
-        "validation_failed",
-        "Choose an image smaller than 10 MiB.",
-      );
+  uploadLogo: (id: string, file: File) => {
     const form = new FormData();
     form.set("logo", file);
-    const response = await fetch(`/api/companies/${id}/logo`, {
+    return api<unknown>(`/api/companies/${id}/logo`, {
       method: "POST",
-      credentials: "include",
       body: form,
-      headers: { Accept: "application/json" },
     });
-    if (!response.ok)
-      throw new ApiError(
-        "network_error",
-        "Logo upload could not be completed.",
-      );
-    return (await response.json().catch(() => undefined)) as unknown;
   },
   assets: (companyId: string) =>
     api<CompanyAssets>(`/api/companies/${companyId}/assets`),
-  uploadFont: async (id: string, file: File) => {
-    if (file.size > 10 * 1024 * 1024)
-      throw new ApiError(
-        "validation_failed",
-        "Choose a font smaller than 10 MiB.",
-      );
+  uploadFont: (id: string, file: File) => {
     const form = new FormData();
     form.set("font", file);
-    const response = await fetch(`/api/companies/${id}/assets/fonts`, {
+    return api<unknown>(`/api/companies/${id}/assets/fonts`, {
       method: "POST",
-      credentials: "include",
       body: form,
-      headers: { Accept: "application/json" },
     });
-    if (!response.ok)
-      throw new ApiError(
-        "network_error",
-        "Font upload could not be completed.",
-      );
-    return (await response.json().catch(() => undefined)) as unknown;
   },
   styles: async (companyId: string) =>
     items<Style>(
@@ -265,26 +239,13 @@ export const dashboardApi = {
       method: "POST",
       body: input,
     }),
-  uploadImage: async (id: string, file: File): Promise<CompanyImageAsset> => {
-    if (file.size > 10 * 1024 * 1024)
-      throw new ApiError(
-        "validation_failed",
-        "Choose an image smaller than 10 MiB.",
-      );
+  uploadImage: (id: string, file: File): Promise<CompanyImageAsset> => {
     const form = new FormData();
     form.set("image", file);
-    const response = await fetch(`/api/companies/${id}/assets/images`, {
+    return api<CompanyImageAsset>(`/api/companies/${id}/assets/images`, {
       method: "POST",
-      credentials: "include",
       body: form,
-      headers: { Accept: "application/json" },
     });
-    if (!response.ok)
-      throw new ApiError(
-        "network_error",
-        "Image upload could not be completed.",
-      );
-    return (await response.json()) as CompanyImageAsset;
   },
   credentials: async () =>
     items<McpCredential>(

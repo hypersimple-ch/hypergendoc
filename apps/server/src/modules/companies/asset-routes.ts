@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { uploadValidationError } from "../../platform/errors.js";
 import type { HumanActor } from "../auth/actors.js";
 import type { createCompanyAssetService } from "./assets.js";
 
@@ -44,8 +45,13 @@ export function createCompanyAssetRoutes(
       "/api/companies/:companyId/assets/fonts",
       async (request, reply) => {
         const upload = await uploadedFile(request);
-        if (!upload.bytes) return reply.code(400).send();
-        if (upload.truncated) return reply.code(413).send();
+        if (!upload.bytes)
+          throw uploadValidationError("Choose one file to upload.");
+        if (upload.truncated)
+          throw uploadValidationError(
+            "Choose a file smaller than 10 MiB.",
+            413,
+          );
         return reply
           .code(201)
           .send(
@@ -61,8 +67,13 @@ export function createCompanyAssetRoutes(
       "/api/companies/:companyId/assets/images",
       async (request, reply) => {
         const upload = await uploadedFile(request);
-        if (!upload.bytes) return reply.code(400).send();
-        if (upload.truncated) return reply.code(413).send();
+        if (!upload.bytes)
+          throw uploadValidationError("Choose one file to upload.");
+        if (upload.truncated)
+          throw uploadValidationError(
+            "Choose a file smaller than 10 MiB.",
+            413,
+          );
         return reply
           .code(201)
           .send(

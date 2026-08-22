@@ -64,17 +64,21 @@ export async function api<T>(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
+    const multipart = body instanceof FormData;
     const request: RequestInit = {
       ...init,
       credentials: "include",
       signal: controller.signal,
       headers: {
         Accept: "application/json",
-        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...(body === undefined || multipart
+          ? {}
+          : { "Content-Type": "application/json" }),
         ...headers,
       },
     };
-    if (body !== undefined) request.body = JSON.stringify(body);
+    if (body !== undefined)
+      request.body = multipart ? body : JSON.stringify(body);
     const response = await fetch(path, request);
     const payload: unknown = await response.json().catch(() => undefined);
     if (!response.ok) {

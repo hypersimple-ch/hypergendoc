@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { uploadValidationError } from "../../platform/errors.js";
 import type { HumanActor } from "../auth/actors.js";
 import type { createCompanyLogoService } from "./logo.js";
 
@@ -25,11 +26,15 @@ export function createCompanyLogoRoutes(
           >;
         };
         const upload = await multipart.file();
-        if (!upload) return reply.code(400).send();
+        if (!upload) throw uploadValidationError("Choose one file to upload.");
         const chunks: Buffer[] = [];
         for await (const chunk of upload.file)
           chunks.push(Buffer.from(chunk as Uint8Array));
-        if (upload.file.truncated) return reply.code(413).send();
+        if (upload.file.truncated)
+          throw uploadValidationError(
+            "Choose a file smaller than 10 MiB.",
+            413,
+          );
         return reply
           .code(201)
           .send(

@@ -5,7 +5,7 @@ const fontkit = createRequire(import.meta.url)("fontkit") as {
   create(bytes: Uint8Array): unknown;
 };
 import type { ObjectStore, StoredObject } from "./object-store.js";
-import { AppError } from "./errors.js";
+import { uploadValidationError } from "./errors.js";
 
 const maxMetadataLength = 255;
 
@@ -65,9 +65,10 @@ export async function uploadFont(
   ownership: FontOwnershipRepository,
 ): Promise<FontUploadResult> {
   if (input.bytes.byteLength > limits.fontBytes)
-    throw new AppError("validation_failed", 400);
+    throw uploadValidationError("Choose a file smaller than 10 MiB.", 413);
   const contentType = fontContentType(input.bytes);
-  if (!contentType) throw new AppError("validation_failed", 400);
+  if (!contentType)
+    throw uploadValidationError("Choose a valid TTF, OTF, or WOFF2 font.");
 
   let parsed: {
     familyName?: unknown;
@@ -77,12 +78,13 @@ export async function uploadFont(
   try {
     parsed = fontkit.create(Buffer.from(input.bytes)) as typeof parsed;
   } catch {
-    throw new AppError("validation_failed", 400);
+    throw uploadValidationError("Choose a valid TTF, OTF, or WOFF2 font.");
   }
   const familyName = safeName(parsed.familyName);
   const subfamilyName = safeName(parsed.subfamilyName) ?? null;
   const displayName = safeName(parsed.fullName) ?? familyName;
-  if (!familyName || !displayName) throw new AppError("validation_failed", 400);
+  if (!familyName || !displayName)
+    throw uploadValidationError("Choose a valid TTF, OTF, or WOFF2 font.");
 
   const object = await store.putPrivate({
     bytes: input.bytes,

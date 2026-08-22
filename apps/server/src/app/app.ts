@@ -72,7 +72,11 @@ import {
   loadServerEnvironment,
   type ServerEnvironment,
 } from "../platform/env.js";
-import { AppError, toSafeError } from "../platform/errors.js";
+import {
+  AppError,
+  normalizeTransportError,
+  toSafeError,
+} from "../platform/errors.js";
 import {
   createHealthChecker,
   registerHealthRoutes,
@@ -320,9 +324,7 @@ export async function createApplication(
           )
         : error instanceof ZodError || error instanceof DocumentInputError
           ? new AppError("validation_failed", 400)
-          : (error as { code?: string }).code === "FST_ERR_CTP_BODY_TOO_LARGE"
-            ? new AppError("validation_failed", 413)
-            : error;
+          : normalizeTransportError(error);
     const safe = toSafeError(mapped, request.id);
     if (safe.statusCode >= 500)
       request.log.error(

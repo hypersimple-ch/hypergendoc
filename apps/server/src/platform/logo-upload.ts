@@ -1,7 +1,7 @@
 import { fileTypeFromBuffer } from "file-type";
 import { limits } from "@hypergendoc/config";
 import type { ObjectStore, StoredObject } from "./object-store.js";
-import { AppError } from "./errors.js";
+import { uploadValidationError } from "./errors.js";
 
 const allowedTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
 
@@ -54,14 +54,14 @@ export async function uploadLogo(
   ownership: LogoOwnershipRepository,
 ): Promise<LogoUploadResult> {
   if (upload.bytes.byteLength > limits.logoBytes)
-    throw new AppError("validation_failed", 400);
+    throw uploadValidationError("Choose a file smaller than 10 MiB.", 413);
   const detected = await fileTypeFromBuffer(upload.bytes);
   if (
     detected === undefined ||
     !allowedTypes.has(detected.mime) ||
     !hasExactContainerLength(upload.bytes, detected.mime)
   )
-    throw new AppError("validation_failed", 400);
+    throw uploadValidationError("Choose a PNG, JPEG, or WebP image.");
   const contentType = detected.mime as LogoOwnershipInput["contentType"];
   const object = await store.putPrivate({
     bytes: upload.bytes,
