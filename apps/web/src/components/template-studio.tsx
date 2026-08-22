@@ -10,6 +10,7 @@ import type {
   TemplateVersion,
 } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
+import { openTemporaryPdf } from "../lib/pdf-object-url";
 import { LoadState, safeError, useLoaded } from "./dashboard-state";
 import { Button, ConfirmDialog, PageHeader, Status } from "./primitives";
 import {
@@ -187,11 +188,7 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
       }
       const response = await fetch(result.url);
       if (!response.ok) throw new Error("Preview download failed");
-      const objectUrl = URL.createObjectURL(
-        new Blob([await response.arrayBuffer()], { type: "application/pdf" }),
-      );
-      previewWindow.opener = null;
-      previewWindow.location.replace(objectUrl);
+      openTemporaryPdf(previewWindow, await response.arrayBuffer());
       setMessage({ text: "PDF preview opened in a new tab.", error: false });
     } catch (reason) {
       previewWindow?.close();

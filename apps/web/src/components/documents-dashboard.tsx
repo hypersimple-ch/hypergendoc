@@ -7,6 +7,7 @@ import { dashboardApi } from "../lib/dashboard-api";
 import { useActiveCompany } from "./active-company";
 import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
 import { TemplateDocumentEditor } from "./template-document-editor";
+import { PdfPreview } from "./pdf-preview";
 import {
   Button,
   ConfirmDialog,
@@ -271,7 +272,6 @@ function DocumentDetail({
     [document.id],
   );
   const [active, setActive] = useState<DocumentCommit>();
-  const [showPdf, setShowPdf] = useState(false);
   const [busy, setBusy] = useState(false);
   const [revertDialogOpen, setRevertDialogOpen] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean }>();
@@ -309,7 +309,6 @@ function DocumentDetail({
         active.commitSha,
       );
       setActive(current.commit);
-      setShowPdf(false);
       setMessage({ text: "Reverted as a new commit.", error: false });
       detail.reload();
     } catch (error) {
@@ -356,7 +355,6 @@ function DocumentDetail({
                     disabled={busy}
                     onClick={() => {
                       setActive(commit);
-                      setShowPdf(false);
                       setMessage(undefined);
                     }}
                   >
@@ -409,13 +407,10 @@ function DocumentDetail({
                     )}
                     {isCurrent && (
                       <>
-                        <Button
-                          tone="quiet"
-                          disabled={busy}
-                          onClick={() => setShowPdf(true)}
-                        >
-                          Preview PDF
-                        </Button>
+                        <PdfPreview
+                          src={`${dashboardApi.pdfUrl(document.id)}?disposition=inline`}
+                          title={`${document.title} current`}
+                        />
                         <a
                           className="button button--quiet"
                           href={dashboardApi.pdfUrl(document.id)}
@@ -426,14 +421,6 @@ function DocumentDetail({
                       </>
                     )}
                   </div>
-                  {isCurrent && showPdf && (
-                    <iframe
-                      className="pdf-preview"
-                      title={`${document.title} current PDF preview`}
-                      src={`${dashboardApi.pdfUrl(document.id)}?disposition=inline`}
-                      sandbox="allow-downloads"
-                    />
-                  )}
                 </>
               )}
               {message && (

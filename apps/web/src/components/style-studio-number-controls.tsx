@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 function displayNumber(value: number, step: number) {
   const stepDecimals = String(step).split(".")[1]?.length ?? 0;
@@ -70,9 +70,14 @@ export function Range({
   unit: string;
   onChange: (value: string) => void;
 }) {
+  const labelId = useId();
   return (
-    <label className="range-control rounded-md border border-border bg-muted/40 p-2.5">
-      <span>
+    <div
+      className="range-control rounded-md border border-border bg-muted/40 p-2.5"
+      role="group"
+      aria-labelledby={labelId}
+    >
+      <span id={labelId}>
         {label}
         <NumberField
           label={label}
@@ -94,6 +99,6 @@ export function Range({
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
-    </label>
+    </div>
   );
 }

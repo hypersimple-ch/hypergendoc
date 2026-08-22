@@ -574,6 +574,18 @@ describe("StylesDashboard", () => {
       within(pageLayout).getByRole("group", { name: "Print standards" }),
     );
     expect(stack?.querySelector(".margin-grid")).toBeInTheDocument();
+    const fontSizeGroup = within(typography).getByRole("group", {
+      name: /Font size/,
+    });
+    expect(
+      within(fontSizeGroup).getByRole("slider", { name: "Font size" }),
+    ).toBeVisible();
+    expect(
+      within(fontSizeGroup).getByRole("spinbutton", {
+        name: "Font size value",
+      }),
+    ).toBeVisible();
+    expect(fontSizeGroup.closest("label")).toBeNull();
   });
 
   it("keeps matching page presets pressed and clears them after manual margin edits", async () => {

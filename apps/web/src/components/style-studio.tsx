@@ -7,6 +7,7 @@ import type {
   StyleVersion,
 } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
+import { openTemporaryPdf } from "../lib/pdf-object-url";
 import {
   BrandControls,
   HeaderFooterControls,
@@ -107,13 +108,7 @@ export function StyleStudio({
       if (result.url && previewWindow) {
         const response = await fetch(result.url);
         if (!response.ok) throw new Error("Preview download failed");
-        const pdfUrl = URL.createObjectURL(
-          new Blob([await response.arrayBuffer()], {
-            type: "application/pdf",
-          }),
-        );
-        previewWindow.opener = null;
-        previewWindow.location.replace(pdfUrl);
+        openTemporaryPdf(previewWindow, await response.arrayBuffer());
         setMessage({ text: "PDF preview opened in a new tab.", error: false });
       } else {
         previewWindow?.close();
