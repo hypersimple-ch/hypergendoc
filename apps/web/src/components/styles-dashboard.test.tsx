@@ -484,7 +484,7 @@ describe("StylesDashboard", () => {
       .closest("article");
     expect(previewPage).toHaveStyle("--primary-color: #A9442A");
 
-    fireEvent.pointerDown(document.body);
+    screen.getByRole("button", { name: "Back to style library" }).focus();
     await waitFor(() =>
       expect(
         screen.queryByLabelText("Primary color hex"),
@@ -745,9 +745,56 @@ describe("StylesDashboard", () => {
     const hex = await screen.findByLabelText("Primary color hex");
     expect(hex).toHaveFocus();
     fireEvent.keyDown(hex, { key: "Escape" });
-    expect(
-      screen.getByRole("button", { name: "Edit Primary color" }),
-    ).toHaveFocus();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Edit Primary color" }),
+      ).toHaveFocus(),
+    );
+  });
+
+  it("supports complete keyboard navigation for native company-logo radios", async () => {
+    assets.mockResolvedValue({
+      logos: [
+        {
+          id: "logo-one",
+          contentUrl: "/logos/one.png",
+          displayName: "First logo",
+        },
+        {
+          id: "logo-two",
+          contentUrl: "/logos/two.png",
+          displayName: "Second logo",
+        },
+      ],
+      fonts: [],
+      colors: [],
+    });
+    styles.mockResolvedValue([styleB]);
+    style.mockResolvedValue({ style: styleB, versions: [version()] });
+    useActiveCompany.mockReturnValue(activeCompanyState());
+    render(<StylesDashboard />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Edit versions" }),
+    );
+
+    const none = await screen.findByRole("radio", { name: "None" });
+    const first = screen.getByRole("radio", { name: "First logo" });
+    const second = screen.getByRole("radio", { name: "Second logo" });
+    expect(none).toBeChecked();
+
+    none.focus();
+    fireEvent.keyDown(none, { key: "ArrowRight" });
+    expect(first).toHaveFocus();
+    expect(first).toBeChecked();
+    fireEvent.keyDown(first, { key: "End" });
+    expect(second).toHaveFocus();
+    expect(second).toBeChecked();
+    fireEvent.keyDown(second, { key: "Home" });
+    expect(none).toHaveFocus();
+    expect(none).toBeChecked();
+    fireEvent.keyDown(none, { key: "ArrowLeft" });
+    expect(second).toHaveFocus();
+    expect(second).toBeChecked();
   });
 
   it("keeps a bounded unsaved-close confirmation", async () => {

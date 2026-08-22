@@ -325,42 +325,85 @@ export function BrandControls({
           className="logo-selector"
           role="radiogroup"
           aria-label="Company logo"
+          onKeyDown={(event) => {
+            if (
+              ![
+                "ArrowLeft",
+                "ArrowRight",
+                "ArrowUp",
+                "ArrowDown",
+                "Home",
+                "End",
+              ].includes(event.key)
+            )
+              return;
+            const radios = Array.from(
+              event.currentTarget.querySelectorAll<HTMLInputElement>(
+                'input[type="radio"]',
+              ),
+            );
+            const current = radios.indexOf(event.target as HTMLInputElement);
+            if (current < 0) return;
+            event.preventDefault();
+            const next =
+              event.key === "Home"
+                ? 0
+                : event.key === "End"
+                  ? radios.length - 1
+                  : (current +
+                      (event.key === "ArrowRight" || event.key === "ArrowDown"
+                        ? 1
+                        : -1) +
+                      radios.length) %
+                    radios.length;
+            radios[next]?.focus();
+            radios[next]?.click();
+          }}
         >
-          <button
-            type="button"
-            role="radio"
-            aria-checked={!definition.logoObjectId}
+          <label
             className={
               !definition.logoObjectId
                 ? "logo-option logo-option--selected"
                 : "logo-option"
             }
-            onClick={() =>
-              setDefinition((draft) => ({ ...draft, logoObjectId: null }))
-            }
           >
-            None
-          </button>
+            <input
+              className="logo-option__input"
+              type="radio"
+              name="company-logo"
+              checked={!definition.logoObjectId}
+              onChange={() =>
+                setDefinition((draft) => ({ ...draft, logoObjectId: null }))
+              }
+            />
+            <span>None</span>
+          </label>
           {assets?.logos.map((logo) => (
-            <button
-              type="button"
-              role="radio"
-              aria-checked={definition.logoObjectId === logo.id}
+            <label
               className={
                 definition.logoObjectId === logo.id
                   ? "logo-option logo-option--selected"
                   : "logo-option"
               }
               key={logo.id}
-              onClick={() =>
-                setDefinition((draft) => ({ ...draft, logoObjectId: logo.id }))
-              }
             >
+              <input
+                className="logo-option__input"
+                type="radio"
+                name="company-logo"
+                checked={definition.logoObjectId === logo.id}
+                onChange={() =>
+                  setDefinition((draft) => ({
+                    ...draft,
+                    logoObjectId: logo.id,
+                  }))
+                }
+              />
               <img
                 src={logo.contentUrl}
                 alt={logo.displayName ?? "Company logo"}
               />
-            </button>
+            </label>
           ))}
         </div>
         <FormField label="Upload company logo" hint={IMAGE_UPLOAD_GUIDANCE}>

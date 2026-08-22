@@ -775,6 +775,10 @@ legend {
   .sidebar--open {
     display: block;
   }
+  .workspace-navigation--sheet {
+    display: block;
+    padding-top: 4rem;
+  }
   .sidebar-note {
     margin-top: 2rem;
   }
@@ -1767,10 +1771,7 @@ legend {
   text-overflow: ellipsis;
 }
 .color-popover {
-  position: absolute;
   z-index: 10;
-  top: calc(100% + 0.45rem);
-  left: 0;
   width: min(18rem, calc(100vw - 3rem));
   padding: 0.75rem;
   border: 1px solid var(--border);
@@ -2226,6 +2227,18 @@ legend {
 .logo-option--selected {
   border-color: var(--primary);
   box-shadow: 0 0 0 2px var(--ring);
+}
+.logo-option:has(.logo-option__input:focus-visible) {
+  outline: 3px solid var(--ring);
+  outline-offset: 3px;
+}
+.logo-option__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 .logo-option img {
   width: 100%;

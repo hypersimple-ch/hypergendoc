@@ -11,6 +11,7 @@ import {
 import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ApiClientModule from "../lib/api-client";
+import type * as PrimitivesModule from "./primitives";
 
 type MockSelectProps = Omit<
   ComponentProps<"select">,
@@ -49,7 +50,7 @@ vi.mock("../lib/dashboard-api", () => ({
   dashboardApi: { context, companies },
 }));
 vi.mock("./primitives", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./primitives")>();
+  const actual = await importOriginal<typeof PrimitivesModule>();
   return {
     ...actual,
     Select: ({ options, onValueChange, ...props }: MockSelectProps) => (
@@ -427,24 +428,26 @@ describe("WorkspaceShell", () => {
     expect(
       screen.queryByRole("region", { name: "Active workspace context" }),
     ).not.toBeInTheDocument();
-    expect(menu).toHaveAttribute("aria-controls", "workspace-navigation");
-    const overview = screen.getByRole("link", { name: "Overview" });
-    await waitFor(() => expect(overview).toHaveFocus());
-    expect(screen.getByRole("main")).toHaveAttribute("inert");
-    expect(document.body).toHaveStyle({ overflow: "hidden" });
-    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
-    expect(menu).toHaveFocus();
-    fireEvent.keyDown(document, { key: "Tab" });
-    expect(overview).toHaveFocus();
+    expect(menu).toHaveAttribute("aria-controls", "workspace-navigation-sheet");
+    const dialog = screen.getByRole("dialog", {
+      name: "Workspace navigation",
+    });
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Close navigation" }),
+      ).toHaveFocus(),
+    );
+    expect(document.querySelector('[aria-hidden="true"]')).not.toBeNull();
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(menu).toHaveFocus());
     expect(menu).toHaveAttribute("aria-expanded", "false");
     expect(menu).toHaveTextContent("Menu");
-    expect(screen.getByRole("main")).not.toHaveAttribute("inert");
-    expect(document.body).not.toHaveStyle({ overflow: "hidden" });
 
     fireEvent.click(menu);
-    fireEvent.click(screen.getByRole("link", { name: "Documents" }), {
+    const reopened = screen.getByRole("dialog", {
+      name: "Workspace navigation",
+    });
+    fireEvent.click(within(reopened).getByRole("link", { name: "Documents" }), {
       button: 1,
     });
     expect(menu).toHaveAttribute("aria-expanded", "false");

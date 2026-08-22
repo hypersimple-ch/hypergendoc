@@ -6,7 +6,9 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { Button, FormField, Input, Status, Table } from "./primitives";
 import { Badge } from "./ui/badge";
@@ -89,6 +91,43 @@ describe("shared UI system", () => {
       "text-accent-foreground",
     );
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  function DynamicSheetFixture() {
+    const [loaded, setLoaded] = useState(false);
+    return (
+      <Sheet>
+        <SheetTrigger asChild>
+          <button type="button">Open async navigation</button>
+        </SheetTrigger>
+        <SheetContent aria-label="Async mobile navigation">
+          <button type="button" onClick={() => setLoaded(true)}>
+            Load destination
+          </button>
+          {loaded ? <a href="/workspace/audit">Audit log</a> : null}
+        </SheetContent>
+      </Sheet>
+    );
+  }
+
+  it("keeps dynamic sheet descendants reachable and restores focus on Escape", async () => {
+    render(<DynamicSheetFixture />);
+    const trigger = screen.getByRole("button", {
+      name: "Open async navigation",
+    });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole("dialog", {
+      name: "Async mobile navigation",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Load destination" }));
+    const destination = within(dialog).getByRole("link", { name: "Audit log" });
+    destination.focus();
+    expect(destination).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    expect(trigger).toHaveFocus();
   });
 
   it("opens and closes the shared mobile sheet with labelled controls", async () => {

@@ -16,12 +16,13 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "./ui/button";
 import { ApiError, workspaceApi } from "../lib/api-client";
 import { authClient } from "../lib/auth-client";
 import { ActiveCompanyProvider, useActiveCompany } from "./active-company";
 import { Select } from "./primitives";
+import { Sheet, SheetContent, SheetTrigger } from "./ui/sheet";
 import {
   UnsavedChangesProvider,
   useUnsavedNavigation,
@@ -221,8 +222,6 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
   const router = useRouter();
   const requestNavigation = useUnsavedNavigation();
   const [open, setOpen] = useState(false);
-  const menuButtonRef = useRef<HTMLButtonElement>(null);
-  const navigationRef = useRef<HTMLElement>(null);
   const [signOutState, setSignOutState] = useState<
     "idle" | "pending" | "error"
   >("idle");
@@ -236,202 +235,190 @@ function WorkspaceShellContent({ children }: { children: ReactNode }) {
     }
   }
 
-  function closeMenu(returnFocus = false) {
+  function closeMenu() {
     setOpen(false);
-    if (returnFocus) {
-      requestAnimationFrame(() => menuButtonRef.current?.focus());
-    }
   }
 
-  useEffect(() => {
-    if (!open) return;
-    const navigationControls = Array.from(
-      navigationRef.current?.querySelectorAll<HTMLElement>(
-        "a[href], button:not([disabled]), select:not([disabled])",
-      ) ?? [],
-    );
-    navigationControls[0]?.focus();
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closeMenu(true);
-        return;
-      }
-      if (event.key !== "Tab" || !navigationControls.length) return;
-      const first = navigationControls[0];
-      const last = navigationControls.at(-1);
-      if (!first || !last) return;
-      if (document.activeElement === menuButtonRef.current) {
-        event.preventDefault();
-        (event.shiftKey ? last : first).focus();
-      } else if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        menuButtonRef.current?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        menuButtonRef.current?.focus();
-      }
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [open]);
-
   return (
-    <div className="workspace-shell">
-      <header
-        className={`workspace-top workspace-shell__header ${open ? "workspace-top--menu-open" : ""}`}
-      >
-        <div className="workspace-brand-group">
-          <Link
-            href="/workspace"
-            className="wordmark workspace-brand"
-            tabIndex={open ? -1 : undefined}
-            aria-label="HyperGenDoc overview"
-            onClick={(event) => {
-              event.preventDefault();
-              requestNavigation(() => router.push("/workspace"));
-            }}
-          >
-            <span className="workspace-brand__mark" aria-hidden="true">
-              H
+    <Sheet open={open} onOpenChange={setOpen}>
+      <div className="workspace-shell">
+        <header
+          className={`workspace-top workspace-shell__header ${open ? "workspace-top--menu-open" : ""}`}
+        >
+          <div className="workspace-brand-group">
+            <Link
+              href="/workspace"
+              className="wordmark workspace-brand"
+              tabIndex={open ? -1 : undefined}
+              aria-label="HyperGenDoc overview"
+              onClick={(event) => {
+                event.preventDefault();
+                requestNavigation(() => router.push("/workspace"));
+              }}
+            >
+              <span className="workspace-brand__mark" aria-hidden="true">
+                H
+              </span>
+              <span className="workspace-brand__name">HyperGenDoc</span>
+            </Link>
+            <span className="workspace-context__identity">
+              {context?.name ?? "Workspace"}
             </span>
-            <span className="workspace-brand__name">HyperGenDoc</span>
-          </Link>
-          <span className="workspace-context__identity">
-            {context?.name ?? "Workspace"}
-          </span>
-        </div>
-        <section
-          className="workspace-context"
-          aria-label="Active workspace context"
-          hidden={open}
-        >
-          <div className="workspace-company-selector workspace-context__company">
-            {loading ? <p role="status">Loading companies…</p> : null}
-            {error ? (
-              <div role="alert">
-                <p>We could not load companies. {error}</p>
-                <button onClick={reload}>Try again</button>
-              </div>
-            ) : null}
-            {noActiveCompany ? (
-              <p role="status">
-                No active companies are available. Create or restore a company
-                to continue.
-              </p>
-            ) : null}
-            {!loading && !error && !noActiveCompany ? (
-              <Select
-                id="active-company"
-                aria-label="Active company"
-                value={activeCompany?.id ?? ""}
-                onValueChange={(companyId) =>
-                  requestNavigation(() => setActiveCompany(companyId))
-                }
-                options={companies
-                  .filter((company) => !company.archivedAt)
-                  .map((company) => ({
-                    value: company.id,
-                    label: company.name,
-                  }))}
-                placeholder="Select a company"
-              />
-            ) : null}
           </div>
-        </section>
-        <button
-          ref={menuButtonRef}
-          className="menu-button"
-          aria-expanded={open}
-          aria-controls="workspace-navigation"
-          aria-label={
-            open ? "Close workspace navigation" : "Open workspace navigation"
-          }
-          onClick={() => (open ? closeMenu(true) : setOpen(true))}
-        >
-          {open ? (
-            <X size={18} aria-hidden="true" />
-          ) : (
-            <Menu size={18} aria-hidden="true" />
-          )}
-          <span>{open ? "Close" : "Menu"}</span>
-        </button>
-        <div className="workspace-account-action">
-          <button
-            className="avatar"
-            aria-label="Sign out"
-            title="Sign out"
-            disabled={open || signOutState === "pending"}
-            onClick={() => requestNavigation(() => void signOut())}
+          <section
+            className="workspace-context"
+            aria-label="Active workspace context"
+            hidden={open}
           >
-            {signOutState === "pending" ? (
-              <span aria-hidden="true">…</span>
-            ) : (
-              <LogOut size={17} aria-hidden="true" />
-            )}
-          </button>
-        </div>
-        {signOutState === "error" ? (
-          <p role="alert">Sign out failed. Please try again.</p>
-        ) : null}
-      </header>
-      <aside
-        ref={navigationRef}
-        id="workspace-navigation"
-        className={`sidebar workspace-navigation ${open ? "sidebar--open" : ""}`}
-        aria-label="Workspace navigation"
-      >
-        <nav aria-label="Workspace sections">
-          {navigationGroups.map((group) => (
-            <section className="workspace-navigation__group" key={group.label}>
-              <h2 className="workspace-navigation__heading">{group.label}</h2>
-              <ul>
-                {group.links.map(({ href, label, icon: Icon }) => (
-                  <li key={href}>
-                    <Link
-                      href={href}
-                      aria-current={
-                        pathname === href ||
-                        (href !== "/workspace" &&
-                          pathname.startsWith(`${href}/`))
-                          ? "page"
-                          : undefined
-                      }
-                      onClick={(event) => {
-                        event.preventDefault();
-                        requestNavigation(() => {
-                          closeMenu();
-                          router.push(href);
-                        });
-                      }}
-                    >
-                      <Icon size={17} strokeWidth={1.8} aria-hidden="true" />
-                      <span>{label}</span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
-        </nav>
-        <div className="sidebar-note">
-          <ShieldCheck size={16} aria-hidden="true" />
-          <p>Permissions are verified by the server for every request.</p>
-        </div>
-      </aside>
-      <main
-        id="main-content"
-        className="workspace-main workspace-shell__main"
-        inert={open ? true : undefined}
-      >
-        {children}
-      </main>
-    </div>
+            <div className="workspace-company-selector workspace-context__company">
+              {loading ? <p role="status">Loading companies…</p> : null}
+              {error ? (
+                <div role="alert">
+                  <p>We could not load companies. {error}</p>
+                  <button onClick={reload}>Try again</button>
+                </div>
+              ) : null}
+              {noActiveCompany ? (
+                <p role="status">
+                  No active companies are available. Create or restore a company
+                  to continue.
+                </p>
+              ) : null}
+              {!loading && !error && !noActiveCompany ? (
+                <Select
+                  id="active-company"
+                  aria-label="Active company"
+                  value={activeCompany?.id ?? ""}
+                  onValueChange={(companyId) =>
+                    requestNavigation(() => setActiveCompany(companyId))
+                  }
+                  options={companies
+                    .filter((company) => !company.archivedAt)
+                    .map((company) => ({
+                      value: company.id,
+                      label: company.name,
+                    }))}
+                  placeholder="Select a company"
+                />
+              ) : null}
+            </div>
+          </section>
+          <SheetTrigger asChild>
+            <button
+              className="menu-button"
+              aria-controls="workspace-navigation-sheet"
+              aria-label={
+                open
+                  ? "Close workspace navigation"
+                  : "Open workspace navigation"
+              }
+            >
+              {open ? (
+                <X size={18} aria-hidden="true" />
+              ) : (
+                <Menu size={18} aria-hidden="true" />
+              )}
+              <span>{open ? "Close" : "Menu"}</span>
+            </button>
+          </SheetTrigger>
+          <div className="workspace-account-action">
+            <button
+              className="avatar"
+              aria-label="Sign out"
+              title="Sign out"
+              disabled={open || signOutState === "pending"}
+              onClick={() => requestNavigation(() => void signOut())}
+            >
+              {signOutState === "pending" ? (
+                <span aria-hidden="true">…</span>
+              ) : (
+                <LogOut size={17} aria-hidden="true" />
+              )}
+            </button>
+          </div>
+          {signOutState === "error" ? (
+            <p role="alert">Sign out failed. Please try again.</p>
+          ) : null}
+        </header>
+        <aside
+          className="sidebar workspace-navigation"
+          aria-label="Workspace navigation"
+          aria-hidden={open || undefined}
+          inert={open ? true : undefined}
+        >
+          <WorkspaceNavigation
+            pathname={pathname}
+            onNavigate={(href) => requestNavigation(() => router.push(href))}
+          />
+        </aside>
+        <SheetContent
+          id="workspace-navigation-sheet"
+          className="sidebar workspace-navigation workspace-navigation--sheet"
+          aria-label="Workspace navigation"
+        >
+          <WorkspaceNavigation
+            pathname={pathname}
+            onNavigate={(href) =>
+              requestNavigation(() => {
+                closeMenu();
+                router.push(href);
+              })
+            }
+          />
+        </SheetContent>
+        <main
+          id="main-content"
+          className="workspace-main workspace-shell__main"
+        >
+          {children}
+        </main>
+      </div>
+    </Sheet>
+  );
+}
+
+function WorkspaceNavigation({
+  pathname,
+  onNavigate,
+}: {
+  pathname: string;
+  onNavigate: (href: string) => void;
+}) {
+  return (
+    <>
+      <nav aria-label="Workspace sections">
+        {navigationGroups.map((group) => (
+          <section className="workspace-navigation__group" key={group.label}>
+            <h2 className="workspace-navigation__heading">{group.label}</h2>
+            <ul>
+              {group.links.map(({ href, label, icon: Icon }) => (
+                <li key={href}>
+                  <Link
+                    href={href}
+                    aria-current={
+                      pathname === href ||
+                      (href !== "/workspace" && pathname.startsWith(`${href}/`))
+                        ? "page"
+                        : undefined
+                    }
+                    onClick={(event) => {
+                      event.preventDefault();
+                      onNavigate(href);
+                    }}
+                  >
+                    <Icon size={17} strokeWidth={1.8} aria-hidden="true" />
+                    <span>{label}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </nav>
+      <div className="sidebar-note">
+        <ShieldCheck size={16} aria-hidden="true" />
+        <p>Permissions are verified by the server for every request.</p>
+      </div>
+    </>
   );
 }

@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
+import * as Popover from "@radix-ui/react-popover";
 import { HexColorInput, HexColorPicker } from "react-colorful";
 import type { StyleDefinition } from "@hypergendoc/contracts";
 import { colorKeys, normalizeHex } from "./style-studio-definition";
@@ -88,9 +89,8 @@ export function ColorControl({
 }) {
   const [open, setOpen] = useState(false);
   const id = useId();
-  const control = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  const popover = useRef<HTMLDivElement>(null);
   const displayName = name.endsWith("color")
     ? name
     : `${name.charAt(0).toUpperCase()}${name.slice(1)} color`;
@@ -99,101 +99,83 @@ export function ColorControl({
     if (normalized) onChange(normalized);
   };
 
-  useEffect(() => {
-    if (!open) return;
-    popover.current
-      ?.querySelector<HTMLInputElement>(
-        `input[aria-label="${displayName} hex"]`,
-      )
-      ?.focus();
-    const closeOutside = (event: PointerEvent | FocusEvent) => {
-      if (!control.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", closeOutside);
-    document.addEventListener("focusin", closeOutside);
-    return () => {
-      document.removeEventListener("pointerdown", closeOutside);
-      document.removeEventListener("focusin", closeOutside);
-    };
-  }, [open]);
-
-  const close = (restoreFocus = true) => {
-    setOpen(false);
-    if (restoreFocus) trigger.current?.focus();
-  };
-
   return (
-    <div
-      ref={control}
-      className="color-control rounded-md border border-border bg-muted/40 p-2.5"
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          close();
-        }
-      }}
-    >
-      <span>{displayName}</span>
-      <button
-        ref={trigger}
-        className="color-trigger !rounded-md !border-border !bg-card"
-        type="button"
-        aria-label={`Edit ${displayName}`}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-controls={id}
-        onClick={() => setOpen((shown) => !shown)}
-      >
-        <i aria-hidden="true" style={{ backgroundColor: value }} />
-        <span>{value}</span>
-      </button>
-      {open && (
-        <div
-          ref={popover}
-          className="color-popover !rounded-lg !border-border !bg-popover !shadow-xl"
-          id={id}
-          role="dialog"
-          aria-label={`${displayName} picker`}
-        >
-          <div role="group" aria-label={`${displayName} picker`}>
-            <HexColorPicker color={value} onChange={update} />
-          </div>
-          {savedColors.length > 0 && (
-            <div
-              className="saved-color-swatches"
-              role="group"
-              aria-label="Saved colors"
-            >
-              {savedColors.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  className="saved-color-swatch"
-                  aria-label={`Use saved color ${color}`}
-                  style={{ backgroundColor: color }}
-                  onClick={() => update(color)}
-                />
-              ))}
-            </div>
-          )}
-          <label>
-            {displayName} hex
-            <HexColorInput
-              color={value}
-              onChange={update}
-              prefixed
-              aria-label={`${displayName} hex`}
-            />
-          </label>
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <div className="color-control rounded-md border border-border bg-muted/40 p-2.5">
+        <span>{displayName}</span>
+        <Popover.Trigger asChild>
           <button
-            className="mt-2 min-h-9 rounded-md border border-border bg-card px-3 text-xs font-medium text-foreground hover:bg-muted"
+            ref={trigger}
+            className="color-trigger !rounded-md !border-border !bg-card"
             type="button"
-            onClick={() => close()}
+            aria-label={`Edit ${displayName}`}
+            aria-controls={id}
           >
-            Close {displayName} picker
+            <i aria-hidden="true" style={{ backgroundColor: value }} />
+            <span>{value}</span>
           </button>
-        </div>
-      )}
-    </div>
+        </Popover.Trigger>
+        <Popover.Portal>
+          <Popover.Content
+            className="color-popover !rounded-lg !border-border !bg-popover !shadow-xl"
+            ref={content}
+            id={id}
+            aria-label={`${displayName} picker`}
+            sideOffset={6}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              trigger.current?.focus();
+            }}
+            onOpenAutoFocus={(event) => {
+              event.preventDefault();
+              content.current
+                ?.querySelector<HTMLInputElement>(
+                  `input[aria-label="${displayName} hex"]`,
+                )
+                ?.focus();
+            }}
+          >
+            <div role="group" aria-label={`${displayName} picker`}>
+              <HexColorPicker color={value} onChange={update} />
+            </div>
+            {savedColors.length > 0 && (
+              <div
+                className="saved-color-swatches"
+                role="group"
+                aria-label="Saved colors"
+              >
+                {savedColors.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className="saved-color-swatch"
+                    aria-label={`Use saved color ${color}`}
+                    style={{ backgroundColor: color }}
+                    onClick={() => update(color)}
+                  />
+                ))}
+              </div>
+            )}
+            <label>
+              {displayName} hex
+              <HexColorInput
+                color={value}
+                onChange={update}
+                prefixed
+                aria-label={`${displayName} hex`}
+              />
+            </label>
+            <Popover.Close asChild>
+              <button
+                className="mt-2 min-h-9 rounded-md border border-border bg-card px-3 text-xs font-medium text-foreground hover:bg-muted"
+                type="button"
+              >
+                Close {displayName} picker
+              </button>
+            </Popover.Close>
+          </Popover.Content>
+        </Popover.Portal>
+      </div>
+    </Popover.Root>
   );
 }
