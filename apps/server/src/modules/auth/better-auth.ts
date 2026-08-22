@@ -29,8 +29,6 @@ export const authRateLimitRules = {
 export interface CreateAuthOptions {
   database: Database;
   mail: AuthMail;
-  /** Receives mail-dispatch failures only; callers must not log email URLs. */
-  reportMailError?: (error: unknown) => void;
   baseUrl: string;
   secret: string;
   /** Set by trusted deployment configuration; never infer this from a request. */
@@ -38,21 +36,42 @@ export interface CreateAuthOptions {
 }
 
 /**
- * The mail implementation receives a single-use Better Auth URL. It must not log
- * it or retain it. The adapter uses the `user`, `session`, `account`, and
+ * The durable mail implementation receives a single-use Better Auth URL. It may
+ * retain it only in the protected queue until delivery or dead-lettering and must
+ * never log it. The adapter uses the `user`, `session`, `account`, and
  * `verification` mappings exported by @hypergendoc/db.
  */
-export function createAuth(options: CreateAuthOptions) {
-  const dispatchMail = (send: () => Promise<void>) => {
-    void send().catch((error: unknown) => {
-      try {
-        options.reportMailError?.(error);
-      } catch {
-        // Reporting must never turn a background mail failure into an unhandled rejection.
-      }
-    });
+export function createAuthMailCallbacks(mail: AuthMail) {
+  return {
+    sendResetPassword: ({
+      user,
+      url,
+    }: Readonly<{
+      user: { email: string; name: string };
+      url: string;
+    }>) =>
+      mail.sendPasswordResetEmail({
+        email: user.email,
+        name: user.name,
+        url,
+      }),
+    sendVerificationEmail: ({
+      user,
+      url,
+    }: Readonly<{
+      user: { email: string; name: string };
+      url: string;
+    }>) =>
+      mail.sendVerificationEmail({
+        email: user.email,
+        name: user.name,
+        url,
+      }),
   };
+}
 
+export function createAuth(options: CreateAuthOptions) {
+  const mailCallbacks = createAuthMailCallbacks(options.mail);
   return betterAuth({
     database: drizzleAdapter(options.database, {
       provider: "pg",
@@ -73,29 +92,11 @@ export function createAuth(options: CreateAuthOptions) {
         verify: ({ hash: encoded, password }) =>
           verify(encoded, password, argon2id),
       },
-      sendResetPassword: ({ user, url }) => {
-        dispatchMail(() =>
-          options.mail.sendPasswordResetEmail({
-            email: user.email,
-            name: user.name,
-            url,
-          }),
-        );
-        return Promise.resolve();
-      },
+      sendResetPassword: mailCallbacks.sendResetPassword,
     },
     emailVerification: {
       sendOnSignUp: true,
-      sendVerificationEmail: ({ user, url }) => {
-        dispatchMail(() =>
-          options.mail.sendVerificationEmail({
-            email: user.email,
-            name: user.name,
-            url,
-          }),
-        );
-        return Promise.resolve();
-      },
+      sendVerificationEmail: mailCallbacks.sendVerificationEmail,
     },
     session: {
       expiresIn: 60 * 60 * 24 * 7,

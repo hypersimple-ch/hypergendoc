@@ -43,6 +43,13 @@
       "when": 1786243600000,
       "tag": "0005_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786247200000,
+      "tag": "0006_durable_mail",
+      "breakpoints": true
     }
   ]
 }

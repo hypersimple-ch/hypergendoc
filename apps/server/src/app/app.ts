@@ -9,6 +9,9 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import nodemailer from "nodemailer";
 import { z, ZodError } from "zod";
 import { createAuth } from "../modules/auth/better-auth.js";
+import { createMailDispatcher } from "../modules/auth/mail-dispatcher.js";
+import { createMailJobRepository } from "../modules/auth/mail-queue.js";
+import { normalizePasswordResetResponse } from "../modules/auth/reset-response.js";
 import type { HumanActor } from "../modules/auth/actors.js";
 import {
   preauthenticatedActor,
@@ -251,47 +254,69 @@ export async function createApplication(
         host: environment.smtp.host,
         port: environment.smtp.port,
         secure: environment.smtp.port === 465,
+        connectionTimeout: 15_000,
+        greetingTimeout: 15_000,
+        socketTimeout: 30_000,
         auth: { user: environment.smtp.user, pass: environment.smtp.password },
       })
     : undefined;
+  const mailRepository = createMailJobRepository(db);
   const mail = {
-    async sendVerificationEmail(input: {
-      email: string;
-      name: string;
-      url: string;
-    }) {
-      if (smtp)
-        await smtp.sendMail({
-          to: input.email,
-          from: environment.mailFrom ?? "HyperGenDoc <noreply@localhost>",
-          subject: "Verify your email",
-          text: `Verify your email: ${input.url}`,
-        });
+    sendVerificationEmail(input: { email: string; name: string; url: string }) {
+      return mailRepository.enqueue({
+        kind: "verification",
+        recipient: input.email,
+        recipientName: input.name,
+        url: input.url,
+      });
     },
-    async sendPasswordResetEmail(input: {
+    sendPasswordResetEmail(input: {
       email: string;
       name: string;
       url: string;
     }) {
-      if (smtp)
-        await smtp.sendMail({
-          to: input.email,
-          from: environment.mailFrom ?? "HyperGenDoc <noreply@localhost>",
-          subject: "Reset your password",
-          text: `Reset your password: ${input.url}`,
-        });
+      return mailRepository.enqueue({
+        kind: "password_reset",
+        recipient: input.email,
+        recipientName: input.name,
+        url: input.url,
+      });
     },
   };
+  const mailDispatcher = smtp
+    ? createMailDispatcher({
+        repository: mailRepository,
+        logger: app.log,
+        transport: {
+          async deliver(job) {
+            await smtp.sendMail({
+              to: job.recipient,
+              from: environment.mailFrom ?? "HyperGenDoc <noreply@localhost>",
+              subject:
+                job.kind === "verification"
+                  ? "Verify your email"
+                  : "Reset your password",
+              text:
+                job.kind === "verification"
+                  ? `Verify your email: ${job.url}`
+                  : `Reset your password: ${job.url}`,
+            });
+          },
+        },
+      })
+    : undefined;
+  if (mailDispatcher) await mailDispatcher.start();
+  else
+    app.log.warn(
+      { event: "mail.dispatcher_unavailable" },
+      "SMTP is not configured; accepted mail remains queued",
+    );
   const auth = createAuth({
     database: db,
     mail,
     baseUrl: environment.appOrigin,
     secret: environment.betterAuthSecret,
     production: environment.nodeEnv === "production",
-    reportMailError: () => {
-      // Do not serialize SMTP errors: they may contain addresses or verification URLs.
-      app.log.error({ event: "mail.delivery_failed" }, "Mail delivery failed");
-    },
   });
 
   await app.register(cookie);
@@ -377,7 +402,7 @@ export async function createApplication(
     method: ["GET", "POST"],
     url: "/api/auth/*",
     async handler(request, reply) {
-      const response = await auth.handler(
+      const authResponse = await auth.handler(
         new Request(new URL(request.url, environment.appOrigin), {
           method: request.method,
           headers: fromNodeHeaders(request.headers),
@@ -386,6 +411,16 @@ export async function createApplication(
             : { body: JSON.stringify(request.body) }),
         }),
       );
+      const normalized = normalizePasswordResetResponse(
+        request.url,
+        authResponse,
+      );
+      if (normalized.suppressedFailure)
+        request.log.error(
+          { event: "mail.enqueue_failed", kind: "password_reset" },
+          "Password reset could not be accepted",
+        );
+      const response = normalized.response;
       response.headers.forEach((value, key) => {
         reply.header(key, value);
       });
@@ -586,6 +621,7 @@ export async function createApplication(
     ]),
   );
   app.closeDependencies = async () => {
+    await mailDispatcher?.stop();
     await app.close();
     await pool.end();
     s3.destroy();

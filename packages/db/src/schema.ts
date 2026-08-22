@@ -447,6 +447,54 @@ export const auditEvents = pgTable(
   ],
 );
 
+export const mailJobKind = pgEnum("mail_job_kind", [
+  "verification",
+  "password_reset",
+]);
+export const mailJobStatus = pgEnum("mail_job_status", [
+  "pending",
+  "leased",
+  "sent",
+  "dead",
+]);
+export const mailJobs = pgTable(
+  "mail_jobs",
+  {
+    id: id(),
+    kind: mailJobKind("kind").notNull(),
+    status: mailJobStatus("status").notNull().default("pending"),
+    recipient: text("recipient").notNull(),
+    recipientName: text("recipient_name").notNull(),
+    singleUseUrl: text("single_use_url"),
+    attempts: integer("attempts").notNull().default(0),
+    availableAt: timestamp("available_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    leaseToken: uuid("lease_token"),
+    lastErrorCode: text("last_error_code"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    deadAt: timestamp("dead_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("mail_job_dispatch_idx").on(table.status, table.availableAt),
+    index("mail_job_lease_idx").on(table.status, table.leaseExpiresAt),
+    check("mail_job_attempts_nonnegative", sql`${table.attempts} >= 0`),
+    check(
+      "mail_job_url_lifecycle",
+      sql`(${table.status} IN ('pending', 'leased') AND ${table.singleUseUrl} IS NOT NULL) OR (${table.status} IN ('sent', 'dead') AND ${table.singleUseUrl} IS NULL)`,
+    ),
+    check(
+      "mail_job_lease_lifecycle",
+      sql`(${table.status} = 'leased' AND ${table.leaseExpiresAt} IS NOT NULL AND ${table.leaseToken} IS NOT NULL) OR (${table.status} <> 'leased' AND ${table.leaseExpiresAt} IS NULL AND ${table.leaseToken} IS NULL)`,
+    ),
+  ],
+);
+
 export const betterAuthSchema = {
   user: users,
   session: sessions,
