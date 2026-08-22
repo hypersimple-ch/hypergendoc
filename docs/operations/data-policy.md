@@ -4,7 +4,7 @@
 
 PostgreSQL stores identity, tenant/document index and authorization metadata, structured styles, credential hashes, and audit records. Git is the source-history authority: one private repository per company stores document snapshots at `documents/<document-uuid>/document.md` or `.html`. Git repositories are not directly accessible.
 
-Private object storage holds uploaded logos and fonts only. It never holds document source, generated HTML, PDFs, or render records. PDFs are rendered in memory only from the current source.
+Private object storage holds uploaded logos, fonts, and validated PNG, JPEG, or WebP company media used by template fields only. It never holds document source, generated HTML, PDFs, or render records. PDFs are rendered in memory only from the current source.
 
 ## Retention and deletion
 
@@ -12,7 +12,7 @@ Company archival retains its private Git repository. Purge is out of scope. Do n
 
 ## Backup and recovery
 
-Back up PostgreSQL and the private Git volume as one consistent recovery set; restore them together. Include object storage for uploaded logos/fonts. Encrypt before off-VPS transfer, run daily backups, and perform periodic restore drills. Record the recovery point, migration version, Git/Database consistency result, and last successful full restore.
+Back up PostgreSQL and the private Git volume as one consistent recovery set; restore them together. Include object storage for uploaded logos, fonts, and template media. Encrypt before off-VPS transfer, run daily backups, and perform periodic restore drills. Record the recovery point, migration version, Git/Database consistency result, and last successful full restore.
 
 Garage is a single-node `replication_factor=1` deployment with no redundancy, so off-VPS backup is mandatory. Keep its metadata and object-data volumes together during local incident response; use encrypted logical backups for portable recovery.
 
