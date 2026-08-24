@@ -137,6 +137,29 @@ describe("template versions", () => {
     expect(history[1]!.definition.description).toBe("Second version");
   });
 
+  it("passes the stored definition locale to draft previews", async () => {
+    const seen: TemplateDefinition[] = [];
+    const service = createTemplateService({
+      repository: repository(),
+      renderer: {
+        renderPreview: async (input) => {
+          seen.push(input.definition);
+          return { url: "preview" };
+        },
+      },
+    });
+    const created = await service.create(actor, {
+      companyId: "company-a",
+      name: "Localized template",
+      definition: { ...definition, locale: "fr-FR" },
+    });
+    await service.preview(actor, created.template.id, {
+      versionId: created.version.id,
+      data: { title: "Aperçu" },
+    });
+    expect(seen[0]?.locale).toBe("fr-FR");
+  });
+
   it("rejects definitions whose style version is outside the template company", async () => {
     const service = createTemplateService({
       repository: repository(),

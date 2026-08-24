@@ -808,7 +808,7 @@ export function renderTemplateDocumentHtml(
     resolvedComputed.add(key);
   };
   for (const key of Object.keys(computed)) resolveComputed(key);
-  const locale = input.locale ?? "en";
+  const locale = input.locale ?? input.definition.locale ?? "en";
   const imageAssets = new Map<
     string,
     NonNullable<ResolvedTemplateAssets>["images"][number]

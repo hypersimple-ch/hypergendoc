@@ -158,6 +158,76 @@ describe("template document renderer", () => {
     expect(first).not.toContain("<Review>");
   });
 
+  it("formats money and dates with the definition locale end to end", () => {
+    const documentNode: TemplateDefinition["document"] = [
+      {
+        type: "page",
+        master: "standard",
+        children: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "binding", path: "total", format: "money" },
+              { type: "text", value: " " },
+              { type: "binding", path: "when", format: "date" },
+            ],
+          },
+        ],
+      },
+    ];
+    const base = {
+      ...definition,
+      fields: {
+        ...definition.fields,
+        when: { type: "date", label: "When" } as const,
+      },
+      computed: {
+        total: {
+          op: "sum",
+          path: "items",
+          valuePath: "amount",
+        } as const,
+      },
+      document: documentNode,
+    };
+    const data = {
+      title: "Locale",
+      when: "2026-07-21",
+      items: [{ name: "Design", amount: 1200.5 }],
+    };
+    expect(
+      renderTemplateDocumentHtml({
+        definition: { ...base, locale: "en-US" },
+        data,
+        style,
+      }),
+    ).toContain("$1,200.50");
+    expect(
+      renderTemplateDocumentHtml({
+        definition: { ...base, locale: "en-US" },
+        data,
+        style,
+      }),
+    ).toContain("Jul 21, 2026");
+    const french = renderTemplateDocumentHtml({
+      definition: { ...base, locale: "fr-FR" },
+      data,
+      style,
+    });
+    expect(french).not.toContain("$1,200.50");
+    expect(french).toContain("21 juil. 2026");
+    expect(french).toContain("200,50");
+    // Explicit input locale still wins over the stored definition.
+    expect(
+      renderTemplateDocumentHtml({
+        definition: { ...base, locale: "fr-FR" },
+        data,
+        style,
+        locale: "de-DE",
+      }),
+    ).toContain("1.200,50");
+  });
+
   it("rejects missing required business-specific data without leaking details", () => {
     expect(() =>
       renderTemplateDocumentHtml({ definition, data: {}, style }),

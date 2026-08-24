@@ -237,6 +237,9 @@ export async function createApplication(
           style: style.definition,
           assets,
           templateAssets,
+          ...(input.definition.locale
+            ? { locale: input.definition.locale }
+            : {}),
         });
         if (!result.ok || !result.pdf)
           throw new AppError(

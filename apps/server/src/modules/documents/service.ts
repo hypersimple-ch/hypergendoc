@@ -664,6 +664,9 @@ export class DocumentService {
           style: resolved.style,
           assets: resolved.assets,
           templateAssets: resolved.templateAssets,
+          ...(template.definition.locale
+            ? { locale: template.definition.locale }
+            : {}),
         });
       } else {
         const style = await this.deps.repository.findStyleVersion(

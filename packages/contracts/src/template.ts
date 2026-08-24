@@ -38,6 +38,23 @@ export const TemplateDataSchema = z
     message: "Template data exceeds 256 KiB UTF-8",
   });
 
+/** A BCP-47 language tag understood by Intl.Locale. */
+export const TemplateLocaleSchema = z
+  .string()
+  .max(35)
+  .regex(/^[a-zA-Z]{2,8}(?:-[a-zA-Z0-9]{1,8})*$/, "Invalid BCP-47 locale tag")
+  .refine(
+    (value) => {
+      try {
+        new Intl.Locale(value);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { message: "Unsupported locale tag" },
+  );
+
 export type TemplateFieldDefinition = Readonly<{
   type:
     | "text"
@@ -551,6 +568,7 @@ const TemplateDefinitionShapeSchema = z
     schemaVersion: z.literal(1),
     styleVersionId: UuidSchema,
     description: z.string().max(1_000).optional(),
+    locale: TemplateLocaleSchema.optional(),
     fields: z.record(TemplateIdentifierSchema, TemplateFieldDefinitionSchema),
     computed: z
       .record(TemplateIdentifierSchema, TemplateExpressionSchema)

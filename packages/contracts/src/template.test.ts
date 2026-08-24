@@ -51,6 +51,34 @@ describe("template contracts", () => {
     ).toBeDefined();
   });
 
+  it("accepts a valid definition locale and rejects invalid BCP-47 tags", () => {
+    expect(
+      TemplateDefinitionSchema.safeParse({ ...valid, locale: "fr-FR" }).success,
+    ).toBe(true);
+    expect(
+      TemplateDefinitionSchema.safeParse({ ...valid, locale: "de-CH-1901" })
+        .success,
+    ).toBe(true);
+    expect(TemplateDefinitionSchema.safeParse(valid).success).toBe(true);
+    expect(
+      TemplateDefinitionSchema.safeParse({ ...valid, locale: "not a locale" })
+        .success,
+    ).toBe(false);
+    expect(
+      TemplateDefinitionSchema.safeParse({ ...valid, locale: "en_US" }).success,
+    ).toBe(false);
+    expect(
+      TemplateDefinitionSchema.safeParse({ ...valid, locale: "en--US" })
+        .success,
+    ).toBe(false);
+    expect(
+      TemplateDefinitionSchema.safeParse({ ...valid, locale: "e" }).success,
+    ).toBe(false);
+    expect(
+      TemplateDefinitionSchema.safeParse({ ...valid, locale: "12" }).success,
+    ).toBe(false);
+  });
+
   it("rejects raw HTML/CSS/script nodes and unknown definition properties", () => {
     expect(() =>
       TemplateDefinitionSchema.parse({ ...valid, script: "alert(1)" }),
