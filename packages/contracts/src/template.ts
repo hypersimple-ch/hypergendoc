@@ -361,6 +361,8 @@ export type TemplateNode = Readonly<{
         align?: "left" | "center" | "right" | undefined;
       }>[]
     | undefined;
+  footerRow?: readonly Readonly<{ path?: string | undefined }>[] | undefined;
+  zebraRows?: boolean | undefined;
   tocDepth?: number | undefined;
   heightMm?: number | undefined;
 }>;
@@ -377,7 +379,7 @@ const nodeProperties: Readonly<
   richText: new Set(["type", "source"]),
   image: new Set(["type", "source", "fit", "altPath", "caption", "heightMm"]),
   list: new Set(["type", "source", "itemsPath", "ordered"]),
-  table: new Set(["type", "source", "tableColumns"]),
+  table: new Set(["type", "source", "tableColumns", "footerRow", "zebraRows"]),
   repeat: new Set(["type", "source", "as", "children"]),
   condition: new Set(["type", "condition", "children"]),
   component: new Set(["type", "component", "props"]),
@@ -449,6 +451,11 @@ export const TemplateNodeSchema: z.ZodType<TemplateNode> = z.lazy(() =>
         )
         .max(30)
         .optional(),
+      footerRow: z
+        .array(z.object({ path: TemplatePathSchema.optional() }).strict())
+        .max(30)
+        .optional(),
+      zebraRows: z.boolean().optional(),
       tocDepth: z.number().int().min(1).max(6).optional(),
       heightMm: z.number().min(0).max(297).optional(),
     })
@@ -1001,6 +1008,19 @@ const validatedTemplateDefinitionSchema =
                 [...nodePath, "tableColumns", columnIndex, "path"],
                 `Unknown table column path: ${column.path}`,
               );
+        if (node.type === "table" && node.footerRow) {
+          if (node.footerRow.length > (node.tableColumns?.length ?? 0))
+            issue(
+              [...nodePath, "footerRow"],
+              "table footerRow cannot have more cells than tableColumns",
+            );
+          for (const [cellIndex, cell] of node.footerRow.entries())
+            if (cell.path && !knownPath(cell.path, locals, allowProps))
+              issue(
+                [...nodePath, "footerRow", cellIndex, "path"],
+                `Unknown table footer path: ${cell.path}`,
+              );
+        }
         const childLocals =
           node.type === "repeat" && node.as
             ? { ...locals, [node.as]: sourceField?.item }

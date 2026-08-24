@@ -268,6 +268,143 @@ describe("template document renderer", () => {
     );
   });
 
+  it("renders table footer rows and zebra striping", () => {
+    const tableDefinition: TemplateDefinition = {
+      ...definition,
+      document: [
+        {
+          type: "page",
+          master: "standard",
+          children: [
+            {
+              type: "table",
+              source: "items",
+              zebraRows: true,
+              tableColumns: [
+                { header: "Name", path: "name" },
+                {
+                  header: "Amount",
+                  path: "amount",
+                  format: "money",
+                  currency: "CHF",
+                  align: "right",
+                },
+              ],
+              footerRow: [{}, { path: "total" }],
+            },
+          ],
+        },
+      ],
+    };
+    const html = renderTemplateDocumentHtml({
+      definition: tableDefinition,
+      data: {
+        title: "Totals",
+        items: [
+          { name: "Design", amount: 100 },
+          { name: "Delivery", amount: 50 },
+        ],
+      },
+      style,
+    });
+    expect(html).toContain('<table class="template-table-zebra">');
+    expect(html).toContain("<tfoot><tr>");
+    expect(html).toMatch(
+      /<td style="text-align:right">CHF\u00a0?150\.00<\/td><\/tr><\/tfoot>/,
+    );
+    // Empty footer cells stay empty and reuse the column alignment.
+    expect(html).toContain('<td style="text-align:left"></td>');
+    expect(html).toContain(
+      ".template-page tfoot td{border-top:2px solid #111111;font-weight:600;}",
+    );
+    expect(html).toContain(
+      ".template-table-zebra tbody tr:nth-child(even) td{background:#6b7280;}",
+    );
+    // Tables without the options render exactly as before.
+    const plain = renderTemplateDocumentHtml({
+      definition,
+      data: {
+        title: "Plain",
+        items: [{ name: "Design", amount: 10 }],
+      },
+      style,
+    });
+    expect(plain).not.toContain("<tfoot>");
+    expect(plain).not.toContain('<table class="template-table-zebra">');
+  });
+
+  it("keeps table footer paths scoped outside repeated rows", () => {
+    const nestedDefinition: TemplateDefinition = {
+      ...definition,
+      fields: {
+        ...definition.fields,
+        groups: {
+          type: "list",
+          label: "Groups",
+          item: {
+            type: "object",
+            label: "Group",
+            fields: {
+              name: { type: "text", label: "Name" },
+              rows: {
+                type: "list",
+                label: "Rows",
+                item: {
+                  type: "object",
+                  label: "Row",
+                  fields: {
+                    amount: { type: "money", label: "Amount", currency: "CHF" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      computed: { total: { op: "sum", path: "items", valuePath: "amount" } },
+      document: [
+        {
+          type: "page",
+          master: "standard",
+          children: [
+            {
+              type: "repeat",
+              source: "groups",
+              as: "groupX",
+              children: [
+                {
+                  type: "table",
+                  source: "groupX.rows",
+                  tableColumns: [
+                    { header: "Amount", path: "amount", format: "money" },
+                  ],
+                  footerRow: [{ path: "total" }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const html = renderTemplateDocumentHtml({
+      definition: nestedDefinition,
+      data: {
+        title: "Groups",
+        items: [{ name: "Design", amount: 5 }],
+        groups: [
+          { name: "A", rows: [{ amount: 1 }, { amount: 2 }] },
+          { name: "B", rows: [{ amount: 3 }] },
+        ],
+      },
+      style,
+    });
+    // Two repeated tables, each with a footer cell resolving the root total.
+    const footers = html.match(/<tfoot><tr>/g) ?? [];
+    expect(footers).toHaveLength(2);
+    // Both footers resolve the root-level computed total, not row values.
+    expect(html).toMatch(/<td style="text-align:left">\$5\.00<\/td>/);
+  });
+
   it("rejects missing required business-specific data without leaking details", () => {
     expect(() =>
       renderTemplateDocumentHtml({ definition, data: {}, style }),

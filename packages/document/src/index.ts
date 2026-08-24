@@ -1051,7 +1051,32 @@ export function renderTemplateDocumentHtml(
               const value = templatePath(root, locals, node.source ?? "");
               const rows = Array.isArray(value) ? value : [];
               const columns = node.tableColumns ?? [];
-              return `<table><thead><tr>${columns.map((column) => `<th style="text-align:${column.align ?? "left"}">${htmlEscape(column.header)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${columns.map((column) => `<td style="text-align:${column.align ?? "left"}">${htmlEscape(templateDisplayValue(isTemplateRecord(row) ? templatePath(row, {}, column.path) : undefined, column.format, column.currency, locale))}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+              const bodyCells = rows
+                .map(
+                  (row) =>
+                    `<tr>${columns
+                      .map(
+                        (column) =>
+                          `<td style="text-align:${column.align ?? "left"}">${htmlEscape(templateDisplayValue(isTemplateRecord(row) ? templatePath(row, {}, column.path) : undefined, column.format, column.currency, locale))}</td>`,
+                      )
+                      .join("")}</tr>`,
+                )
+                .join("");
+              // Footer cells resolve against the enclosing scope and reuse
+              // the aligned column's format/currency/alignment.
+              const footerRow = node.footerRow?.length
+                ? `<tfoot><tr>${node.footerRow
+                    .map((cell, index) => {
+                      const column = columns[index];
+                      const resolved =
+                        cell.path === undefined
+                          ? undefined
+                          : templatePath(root, locals, cell.path);
+                      return `<td style="text-align:${column?.align ?? "left"}">${htmlEscape(templateDisplayValue(resolved, column?.format, column?.currency, locale))}</td>`;
+                    })
+                    .join("")}</tr></tfoot>`
+                : "";
+              return `<table${node.zebraRows ? ' class="template-table-zebra"' : ""}><thead><tr>${columns.map((column) => `<th style="text-align:${column.align ?? "left"}">${htmlEscape(column.header)}</th>`).join("")}</tr></thead><tbody>${bodyCells}</tbody>${footerRow}</table>`;
             }
             case "repeat": {
               const value = templatePath(root, locals, node.source ?? "");
@@ -1149,6 +1174,8 @@ export function renderTemplateDocumentHtml(
 .template-grid{display:grid;grid-template-columns:repeat(var(--template-columns),minmax(0,1fr));gap:var(--template-gap);}
 .template-image{margin:0;break-inside:avoid-page;}.template-image img{display:block;width:100%;max-height:220mm;}.template-image figcaption{margin-top:2mm;font-size:8pt;color:${input.style.colors.muted};}
 .template-page-break{break-after:page;}.template-rich-text>:first-child{margin-top:0;}.template-rich-text>:last-child{margin-bottom:0;}
+.template-page tfoot td{border-top:2px solid ${input.style.colors.heading};font-weight:600;}
+.template-table-zebra tbody tr:nth-child(even) td{background:${input.style.colors.muted};}
 .template-toc ol{list-style:none;padding:0;}.template-toc li{margin:.35em 0;}.template-toc a{display:flex;color:inherit;text-decoration:none;gap:.5em;}.template-toc-leader{flex:1;border-bottom:1px dotted currentColor;transform:translateY(-.25em);}.template-toc-page{min-width:2ch;text-align:right;}
 .template-color-text{color:${input.style.colors.text}}.template-color-heading{color:${input.style.colors.heading}}.template-color-primary{color:${input.style.colors.primary}}.template-color-accent{color:${input.style.colors.accent}}.template-color-muted{color:${input.style.colors.muted}}
 `;

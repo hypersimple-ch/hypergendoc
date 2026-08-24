@@ -91,6 +91,32 @@ describe("template contracts", () => {
     ).toThrow();
   });
 
+  it("accepts table footer rows and rejects misaligned or unknown ones", () => {
+    const table = {
+      type: "table",
+      source: "rows",
+      tableColumns: [{ header: "Amount", path: "amount", format: "money" }],
+      zebraRows: true,
+    } as const;
+    const documentFor = (footerRow: readonly unknown[]) => ({
+      ...valid,
+      document: [
+        {
+          type: "page",
+          master: "cover",
+          children: [{ ...table, footerRow }],
+        },
+      ],
+    });
+    const parses = (footerRow: readonly unknown[]) =>
+      TemplateDefinitionSchema.safeParse(documentFor(footerRow)).success;
+    expect(parses([{ path: "total" }])).toBe(true);
+    expect(parses([{}])).toBe(true);
+    expect(parses([{ path: "total" }, {}])).toBe(false);
+    expect(parses([{ path: "total" }, {}, {}])).toBe(false);
+    expect(parses([{ path: "unknown" }])).toBe(false);
+  });
+
   it("rejects CSS-shaped page-master and component identifiers", () => {
     expect(() =>
       TemplateDefinitionSchema.parse({
