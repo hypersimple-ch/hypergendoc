@@ -1,5 +1,5 @@
-# Version-pinned bases; production should additionally pin these tags to registry digests.
-FROM node:22.23.1-bookworm-slim AS build
+# Digest-pinned bases (manifest-list digests, verified round-trip against the tags).
+FROM node:22.23.1-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS build
 WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages ./packages
@@ -14,7 +14,7 @@ RUN corepack enable \
   && cp -a node_modules/.pnpm/playwright-core@1.61.0/node_modules/playwright-core /out/node_modules/playwright-core
 
 # This image supplies the Chromium revision matched to playwright-core 1.61.0.
-FROM mcr.microsoft.com/playwright:v1.61.0-noble
+FROM mcr.microsoft.com/playwright:v1.61.0-noble@sha256:57b65fdc9ceabe0ef613124c7bbe2babcf9362c4d85e382fe3b03604e84b428a
 RUN groupadd --gid 10001 renderer \
   && useradd --uid 10001 --gid 10001 --create-home --shell /usr/sbin/nologin renderer \
   && mkdir -p /home/renderer/.cache /tmp \
