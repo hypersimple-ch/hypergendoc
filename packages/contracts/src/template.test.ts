@@ -117,6 +117,44 @@ describe("template contracts", () => {
     expect(parses([{ path: "unknown" }])).toBe(false);
   });
 
+  it("validates page-master watermarks strictly", () => {
+    const masterFor = (watermark: unknown) => ({
+      ...valid,
+      pageMasters: {
+        cover: { background: "heading", watermark },
+        standard: {},
+      },
+    });
+    expect(
+      TemplateDefinitionSchema.safeParse(
+        masterFor({ text: "Confidential", tone: "danger", opacity: "subtle" }),
+      ).success,
+    ).toBe(true);
+    expect(
+      TemplateDefinitionSchema.safeParse(masterFor({ text: "Draft" })).success,
+    ).toBe(true);
+    expect(TemplateDefinitionSchema.safeParse(masterFor("Draft")).success).toBe(
+      false,
+    );
+    expect(
+      TemplateDefinitionSchema.safeParse(masterFor({ text: "" })).success,
+    ).toBe(false);
+    expect(
+      TemplateDefinitionSchema.safeParse(masterFor({ text: "x".repeat(65) }))
+        .success,
+    ).toBe(false);
+    expect(
+      TemplateDefinitionSchema.safeParse(
+        masterFor({ text: "Draft", tone: "critical" }),
+      ).success,
+    ).toBe(false);
+    expect(
+      TemplateDefinitionSchema.safeParse(
+        masterFor({ text: "Draft", opacity: "invisible" }),
+      ).success,
+    ).toBe(false);
+  });
+
   it("rejects CSS-shaped page-master and component identifiers", () => {
     expect(() =>
       TemplateDefinitionSchema.parse({

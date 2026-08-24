@@ -1164,7 +1164,23 @@ export function renderTemplateDocumentHtml(
       const edge = master.edgeBar
         ? `.template-master-${name}::after{content:"";position:absolute;top:0;bottom:0;width:${master.edgeBar.widthMm}mm;background:${templateColor(master.edgeBar.color, input.style)};${master.edgeBar.side === "left" ? "left:0" : "right:0"};}${master.edgeBar.side === "outside" ? `.template-page:nth-of-type(even).template-master-${name}::after{left:0;right:auto;}` : ""}`
         : "";
-      return `@page ${name}{size:${input.style.page.size === "A4" ? "A4" : "letter"};margin:${margins.map((value) => `${value}mm`).join(" ")};${hiddenMarginBoxes}}${master.startOn === "recto" ? `.template-master-${name}{break-before:right;}` : master.startOn === "verso" ? `.template-master-${name}{break-before:left;}` : ""}.template-master-${name}{page:${name};width:${contentWidthMm}mm;min-height:${contentHeightMm}mm;background:${templateColor(master.background, input.style)};color:${templateColor(master.color, input.style)};}${edge}`;
+      const watermarkTones = {
+        neutral: "#6b7280",
+        warning: "#b45309",
+        danger: "#dc2626",
+      } as const;
+      const watermarkOpacities = {
+        subtle: 0.08,
+        normal: 0.16,
+        strong: 0.28,
+      } as const;
+      // Fixed-position so the mark repeats behind content on every physical
+      // page flowed from pages using this master. Renderer-owned tone colors
+      // and opacity presets only: no free-form colors, no images.
+      const watermark = master.watermark
+        ? `.template-master-${name}{isolation:isolate;}.template-master-${name}::before{content:"${escapeCssString(master.watermark.text)}";position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);font-size:48pt;font-weight:700;white-space:nowrap;color:${watermarkTones[master.watermark.tone]};opacity:${watermarkOpacities[master.watermark.opacity]};z-index:-1;pointer-events:none;-webkit-print-color-adjust:exact;print-color-adjust:exact;}`
+        : "";
+      return `@page ${name}{size:${input.style.page.size === "A4" ? "A4" : "letter"};margin:${margins.map((value) => `${value}mm`).join(" ")};${hiddenMarginBoxes}}${master.startOn === "recto" ? `.template-master-${name}{break-before:right;}` : master.startOn === "verso" ? `.template-master-${name}{break-before:left;}` : ""}.template-master-${name}{page:${name};width:${contentWidthMm}mm;min-height:${contentHeightMm}mm;background:${templateColor(master.background, input.style)};color:${templateColor(master.color, input.style)};}${edge}${watermark}`;
     })
     .join("\n");
   const templateCss = `${masterCss}

@@ -405,6 +405,56 @@ describe("template document renderer", () => {
     expect(html).toMatch(/<td style="text-align:left">\$5\.00<\/td>/);
   });
 
+  it("emits a fixed, print-safe watermark for masters that declare one", () => {
+    const html = renderTemplateDocumentHtml({
+      definition: {
+        ...definition,
+        pageMasters: {
+          cover: {
+            watermark: {
+              text: "CONFIDENTIAL",
+              tone: "warning",
+              opacity: "strong",
+            },
+          },
+          standard: {},
+        },
+        document: [
+          {
+            type: "page",
+            master: "cover",
+            children: [
+              {
+                type: "heading",
+                content: [{ type: "binding", path: "title" }],
+              },
+            ],
+          },
+          {
+            type: "page",
+            master: "standard",
+            children: [{ type: "spacer" }],
+          },
+        ],
+      },
+      data: { title: "Watermarked" },
+      style,
+    });
+    expect(html).toContain(".template-master-cover{isolation:isolate;}");
+    expect(html).toContain(
+      '.template-master-cover::before{content:"CONFIDENTIAL";',
+    );
+    expect(html).toContain(
+      "transform:translate(-50%,-50%) rotate(-30deg);font-size:48pt;",
+    );
+    expect(html).toContain("color:#b45309;opacity:0.28;");
+    expect(html).toContain("z-index:-1;pointer-events:none;");
+    expect(html).toContain("print-color-adjust:exact;");
+    // Masters without a watermark stay untouched.
+    expect(html).not.toContain(".template-master-standard::before");
+    expect(html).not.toContain(".template-master-standard{isolation");
+  });
+
   it("rejects missing required business-specific data without leaking details", () => {
     expect(() =>
       renderTemplateDocumentHtml({ definition, data: {}, style }),

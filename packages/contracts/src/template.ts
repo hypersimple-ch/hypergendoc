@@ -547,9 +547,20 @@ const ColorReferenceSchema = z.union([
   z.enum(["text", "heading", "primary", "accent", "muted"]),
   z.string().regex(/^#[0-9a-fA-F]{6}$/),
 ]);
+export const WatermarkToneSchema = z.enum(["neutral", "warning", "danger"]);
+export const WatermarkOpacitySchema = z.enum(["subtle", "normal", "strong"]);
+
 export const TemplatePageMasterSchema = z
   .object({
     background: ColorReferenceSchema.optional(),
+    watermark: z
+      .object({
+        text: z.string().trim().min(1).max(64),
+        tone: WatermarkToneSchema.default("neutral"),
+        opacity: WatermarkOpacitySchema.default("normal"),
+      })
+      .strict()
+      .optional(),
     color: ColorReferenceSchema.optional(),
     marginTopMm: z.number().min(0).max(80).optional(),
     marginRightMm: z.number().min(0).max(80).optional(),
