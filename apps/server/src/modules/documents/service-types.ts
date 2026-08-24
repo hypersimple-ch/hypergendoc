@@ -25,6 +25,7 @@ export interface DocumentSourceBuilder {
     body: string,
     style: StyleDefinition,
     assets?: ResolvedStyleAssets,
+    options?: Readonly<{ title?: string }>,
   ): ResolvedDocumentSource;
 }
 

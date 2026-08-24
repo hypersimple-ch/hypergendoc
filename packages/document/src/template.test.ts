@@ -228,6 +228,46 @@ describe("template document renderer", () => {
     ).toContain("1.200,50");
   });
 
+  it("expands header/footer tokens with the document title and localized date", () => {
+    const html = renderTemplateDocumentHtml({
+      definition: {
+        ...definition,
+        locale: "fr-FR",
+        document: [
+          {
+            type: "page",
+            master: "standard",
+            children: [
+              {
+                type: "heading",
+                content: [{ type: "binding", path: "title" }],
+              },
+            ],
+          },
+        ],
+      },
+      data: { title: "Titre" },
+      style: {
+        ...style,
+        header: {
+          enabled: true,
+          leftText: "{title}",
+          centerText: "{date}",
+          rightText: "",
+          showPageNumber: false,
+        },
+      },
+      documentTitle: 'Contrat "Cadre"',
+    });
+    expect(html).toContain(
+      '@top-left { color: #6b7280; content: "Contrat \\22 Cadre\\22 ";',
+    );
+    // The {date} token formats the render date with the definition locale.
+    expect(html).toMatch(
+      /@top-center \{ color: #6b7280; content: "\d{2} [^"]+ \d{4}";/,
+    );
+  });
+
   it("rejects missing required business-specific data without leaking details", () => {
     expect(() =>
       renderTemplateDocumentHtml({ definition, data: {}, style }),

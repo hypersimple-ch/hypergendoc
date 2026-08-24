@@ -134,6 +134,7 @@ export class DocumentService {
               parsed.data.companyId,
               style.definition,
             ),
+            parsed.data.title,
           );
           operationId = await this.beginGitOperation(
             actor,
@@ -205,6 +206,7 @@ export class DocumentService {
             parsed.data.companyId,
             template.definition,
             parsed.data.data,
+            parsed.data.title,
           );
           await repository.lockCompanyForGitWrites(
             actor.workspaceId,
@@ -301,6 +303,7 @@ export class DocumentService {
             locked.companyId,
             template.definition,
             parsed.data.data,
+            locked.title,
           );
           await repository.lockCompanyForGitWrites(
             actor.workspaceId,
@@ -400,6 +403,7 @@ export class DocumentService {
               locked.companyId,
               style.definition,
             ),
+            locked.title,
           );
           checkpoint = await this.deps.git.checkpoint(
             actor.workspaceId,
@@ -655,6 +659,7 @@ export class DocumentService {
           document.companyId,
           template.definition,
           stored.data,
+          document.title,
         );
         source = { body: current.snapshot.body, source: resolved.source };
         result = await this.deps.renderer.render({
@@ -667,6 +672,7 @@ export class DocumentService {
           ...(template.definition.locale
             ? { locale: template.definition.locale }
             : {}),
+          ...(document.title ? { documentTitle: document.title } : {}),
         });
       } else {
         const style = await this.deps.repository.findStyleVersion(
@@ -685,6 +691,7 @@ export class DocumentService {
           current.snapshot.body,
           style.definition,
           assets,
+          document.title,
         );
         result = await this.deps.renderer.render({
           format: current.snapshot.format,
@@ -806,6 +813,7 @@ export class DocumentService {
     companyId: string,
     definition: TemplateDefinition,
     data: TemplateData,
+    title?: string,
   ) {
     const style = await this.deps.repository.findStyleVersion(
       workspaceId,
@@ -832,6 +840,7 @@ export class DocumentService {
           style: style.definition,
           styleAssets: assets,
           templateAssets,
+          ...(title ? { documentTitle: title } : {}),
         }),
       };
     } catch (error) {
@@ -881,6 +890,7 @@ export class DocumentService {
     body: string,
     style: StyleDefinition,
     assets: ResolvedStyleAssets,
+    title?: string,
   ): ResolvedDocumentSource {
     try {
       const source = this.deps.sourceBuilder.resolve(
@@ -888,6 +898,9 @@ export class DocumentService {
         body,
         style,
         assets,
+        {
+          ...(title ? { title } : {}),
+        },
       );
       if (!source.body || !source.source) throw new Error("invalid source");
       return source;

@@ -20,11 +20,14 @@ export function createHtmlDocumentSourceBuilder(): DocumentSourceBuilder {
       body: string,
       style: StyleDefinition,
       assets?: ResolvedStyleAssets,
+      options?: Readonly<{ title?: string }>,
     ): ResolvedDocumentSource {
       const exactBody = sanitizeDocumentInput(format, body);
       return {
         body: exactBody,
-        source: renderDocumentHtml(exactBody, format, style, assets),
+        source: renderDocumentHtml(exactBody, format, style, assets, {
+          ...(options?.title ? { title: options.title } : {}),
+        }),
       };
     },
   };

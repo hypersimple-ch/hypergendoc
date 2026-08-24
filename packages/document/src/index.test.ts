@@ -365,6 +365,77 @@ describe("document content foundation", () => {
     expect(output).not.toContain('<footer class="running">');
   });
 
+  it("expands header/footer tokens with page counters, title, and date", () => {
+    const output = renderDocumentHtml(
+      "Text",
+      "markdown",
+      {
+        ...style,
+        header: {
+          enabled: true,
+          leftText: "{title}",
+          centerText: "{date}",
+          rightText: "Page {page} of {pages}",
+          showPageNumber: false,
+        },
+        footer: {
+          enabled: true,
+          leftText: "Unknown {token} stays {literal}",
+          centerText: "",
+          rightText: "",
+          showPageNumber: true,
+        },
+      },
+      undefined,
+      {
+        title: 'Quarterly "Review" <2026>',
+        locale: "en",
+        now: new Date("2026-07-21T00:00:00.000Z"),
+      },
+    );
+    expect(output).toContain(
+      '@top-left { color: #767b76; content: "Quarterly \\22 Review\\22  \\3c 2026\\3e ";',
+    );
+    expect(output).toContain(
+      '@top-center { color: #767b76; content: "2026-07-21";',
+    );
+    expect(output).toContain(
+      '@top-right { color: #767b76; content: "Page " counter(page) " of " counter(pages);',
+    );
+    expect(output).toContain(
+      '@bottom-left { color: #767b76; content: "Unknown \\7b token\\7d  stays \\7b literal\\7d ";',
+    );
+    expect(output).toContain(
+      '@bottom-right { color: #767b76; content: "" " " counter(page);',
+    );
+  });
+
+  it("formats header/footer dates with the given locale", () => {
+    const render = (locale?: string) =>
+      renderDocumentHtml(
+        "Text",
+        "markdown",
+        {
+          ...style,
+          header: {
+            enabled: true,
+            leftText: "{date}",
+            centerText: "",
+            rightText: "",
+            showPageNumber: false,
+          },
+          footer: style.footer,
+        },
+        undefined,
+        {
+          ...(locale ? { locale } : {}),
+          now: new Date("2026-07-21T00:00:00.000Z"),
+        },
+      );
+    expect(render()).toContain('content: "2026-07-21"');
+    expect(render("fr-FR")).toContain('"21 juil. 2026"');
+  });
+
   it("keeps headings and bounded content blocks together across pages", () => {
     const output = renderDocumentHtml(
       "<h2>Section</h2><p>Introduction</p><table><caption>Results</caption><thead><tr><th>Measure</th></tr></thead><tbody><tr><td>Value</td></tr></tbody></table><blockquote>Note</blockquote><pre>code</pre>",

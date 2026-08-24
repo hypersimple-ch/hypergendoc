@@ -325,18 +325,85 @@ function resolveAssets(
 
 const textStyleRoles = ["h1", "h2", "h3", "h4", "h5", "h6", "caption"] as const;
 
+export interface HeaderFooterContext {
+  readonly title?: string;
+  readonly locale?: string;
+  readonly now?: Date;
+}
+
+/** Stable ISO-like render date for "en", medium Intl format otherwise. */
+const headerFooterDate = (locale: string | undefined, date: Date) => {
+  if (!locale || locale === "en") return date.toISOString().slice(0, 10);
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: "medium",
+      timeZone: "UTC",
+    }).format(date);
+  } catch {
+    return date.toISOString().slice(0, 10);
+  }
+};
+
+type MarginBoxPart = string | { readonly counter: "page" | "pages" };
+
+/**
+ * Expands {page}, {pages}, {title}, and {date} tokens into CSS content parts.
+ * Unknown braces stay literal text and are CSS-string-escaped later.
+ */
+const headerFooterTokens = (
+  text: string,
+  context: Readonly<{ title?: string; dateText: string }>,
+): readonly MarginBoxPart[] => {
+  const parts: MarginBoxPart[] = [];
+  let literal = "";
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === "{") {
+      const end = text.indexOf("}", index + 1);
+      const token = end === -1 ? "" : text.slice(index + 1, end);
+      if (
+        token === "page" ||
+        token === "pages" ||
+        token === "title" ||
+        token === "date"
+      ) {
+        if (literal) {
+          parts.push(literal);
+          literal = "";
+        }
+        if (token === "page" || token === "pages")
+          parts.push({ counter: token });
+        else if (token === "title") parts.push(context.title ?? "");
+        else parts.push(context.dateText);
+        index = end;
+        continue;
+      }
+    }
+    literal += text[index];
+  }
+  if (literal) parts.push(literal);
+  return parts;
+};
+
 const pageMarginBoxes = (
   position: "top" | "bottom",
   value: StyleDefinition["header"],
   mutedColor: string,
   fontFamily: string,
+  context: Readonly<{ title?: string; dateText: string }>,
 ) => {
   if (!value.enabled) return "";
   return (["left", "center", "right"] as const)
     .map((alignment) => {
       const text = value[`${alignment}Text`];
       const pageNumber = alignment === "right" && value.showPageNumber;
-      return `@${position}-${alignment} { color: ${mutedColor}; content: "${escapeCssString(text)}"${pageNumber ? ' " " counter(page)' : ""}; font-family: ${fontFamily}; font-size: 8pt; }`;
+      const expanded = headerFooterTokens(text, context)
+        .map((part) =>
+          typeof part === "string"
+            ? `"${escapeCssString(part)}"`
+            : `counter(${part.counter})`,
+        )
+        .join(" ");
+      return `@${position}-${alignment} { color: ${mutedColor}; content: ${expanded || '""'}${pageNumber ? ' " " counter(page)' : ""}; font-family: ${fontFamily}; font-size: 8pt; }`;
     })
     .join("\n");
 };
@@ -347,8 +414,16 @@ export function renderDocumentHtml(
   format: DocumentFormat,
   style: StyleDefinition,
   assets?: ResolvedStyleAssets,
+  headerFooter?: HeaderFooterContext,
 ): string {
   const exactBody = sanitizeDocumentInput(format, body);
+  const marginContext = {
+    ...(headerFooter?.title ? { title: headerFooter.title } : {}),
+    dateText: headerFooterDate(
+      headerFooter?.locale,
+      headerFooter?.now ?? new Date(),
+    ),
+  };
   const assetRendering =
     style.assetVersion === 1 ? resolveAssets(style, assets) : undefined;
   const rendered =
@@ -424,8 +499,8 @@ h1 { font-size: ${(style.bodySizePt * style.headingScale).toFixed(2)}pt; } h2 { 
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <style>
 ${fontFaceCss ? `${fontFaceCss}\n` : ""}@page { size: ${pageSize}; margin: ${style.page.marginTopMm}mm ${style.page.marginRightMm}mm ${style.page.marginBottomMm}mm ${style.page.marginLeftMm}mm;
-${pageMarginBoxes("top", style.header, style.colors.muted, bodyFont)}
-${pageMarginBoxes("bottom", style.footer, style.colors.muted, bodyFont)}
+${pageMarginBoxes("top", style.header, style.colors.muted, bodyFont, marginContext)}
+${pageMarginBoxes("bottom", style.footer, style.colors.muted, bodyFont, marginContext)}
 }
 * { box-sizing: border-box; }
 body { ${bodyCss} margin: 0; }
@@ -457,6 +532,8 @@ export interface RenderTemplateDocumentInput {
   readonly styleAssets?: ResolvedStyleAssets;
   readonly templateAssets?: ResolvedTemplateAssets;
   readonly locale?: string;
+  /** Optional document title for {title} header/footer tokens. */
+  readonly documentTitle?: string;
 }
 
 const TEMPLATE_MAX_DEPTH = 32;
@@ -768,6 +845,7 @@ const templateColor = (
 export function renderTemplateDocumentHtml(
   input: RenderTemplateDocumentInput,
 ): string {
+  const renderDate = new Date();
   const baseData = validateTemplateData(input.definition, input.data);
   const root: Record<string, TemplateValue> = { ...baseData };
   const computed = input.definition.computed ?? {};
@@ -1080,6 +1158,11 @@ export function renderTemplateDocumentHtml(
     "html",
     input.style,
     input.styleAssets,
+    {
+      ...(input.documentTitle ? { title: input.documentTitle } : {}),
+      locale,
+      now: renderDate,
+    },
   );
   shell = shell.replace(/<img class="document-logo"[^>]*>/, "");
   shell = shell.replace(`<p>${placeholder}</p>`, body);

@@ -37,6 +37,7 @@ export type RenderRequest =
       assets?: ResolvedStyleAssets;
       templateAssets?: ResolvedTemplateAssets;
       locale?: string;
+      documentTitle?: string;
     }>;
 export interface RenderResult {
   readonly ok: boolean;
