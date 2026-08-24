@@ -422,7 +422,7 @@ export const TemplateNodeSchema: z.ZodType<TemplateNode> = z.lazy(() =>
       source: z.string().min(1).max(256).optional(),
       as: z
         .string()
-        .regex(/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/)
+        .regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/)
         .optional(),
       component: TemplateIdentifierSchema.optional(),
       props: z.record(TemplateIdentifierSchema, TemplateValueSchema).optional(),

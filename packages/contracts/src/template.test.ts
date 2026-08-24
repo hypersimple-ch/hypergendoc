@@ -117,6 +117,44 @@ describe("template contracts", () => {
     expect(parses([{ path: "unknown" }])).toBe(false);
   });
 
+  it("allows hyphenated repeater aliases per the identifier rule", () => {
+    const aliased = {
+      ...valid,
+      document: [
+        {
+          type: "page",
+          master: "cover",
+          children: [
+            {
+              type: "repeat",
+              source: "rows",
+              as: "line-item",
+              children: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "binding", path: "line-item.amount" }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    expect(TemplateDefinitionSchema.safeParse(aliased).success).toBe(true);
+    expect(
+      TemplateDefinitionSchema.safeParse({
+        ...aliased,
+        document: [
+          {
+            type: "page",
+            master: "cover",
+            children: [{ ...aliased.document[0]!.children[0], as: "-bad" }],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
   it("validates page-master watermarks strictly", () => {
     const masterFor = (watermark: unknown) => ({
       ...valid,

@@ -455,6 +455,43 @@ describe("template document renderer", () => {
     expect(html).not.toContain(".template-master-standard{isolation");
   });
 
+  it("resolves hyphenated repeater aliases in bindings and conditions", () => {
+    const html = renderTemplateDocumentHtml({
+      definition: {
+        ...definition,
+        document: [
+          {
+            type: "page",
+            master: "standard",
+            children: [
+              {
+                type: "repeat",
+                source: "items",
+                as: "line-item",
+                children: [
+                  {
+                    type: "paragraph",
+                    content: [
+                      { type: "binding", path: "line-item.name" },
+                      { type: "text", value: ":" },
+                      { type: "binding", path: "line-item.amount" },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      data: {
+        title: "Hyphens",
+        items: [{ name: "Design", amount: 10 }],
+      },
+      style,
+    });
+    expect(html).toContain("<p>Design:10</p>");
+  });
+
   it("rejects missing required business-specific data without leaking details", () => {
     expect(() =>
       renderTemplateDocumentHtml({ definition, data: {}, style }),
