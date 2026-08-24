@@ -14,7 +14,7 @@ case "$BACKUP_RETENTION_DAYS" in ''|*[!0-9]*) echo "BACKUP_RETENTION_DAYS must b
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 archive="hypergendoc-$stamp.tar.age"
 if [ "$DRY_RUN" != 0 ]; then
-  echo "dry run: dump PostgreSQL and private bucket, encrypt with age, upload $archive to $BACKUP_SSH_HOST:$BACKUP_REMOTE_DIR, and remove backups older than $BACKUP_RETENTION_DAYS days"
+  echo "dry run: dump PostgreSQL, export the private bucket, stage private Git history, encrypt with age, upload $archive to $BACKUP_SSH_HOST:$BACKUP_REMOTE_DIR, and remove backups older than $BACKUP_RETENTION_DAYS days"
   exit 0
 fi
 need age
@@ -43,8 +43,16 @@ if [ "$actual_objects" -gt 0 ]; then
     printf '%s  %s\n' "$sha" "$stage/objects/$key"
   done < "$stage/objects.tsv" | sha256sum -c - >/dev/null
 fi
-printf 'created_at=%s\nimage_tag=%s\nobject_count=%s\n' "$stamp" "$(awk -F= '$1 == "IMAGE_TAG" {print $2}' "$ENV_FILE")" "$actual_objects" > "$stage/manifest"
-tar -C "$stage" -cf "$stage/backup.tar" database.sql objects objects.tsv manifest
+# The private Git volume is the source-history authority and belongs in the
+# same recovery set as the database dump (docs/operations/data-policy.md).
+git_tar="$stage/git-data.tar"
+run_compose run -T --rm --no-deps --entrypoint /bin/sh git-data-init -ec \
+  'tar -C /var/lib/hypergendoc/git -cf - .' > "$git_tar"
+[ -s "$git_tar" ] || { echo "refusing incomplete backup: git-data export is empty" >&2; exit 1; }
+tar -tf "$git_tar" >/dev/null || { echo "refusing incomplete backup: git-data export is not a readable tar" >&2; exit 1; }
+git_entries=$(tar -tf "$git_tar" | wc -l | tr -d ' ')
+printf 'created_at=%s\nimage_tag=%s\nobject_count=%s\ngit_entry_count=%s\n' "$stamp" "$(awk -F= '$1 == "IMAGE_TAG" {print $2}' "$ENV_FILE")" "$actual_objects" "$git_entries" > "$stage/manifest"
+tar -C "$stage" -cf "$stage/backup.tar" database.sql objects objects.tsv manifest git-data.tar
 age -r "$AGE_RECIPIENT" -o "$stage/$archive" "$stage/backup.tar"
 ssh "$BACKUP_SSH_HOST" "umask 077; mkdir -p '$BACKUP_REMOTE_DIR'; cat > '$BACKUP_REMOTE_DIR/$archive'" < "$stage/$archive"
 ssh "$BACKUP_SSH_HOST" "find '$BACKUP_REMOTE_DIR' -maxdepth 1 -type f -name 'hypergendoc-*.tar.age' -mtime +$BACKUP_RETENTION_DAYS -delete"
