@@ -3,17 +3,24 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Empty, LoadState, useLoaded } from "./dashboard-state";
+import { ApiError } from "../lib/api-client";
+import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
 
 afterEach(cleanup);
 
-type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void };
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason: unknown) => void;
+};
 function deferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 describe("dashboard state", () => {
@@ -75,6 +82,56 @@ describe("dashboard state", () => {
     requests[0]!.resolve("old");
     await waitFor(() =>
       expect(screen.getByRole("status")).toHaveTextContent("new"),
+    );
+  });
+
+  it("clears a stale page-level error once a later load succeeds", async () => {
+    const attempts: Deferred<string>[] = [];
+    function Probe() {
+      const data = useLoaded(() => {
+        const request = deferred<string>();
+        attempts.push(request);
+        return request.promise;
+      });
+      return (
+        <>
+          <button onClick={data.reload}>Retry</button>
+          {data.error ? <div role="alert">{data.error}</div> : null}
+          <output>{data.value}</output>
+        </>
+      );
+    }
+    render(<Probe />);
+    await waitFor(() => expect(attempts).toHaveLength(1));
+    attempts[0]!.reject(new Error("network down"));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("We could not load this page.");
+
+    screen.getByRole("button", { name: "Retry" }).click();
+    await waitFor(() => expect(attempts).toHaveLength(2));
+    attempts[1]!.resolve("fresh data");
+
+    await screen.findByText("fresh data");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("labels transport and server failures as reachability problems", () => {
+    for (const code of ["network_error", "timeout"] as const) {
+      expect(safeError(new ApiError(code, "ignored"))).toBe(
+        "We could not reach the server. Check your connection and try again.",
+      );
+    }
+    expect(safeError(new ApiError("internal_error", "ignored"))).toBe(
+      "We could not reach the server. Check your connection and try again.",
+    );
+  });
+
+  it("keeps permission wording for genuine authorization failures", () => {
+    expect(safeError(new ApiError("not_found", "missing"))).toBe(
+      "This item is unavailable in your workspace.",
+    );
+    expect(safeError(new ApiError("forbidden", "Not allowed."))).toBe(
+      "Not allowed.",
     );
   });
 });

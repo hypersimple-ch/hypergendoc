@@ -17,7 +17,11 @@ export function useLoaded<T>(
     setError(undefined);
     load()
       .then((result) => {
-        if (requestId.current === currentRequest) setValue(result);
+        // A successful load always supersedes a previous failure.
+        if (requestId.current === currentRequest) {
+          setValue(result);
+          setError(undefined);
+        }
       })
       .catch((e: unknown) => {
         if (requestId.current === currentRequest) setError(safeError(e));
@@ -34,9 +38,18 @@ export function useLoaded<T>(
   }, deps); // callers pass stable primitive dependencies
   return { value, error, loading, reload };
 }
+/** Codes that mean transport or server trouble, not a workspace permission problem. */
+const transientCodes = new Set([
+  "network_error",
+  "timeout",
+  "internal_error",
+  "dependency_unavailable",
+]);
 export function safeError(error: unknown) {
   if (error instanceof ApiError && error.code === "not_found")
     return "This item is unavailable in your workspace.";
+  if (error instanceof ApiError && transientCodes.has(error.code))
+    return "We could not reach the server. Check your connection and try again.";
   return error instanceof ApiError
     ? error.message
     : "We could not load this page. Please try again.";
