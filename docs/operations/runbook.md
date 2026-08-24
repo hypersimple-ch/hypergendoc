@@ -2,6 +2,19 @@
 
 Dokploy deploys the standalone Compose service. Traefik is the only public entry point; do not expose PostgreSQL, object storage, the private Git volume, renderer IPC, or internal server ports.
 
+## Ingress route settings
+
+Configure exactly these HTTPS rules on the single deployment hostname in Dokploy/Traefik. Keep strip-path disabled on every rule: the server serves `/api/auth/*`, `/mcp`, and `/health/*` at those exact prefixes, and the web service expects the root prefix.
+
+| Path prefix | Upstream      | Strip path |
+| ----------- | ------------- | ---------- |
+| `/api`      | `server:4000` | No         |
+| `/mcp`      | `server:4000` | No         |
+| `/health`   | `server:4000` | No         |
+| `/`         | `web:3000`    | No         |
+
+A wrong strip-path setting silently breaks every API call while pages keep loading, so re-run `deploy/prod/ops/smoke.sh` after any ingress change. The production Compose file sets `TRUST_PROXY: "1"` so the server resolves real client IPs from Traefik's `X-Forwarded-For` header.
+
 ## Deploy and review
 
 1. Set runtime secrets in Dokploy; do not commit them.
@@ -9,9 +22,23 @@ Dokploy deploys the standalone Compose service. Traefik is the only public entry
 3. Run `pnpm check` before release.
 4. Monitor server, PostgreSQL, Git-volume capacity, object storage, renderer, and backup/restore failures. Do not log document source, tokens, or renderer transcripts.
 
+## Base-image pinning
+
+Production Dockerfiles pin every base image by tag and registry digest, matching the Garage and AWS CLI images already pinned in `compose.prod.yaml`. Refresh deliberately: choose the new tag, resolve its digest from the registry, update tag and digest together, and redeploy. Never replace a tag without moving its digest.
+
 ## Scaling guard
 
 Run exactly one `server` replica while authentication and MCP rate-limit counters are process-local. Do not configure Dokploy or Traefik horizontal scaling for the server. Before adding a second replica, implement and load-test a shared atomic rate-limit store as required by [ADR 0001](../architecture/decisions/0001-lifecycle-and-scaling-boundaries.md).
+
+## Public registration policy
+
+`SIGNUP_MODE` controls public registration and is enforced server-side, not just in the UI:
+
+- `open` (default): anyone may register. Email verification is still mandatory before any workspace access.
+- `invite`: public sign-ups are rejected by the server with `403`. New users must be provisioned by an operator.
+- `closed`: identical enforcement to `invite` today; kept as an explicit value so a deployment can document that registration is permanently closed. It is reserved for a future token-gated sign-up flow.
+
+Bootstrap procedure for an agency deployment: deploy once with `SIGNUP_MODE=open`, register and verify the owner account through `/register` and `/setup`, then set `SIGNUP_MODE=closed` (or `invite`) and redeploy through Dokploy. Workspace member invitations require the invited user to already exist as a verified account; they never create accounts, so closing registration does not affect inviting verified users into an existing workspace.
 
 ## Browser security headers
 
@@ -25,7 +52,71 @@ PostgreSQL is only the document index and authorization store. Object storage is
 
 ## Backup and restore
 
-Create a consistent recovery set containing the PostgreSQL dump and private Git volume, plus object storage for uploaded logos, fonts, and template media. Encrypt before off-VPS transfer. Daily backups, integrity checks, and periodic isolated restore drills are required.
+Create a consistent recovery set containing the PostgreSQL dump and private Git volume, plus object storage for uploaded logos, fonts, and template media. Encrypt before off-VPS transfer. Daily backups, integrity checks, and periodic isolated restore drills are required. `deploy/prod/ops/backup.sh` enforces this contract: it stages `database.sql`, `objects/`, and `git-data.tar` into one encrypted archive with a manifest, and `restore.sh` refuses any archive whose recovery set is incomplete or whose counts do not match the manifest.
+
+### Backup scheduling
+
+`backup.sh` refuses to run while `DRY_RUN` is unset or nonzero, so the scheduler must export `DRY_RUN=0` together with `ENV_FILE`, `AGE_RECIPIENT`, `BACKUP_SSH_HOST`, and `BACKUP_REMOTE_DIR`. Schedule it daily during a low-traffic window.
+
+Host cron (`/etc/cron.d/hypergendoc-backup`; adjust paths to the deployment checkout):
+
+```
+ENV_FILE=/opt/hypergendoc/deploy/prod/secrets.env
+BACKUP_RECIPIENT=age1replace-with-the-backup-age-recipient
+BACKUP_TARGET=backup@backup-host.internal
+BACKUP_DIR=/srv/hypergendoc
+15 3 * * * root cd /opt/hypergendoc && \
+  ENV_FILE="$ENV_FILE" DRY_RUN=0 AGE_RECIPIENT="$BACKUP_RECIPIENT" \
+  BACKUP_SSH_HOST="$BACKUP_TARGET" BACKUP_REMOTE_DIR="$BACKUP_DIR" \
+  sh deploy/prod/ops/backup.sh >>/var/log/hypergendoc-backup.log 2>&1
+```
+
+systemd timer equivalent:
+
+```
+# /etc/systemd/system/hypergendoc-backup.service
+[Unit]
+Description=HyperGenDoc encrypted off-VPS backup
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/hypergendoc
+Environment=ENV_FILE=/opt/hypergendoc/deploy/prod/secrets.env
+Environment=DRY_RUN=0
+Environment=AGE_RECIPIENT=age1replace-with-the-backup-age-recipient
+Environment=BACKUP_SSH_HOST=backup@backup-host.internal
+Environment=BACKUP_REMOTE_DIR=/srv/hypergendoc
+ExecStart=/bin/sh deploy/prod/ops/backup.sh
+
+# /etc/systemd/system/hypergendoc-backup.timer
+[Unit]
+Description=Run HyperGenDoc daily backup
+
+[Timer]
+OnCalendar=*-*-* 03:15:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+Enable it with `systemctl enable --now hypergendoc-backup.timer`.
+
+Dokploy-friendly equivalent: add a Scheduled Job on the Compose project (field names vary slightly between Dokploy versions; adapt as needed):
+
+```
+name: hypergendoc-nightly-backup
+schedule: "15 3 * * *"          # cron syntax
+command: sh deploy/prod/ops/backup.sh   # runs in the compose project context
+environment:
+  ENV_FILE: /opt/hypergendoc/deploy/prod/secrets.env
+  DRY_RUN: "0"
+  AGE_RECIPIENT: age1replace-with-the-backup-age-recipient
+  BACKUP_SSH_HOST: backup@backup-host.internal
+  BACKUP_REMOTE_DIR: /srv/hypergendoc
+```
+
+The job needs the same host prerequisites as a manual run: an age keypair whose public key is `AGE_RECIPIENT`, passwordless SSH to `BACKUP_SSH_HOST`, and the checkout with `secrets.env` at chmod 600. Verify each scheduler change with a manual `DRY_RUN=0` run before relying on it, alert on nonzero exits or missing archives older than one day, and run `deploy/prod/ops/disaster-recovery.sh` against the latest archive after every scheduler change. Perform a full isolated restore drill at least quarterly and record the last successful date.
 
 Restore PostgreSQL and Git from the same recovery point before accepting traffic, then verify authorized document reads, commit history, a revert, and a current-PDF render. Record the recovery point, migration version, consistency result, and last successful full restore. Do not restore partial Git history into a live deployment.
 
