@@ -167,6 +167,7 @@ if (
       "GARAGE_DEFAULT_BUCKET",
       "GARAGE_DEFAULT_SECRET_KEY",
       "GARAGE_RPC_SECRET",
+      "RUST_LOG",
     ].sort(),
   )
 )
