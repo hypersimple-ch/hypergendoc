@@ -123,6 +123,10 @@ export async function createApplication(
     connectionString: environment.databaseUrl,
   });
   const app = Fastify({
+    // Behind the production proxy (Dokploy/Traefik), client IPs come from
+    // X-Forwarded-For. Opt in explicitly with TRUST_PROXY=1; never trust
+    // forwarded headers from untrusted direct connections.
+    trustProxy: environment.trustProxy,
     logger: {
       level: environment.logLevel,
       redact: [
@@ -438,7 +442,20 @@ export async function createApplication(
     baseUrl: environment.appOrigin,
     secret: environment.betterAuthSecret,
     production: environment.nodeEnv === "production",
+    signupMode: environment.signupMode,
   });
+  if (environment.signupMode !== "open") {
+    // Defense in depth alongside emailAndPassword.disableSignUp: reject public
+    // registration before it reaches Better Auth, including implicit sign-ups.
+    app.addHook("onRequest", (request) => {
+      if (
+        request.method === "POST" &&
+        request.url.startsWith("/api/auth/sign-up")
+      )
+        throw new AppError("forbidden", 403);
+      return Promise.resolve();
+    });
+  }
 
   await app.register(cookie);
   await app.register(cors, {

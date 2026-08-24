@@ -12,6 +12,8 @@ export interface ServerEnvironment {
   readonly renderTimeoutMs: number;
   readonly logLevel:
     "silent" | "fatal" | "error" | "warn" | "info" | "debug" | "trace";
+  readonly signupMode: "open" | "invite" | "closed";
+  readonly trustProxy: boolean;
   readonly documentGitRoot: string;
   readonly databaseUrl: string;
   readonly s3: {
@@ -67,6 +69,26 @@ function logLevel(value: string | undefined): ServerEnvironment["logLevel"] {
       "LOG_LEVEL must be silent, fatal, error, warn, info, debug, or trace",
     );
   return parsed as ServerEnvironment["logLevel"];
+}
+
+function signupMode(
+  value: string | undefined,
+): ServerEnvironment["signupMode"] {
+  const parsed = value?.trim() || "open";
+  if (
+    !(["open", "invite", "closed"] as const).includes(
+      parsed as ServerEnvironment["signupMode"],
+    )
+  )
+    throw new Error("SIGNUP_MODE must be open, invite, or closed");
+  return parsed as ServerEnvironment["signupMode"];
+}
+
+function trustProxy(value: string | undefined): boolean {
+  const parsed = value?.trim() || "0";
+  if (!["0", "1", "false", "true"].includes(parsed))
+    throw new Error("TRUST_PROXY must be 0, 1, false, or true");
+  return parsed === "1" || parsed === "true";
 }
 
 function smtpPort(value: string | undefined): number {
@@ -138,6 +160,8 @@ export function loadServerEnvironment(
   if (mailFrom?.includes("\n") || mailFrom?.includes("\r"))
     throw new Error("MAIL_FROM must not contain line breaks");
   return {
+    signupMode: signupMode(values.SIGNUP_MODE),
+    trustProxy: trustProxy(values.TRUST_PROXY),
     nodeEnv,
     host: values.HOST?.trim() || "0.0.0.0",
     port: port(values.PORT),
