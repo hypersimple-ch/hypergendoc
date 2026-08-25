@@ -55,6 +55,15 @@ export type TemplateDetail = {
   versions: TemplateVersion[];
 };
 export type TemplateCreation = { template: Template; version: TemplateVersion };
+export type StarterTemplateSummary = {
+  id: string;
+  name: string;
+  description: string;
+  fieldCount: number;
+  fieldKinds: string[];
+  definition: TemplateDefinition;
+  sampleData: TemplateData;
+};
 export type DocumentDetail = ContractDocumentDetail;
 export type DocumentHistoryDetail = DocumentDetail;
 export type DocumentCommitSource = DocumentCurrentSource;
@@ -190,6 +199,27 @@ export const dashboardApi = {
     );
     return result.template;
   },
+  starterTemplates: () =>
+    api<StarterTemplateSummary[]>("/api/starter-templates"),
+  createTemplateFromStarter: async (input: {
+    companyId: string;
+    starterId: string;
+    name: string;
+    styleVersionId: string;
+  }) => {
+    const result = await api<TemplateCreation>("/api/templates/from-starter", {
+      method: "POST",
+      body: input,
+    });
+    return result.template;
+  },
+  duplicateTemplate: async (id: string) => {
+    const result = await api<TemplateCreation>(
+      `/api/templates/${id}/duplicate`,
+      { method: "POST", body: {} },
+    );
+    return result.template;
+  },
   template: async (id: string): Promise<TemplateDetail> => {
     const template = await api<Template>(`/api/templates/${id}`);
     const versions = await api<TemplateVersion[]>(
@@ -308,6 +338,13 @@ export const dashboardApi = {
     }),
   document: (id: string): Promise<DocumentDetail> =>
     api<DocumentDetail>(`/api/documents/${id}`),
+  duplicateDocument: async (id: string) => {
+    const result = await api<{
+      document: Document;
+      current: DocumentCurrentSource;
+    }>(`/api/documents/${id}/duplicate`, { method: "POST", body: {} });
+    return result.document;
+  },
   documentCommits: (id: string) =>
     api<DocumentCommit[]>(`/api/documents/${id}/commits`),
   documentCommit: (
