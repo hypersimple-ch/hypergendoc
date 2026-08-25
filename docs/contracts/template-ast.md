@@ -70,6 +70,10 @@ Table columns bind to fields of the list item and may declare display `format`, 
 
 A page master may declare an optional `watermark`: `{ text (1–64 characters), tone ("neutral" | "warning" | "danger"), opacity ("subtle" | "normal" | "strong") }`. Tones map to fixed renderer-owned colors and opacity presets to fixed values; free-form colors and images are not accepted. The watermark renders centered at a fixed −30° rotation behind content on every physical page flowed from pages using that master.
 
+## Starter templates
+
+The server ships a small, server-owned starter catalog (`GET /api/starter-templates`) of complete, valid definitions with sample data. `POST /api/templates/from-starter` instantiates one for a company by pinning a caller-chosen `styleVersionId` into the copied definition and saving it as an INACTIVE first version; nothing is activated automatically. Duplicating a template (`POST /api/templates/:templateId/duplicate`) copies the latest version definition under a `(copy)` name, also as an inactive first version. In both cases every saved version remains immutable: adjusting a starter or a copy means creating and activating a new version in the studio.
+
 ## Locale-aware formatting
 
 Template definitions may declare an optional root-level BCP-47 `locale` tag (validated with `Intl.Locale`; invalid tags are rejected). When absent, `"en"` is used. The stored locale drives all rendered number, money, and date formatting for bindings, list items, and table cells, and also sets the HTML `lang` attribute and the header/footer `{date}` token format. Rendering stays deterministic for a given definition, data, and locale.

@@ -13,6 +13,8 @@ Configure exactly these HTTPS rules on the single deployment hostname in Dokploy
 | `/health`   | `server:4000` | No         |
 | `/`         | `web:3000`    | No         |
 
+Recent API routes added under the existing `/api` prefix (upstream `server:4000`, strip path No — no extra ingress rule is required): `GET /api/starter-templates`, `POST /api/templates/from-starter`, `POST /api/templates/:templateId/duplicate`, and `POST /api/documents/:documentId/duplicate`. They are protected human-session routes like every other `/api` route.
+
 A wrong strip-path setting silently breaks every API call while pages keep loading, so re-run `deploy/prod/ops/smoke.sh` after any ingress change. The production Compose file sets `TRUST_PROXY: "1"` so the server resolves real client IPs from Traefik's `X-Forwarded-For` header.
 
 ## Deploy and review
