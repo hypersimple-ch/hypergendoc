@@ -164,3 +164,73 @@ describe("TemplateStudio post-create state", () => {
     ).toBeNull();
   });
 });
+
+describe("TemplateStudio fields panel", () => {
+  it("writes structured field edits into the JSON source", async () => {
+    mockTemplate({ ...baseDefinition });
+    render(<TemplateStudio templateId={templateId} />);
+
+    await screen.findByLabelText("Content locale");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Edit field title" }),
+    );
+    fireEvent.change(screen.getByLabelText("Label for title"), {
+      target: { value: "Document title" },
+    });
+
+    const source = screen.getByLabelText("Template definition (JSON)");
+    const edited = {
+      ...baseDefinition,
+      fields: {
+        title: {
+          type: "text",
+          label: "Document title",
+          required: true,
+        },
+      },
+    };
+    expect(source).toHaveValue(JSON.stringify(edited, null, 2));
+  });
+
+  it("reflects JSON editor changes in the fields table", async () => {
+    mockTemplate({ ...baseDefinition });
+    const edited = {
+      ...baseDefinition,
+      fields: {
+        ...baseDefinition.fields,
+        dueDate: { type: "date", label: "Due date", required: true },
+      },
+    };
+    render(<TemplateStudio templateId={templateId} />);
+
+    await screen.findByLabelText("Content locale");
+    fireEvent.change(
+      screen.getByLabelText("Template definition (JSON)"),
+      { target: { value: JSON.stringify(edited, null, 2) } },
+    );
+
+    expect(
+      await screen.findByText("dueDate"),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("table", { name: "Template fields" }),
+    ).toHaveTextContent("Date");
+  });
+
+  it("disables the fields panel when the JSON is unparsable", async () => {
+    mockTemplate({ ...baseDefinition });
+    render(<TemplateStudio templateId={templateId} />);
+
+    await screen.findByLabelText("Content locale");
+    fireEvent.change(
+      screen.getByLabelText("Template definition (JSON)"),
+      { target: { value: "{ not json" } },
+    );
+
+    expect(await screen.findByText(/not valid JSON/)).toBeVisible();
+    expect(screen.getByRole("button", { name: /Add field/ })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Remove field title" }),
+    ).toBeDisabled();
+  });
+});

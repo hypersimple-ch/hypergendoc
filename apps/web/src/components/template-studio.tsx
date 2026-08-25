@@ -14,6 +14,10 @@ import { dashboardApi } from "../lib/dashboard-api";
 import { openTemporaryPdf } from "../lib/pdf-object-url";
 import { LoadState, safeError, useLoaded } from "./dashboard-state";
 import {
+  TemplateFieldsEditor,
+  type Fields,
+} from "./template-fields-editor";
+import {
   Button,
   ConfirmDialog,
   FormField,
@@ -81,6 +85,32 @@ function isTemplateDefinitionShape(
   );
 }
 
+type ParsedSource =
+  | { ok: true; value: TemplateDefinition }
+  | { ok: false; reason: string };
+
+/** Live, message-free parse of the JSON editor content for the fields panel. */
+function parseSource(source: string): ParsedSource {
+  try {
+    const parsed: unknown = JSON.parse(source);
+    if (!isTemplateDefinitionShape(parsed)) {
+      return {
+        ok: false,
+        reason:
+          "Fields editing is unavailable: the definition must use schemaVersion 1 and include styleVersionId, fields, pageMasters, and document.",
+      };
+    }
+    return { ok: true, value: parsed };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: `Fields editing is unavailable: the definition is not valid JSON (${
+        error instanceof Error ? error.message : "parse error"
+      }).`,
+    };
+  }
+}
+
 export function TemplateStudio({ templateId }: { templateId: string }) {
   const router = useRouter();
   const detail = useLoaded(
@@ -129,6 +159,21 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
     `template-studio:${templateId}`,
     isDirty,
   );
+  const parsedSource = useMemo(() => parseSource(source), [source]);
+
+  /** Writes structured field changes into the definition state and the JSON
+   * source so the save flow keeps validating the full contract. */
+  function applyFieldsChange(nextFields: Fields) {
+    if (!parsedSource.ok) return;
+    const base = parsedSource.value;
+    const effectiveLocale = localeInput.trim() || base.locale || "";
+    const next: TemplateDefinition = { ...base, fields: nextFields };
+    delete next.locale;
+    if (effectiveLocale) next.locale = effectiveLocale;
+    setDefinition(next);
+    setSource(JSON.stringify(next, null, 2));
+    setSampleData((current) => dataForFields(next, current));
+  }
 
   function parseDefinition(): TemplateDefinition | undefined {
     try {
@@ -407,6 +452,14 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
             <div className="p-5">
               {mode === "definition" ? (
                 <div className="grid gap-3">
+                  <TemplateFieldsEditor
+                    fields={
+                      parsedSource.ok ? parsedSource.value.fields : definition.fields
+                    }
+                    disabled={!parsedSource.ok || busy}
+                    {...(parsedSource.ok ? {} : { disabledReason: parsedSource.reason })}
+                    onChange={applyFieldsChange}
+                  />
                   <div>
                     <label
                       className="text-sm font-medium"
