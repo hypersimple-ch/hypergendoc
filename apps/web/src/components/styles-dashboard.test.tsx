@@ -652,6 +652,15 @@ describe("StylesDashboard", () => {
     expect(
       header.getByRole("checkbox", { name: /Show page number/i }),
     ).toBeChecked();
+    fireEvent.click(
+      header.getByRole("checkbox", { name: /Show logo/i }),
+    );
+    expect(
+      header.getByRole("checkbox", { name: /Show logo/i }),
+    ).toBeChecked();
+    expect(
+      footer.getByRole("checkbox", { name: /Show logo/i }),
+    ).not.toBeChecked();
   });
 
   it("applies margin and print-standard page presets", async () => {

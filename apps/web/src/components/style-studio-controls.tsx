@@ -489,6 +489,16 @@ export function HeaderFooterControls({
         />
         Show page number
       </label>
+      <label className="toggle-row">
+        <input
+          type="checkbox"
+          checked={value.showLogo === true}
+          onChange={(event) =>
+            onChange({ ...value, showLogo: event.target.checked })
+          }
+        />
+        Show logo (uses the company logo; replaces the left text)
+      </label>
     </section>
   );
 }
