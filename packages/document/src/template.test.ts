@@ -9,6 +9,7 @@ import {
   renderTemplateDocumentHtml,
   templateImageIds,
 } from "./index.js";
+import { encodeQr } from "./vendor/qrcodegen.js";
 
 const style: StyleDefinition = {
   assetVersion: 1,
@@ -925,5 +926,153 @@ describe("template document renderer", () => {
     };
     const id = "00000000-0000-4000-8000-000000000099";
     expect(templateImageIds(imageDefinition, { portrait: id })).toEqual([id]);
+  });
+
+  it("renders qr nodes as deterministic inline SVG", () => {
+    const qrDefinition: TemplateDefinition = {
+      ...definition,
+      document: [
+        {
+          type: "page",
+          master: "standard",
+          children: [{ type: "qr", value: "https://example.com/pay" }],
+        },
+      ],
+    };
+    const input = {
+      definition: qrDefinition,
+      data: { title: "QR", items: [] },
+      style,
+    };
+    const first = renderTemplateDocumentHtml(input);
+    const second = renderTemplateDocumentHtml(input);
+    expect(first).toBe(second);
+    expect(first).toContain('role="img"');
+    expect(first).toContain('aria-label="QR code"');
+    expect(first).toContain("<title>QR code</title>");
+    expect(first).toContain('shape-rendering="crispEdges"');
+    expect(first).toMatch(/width="25mm" height="25mm"/);
+    const code = encodeQr("https://example.com/pay", "medium");
+    const span = code.size + 8;
+    expect(first).toContain(`<rect width="${span}" height="${span}" fill="#ffffff"/>`);
+    // Symbol size plus a 4-module quiet zone on each side.
+    expect(first).toContain(`viewBox="0 0 ${span} ${span}"`);
+    expect(first).toContain('class="template-qr"');
+    expect(first).not.toContain("<img");
+  });
+
+  it("encodes qr symbols with finder patterns and version-matched module counts", () => {
+    for (const text of ["A", "https://example.com/pay/1234567890"]) {
+      const code = encodeQr(text, "medium");
+      expect(code.size).toBe(17 + code.version * 4);
+      // Finder patterns with separators occupy the three corners.
+      const dark = (x: number, y: number) => code.getModule(x, y);
+      const corners: readonly [number, number][] = [
+        [3, 3],
+        [code.size - 4, 3],
+        [3, code.size - 4],
+      ];
+      for (const [cx, cy] of corners) {
+        // Finder rings: dark center block, light ring, dark outer ring.
+        expect(dark(cx, cy)).toBe(true);
+        expect(dark(cx + 1, cy)).toBe(true);
+        expect(dark(cx + 2, cy)).toBe(false);
+        expect(dark(cx + 3, cy)).toBe(true);
+        expect(dark(cx - 3, cy - 3)).toBe(true);
+        // Light separator ring just outside the finder.
+        for (const [dx, dy] of [
+          [4, 0],
+          [-4, 0],
+          [0, 4],
+          [0, -4],
+        ] as const) {
+          if (
+            cx + dx >= 0 &&
+            cx + dx < code.size &&
+            cy + dy >= 0 &&
+            cy + dy < code.size
+          )
+            expect(dark(cx + dx, cy + dy)).toBe(false);
+        }
+      }
+      // Timing pattern alternation through the middle row and column.
+      for (let i = 8; i < code.size - 8; i++)
+        expect(dark(6, i)).toBe(i % 2 === 0);
+      for (let i = 8; i < code.size - 8; i++)
+        expect(dark(i, 6)).toBe(i % 2 === 0);
+    }
+    expect(encodeQr("A", "medium").version).toBe(1);
+    // Larger payloads select the smallest fitting version.
+    expect(
+      encodeQr("x".repeat(200), "quartile").version,
+    ).toBeGreaterThanOrEqual(10);
+    expect(() => encodeQr("x".repeat(3000), "high")).toThrow(RangeError);
+  });
+
+  it("varies qr output with sizeMm, errorCorrection, source bindings, and captions", () => {
+    const renderWith = (children: readonly unknown[]) =>
+      renderTemplateDocumentHtml({
+        definition: {
+          ...definition,
+          document: [
+            { type: "page", master: "standard", children } as never,
+          ],
+        },
+        data: {
+          title: "QR",
+          items: [],
+        },
+        style,
+      });
+    const base = { type: "qr", value: "https://example.com/pay" };
+    const small = renderWith([{ ...base, sizeMm: 12 }]);
+    const large = renderWith([{ ...base, sizeMm: 80 }]);
+    expect(small).toContain('width="12mm"');
+    expect(large).toContain('width="80mm"');
+    expect(small).not.toBe(large);
+
+    const medium = renderWith([base]);
+    const high = renderWith([
+      { ...base, errorCorrection: "high" },
+    ]);
+    expect(high).not.toBe(medium);
+
+    const captioned = renderWith([
+      {
+        ...base,
+        sizeMm: 30,
+        caption: [
+          { type: "text", value: "Pay " },
+          { type: "binding", path: "title" },
+        ],
+      },
+    ]);
+    expect(captioned).toContain('aria-label="Pay QR"');
+    expect(captioned).toContain("<figcaption>Pay QR</figcaption>");
+    expect(captioned).toContain('width="30mm"');
+
+    // Bound text sources resolve at render time.
+    const bound = renderWith([{ type: "qr", source: "title" }]);
+    expect(bound).toContain("template-qr");
+    expect(bound).toContain('aria-label="QR code"');
+    // A binding that resolves to no value renders nothing.
+    const optionalSource: TemplateDefinition = {
+      ...definition,
+      fields: { note: { type: "text", label: "Note" } },
+      computed: undefined,
+      document: [
+        {
+          type: "page",
+          master: "standard",
+          children: [{ type: "qr", source: "note" }],
+        },
+      ],
+    };
+    const unbound = renderTemplateDocumentHtml({
+      definition: optionalSource,
+      data: {},
+      style,
+    });
+    expect(unbound).not.toContain('<figure class="template-qr">');
   });
 });

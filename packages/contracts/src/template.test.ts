@@ -592,6 +592,105 @@ describe("template contracts", () => {
     ).toBe(true);
   });
 
+  it("accepts qr nodes with a literal value or a text source path", () => {
+    const documentFor = (qr: readonly unknown[]) => ({
+      ...valid,
+      document: [{ type: "page", master: "cover", children: qr }],
+    });
+    expect(
+      TemplateDefinitionSchema.safeParse(
+        documentFor([{ type: "qr", value: "https://example.com" }]),
+      ).success,
+    ).toBe(true);
+    expect(
+      TemplateDefinitionSchema.safeParse(
+        documentFor([
+          {
+            type: "qr",
+            source: "title",
+            sizeMm: 40,
+            errorCorrection: "high",
+            caption: [{ type: "text", value: "Scan me" }],
+          },
+        ]),
+      ).success,
+    ).toBe(true);
+    // Defaults apply without error.
+    expect(
+      TemplateDefinitionSchema.safeParse(documentFor([{ type: "qr", source: "title" }]))
+        .success,
+    ).toBe(true);
+  });
+
+  it("rejects invalid qr nodes across the full failure matrix", () => {
+    const documentFor = (qr: readonly unknown[]) => ({
+      ...valid,
+      document: [{ type: "page", master: "cover", children: qr }],
+    });
+    const parses = (children: readonly unknown[]) =>
+      TemplateDefinitionSchema.safeParse(documentFor(children)).success;
+    // Bad size bounds
+    expect(parses([{ type: "qr", value: "x", sizeMm: 9 }])).toBe(false);
+    expect(parses([{ type: "qr", value: "x", sizeMm: 81 }])).toBe(false);
+    expect(parses([{ type: "qr", value: "x", sizeMm: 80 }])).toBe(true);
+    // Both value and source, or neither
+    expect(
+      parses([{ type: "qr", value: "x", source: "title" }]),
+    ).toBe(false);
+    expect(parses([{ type: "qr" }])).toBe(false);
+    // Unknown or non-text source paths
+    expect(parses([{ type: "qr", source: "unknown" }])).toBe(false);
+    expect(
+      parses([
+        { type: "qr", source: "rows" },
+      ]),
+    ).toBe(false);
+    expect(
+      parses([
+        { type: "qr", source: "total" },
+      ]),
+    ).toBe(false);
+    // Unknown errorCorrection values
+    expect(
+      parses([{ type: "qr", value: "x", errorCorrection: "extreme" }]),
+    ).toBe(false);
+    // Empty and oversized values
+    expect(parses([{ type: "qr", value: "" }])).toBe(false);
+    expect(parses([{ type: "qr", value: "x".repeat(2953) }])).toBe(true);
+    expect(parses([{ type: "qr", value: "x".repeat(2954) }])).toBe(false);
+    expect(
+      parses([{ type: "qr", value: "é".repeat(1476) }]),
+    ).toBe(true);
+    expect(
+      parses([{ type: "qr", value: "é".repeat(1477) }]),
+    ).toBe(false);
+  });
+
+  it("caps the total number of qr nodes per template at 20", () => {
+    const page = (count: number) => ({
+      type: "page",
+      master: "cover",
+      children: Array.from({ length: count }, () => ({
+        type: "qr",
+        value: "https://example.com",
+      })),
+    });
+    const documentFor = (pages: readonly unknown[]) => ({
+      ...valid,
+      document: pages,
+    });
+    expect(
+      TemplateDefinitionSchema.safeParse(
+        documentFor([page(10), page(10)]),
+      ).success,
+    ).toBe(true);
+    expect(
+      TemplateDefinitionSchema.safeParse(
+        documentFor([page(11), page(10)]),
+      ).success,
+    ).toBe(false);
+  });
+
   it("supports the independent templates read scope", () => {
     const result = CreateMcpCredentialInputSchema.parse({
       name: "Template consumer",

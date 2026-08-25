@@ -377,6 +377,7 @@ export type TemplateNode = Readonly<{
     | "paragraph"
     | "richText"
     | "image"
+    | "qr"
     | "list"
     | "table"
     | "repeat"
@@ -401,6 +402,9 @@ export type TemplateNode = Readonly<{
   fit?: "contain" | "cover" | undefined;
   altPath?: string | undefined;
   caption?: readonly TemplateInline[] | undefined;
+  value?: string | undefined;
+  sizeMm?: number | undefined;
+  errorCorrection?: "low" | "medium" | "quartile" | "high" | undefined;
   widthMm?: number | undefined;
   cornerRadiusMm?: number | undefined;
   frame?:
@@ -447,6 +451,7 @@ const nodeProperties: Readonly<
     "cornerRadiusMm",
     "frame",
   ]),
+  qr: new Set(["type", "value", "source", "sizeMm", "errorCorrection", "caption"]),
   list: new Set(["type", "source", "itemsPath", "ordered"]),
   table: new Set(["type", "source", "tableColumns", "footerRow", "zebraRows"]),
   repeat: new Set(["type", "source", "as", "children"]),
@@ -470,6 +475,7 @@ export const TemplateNodeSchema: z.ZodType<TemplateNode> = z.lazy(() =>
         "paragraph",
         "richText",
         "image",
+        "qr",
         "list",
         "table",
         "repeat",
@@ -510,6 +516,11 @@ export const TemplateNodeSchema: z.ZodType<TemplateNode> = z.lazy(() =>
         .optional(),
       altPath: TemplatePathSchema.optional(),
       caption: z.array(TemplateInlineSchema).max(100).optional(),
+      value: z.string().min(1).max(2953).optional(),
+      sizeMm: z.number().min(10).max(80).optional(),
+      errorCorrection: z
+        .enum(["low", "medium", "quartile", "high"])
+        .optional(),
       ordered: z.boolean().optional(),
       itemsPath: TemplatePathSchema.optional(),
       tableColumns: z
@@ -599,6 +610,28 @@ export const TemplateNodeSchema: z.ZodType<TemplateNode> = z.lazy(() =>
           code: "custom",
           path: ["itemsPath"],
           message: "list nodes cannot define both source and itemsPath",
+        });
+      if (node.type === "qr" && !node.value && !node.source)
+        context.addIssue({
+          code: "custom",
+          path: ["value"],
+          message: "qr nodes require a literal value or a source",
+        });
+      if (node.type === "qr" && node.value && node.source)
+        context.addIssue({
+          code: "custom",
+          path: ["value"],
+          message: "qr nodes cannot define both value and source",
+        });
+      if (
+        node.type === "qr" &&
+        node.value !== undefined &&
+        new TextEncoder().encode(node.value).byteLength > 2953
+      )
+        context.addIssue({
+          code: "custom",
+          path: ["value"],
+          message: "qr values cannot exceed the 2953-byte QR capacity",
         });
       if (node.type === "table" && !node.tableColumns?.length)
         context.addIssue({
@@ -1148,6 +1181,7 @@ const validatedTemplateDefinitionSchema =
       }
     };
 
+    let qrNodeCount = 0;
     const inspectNodes = (
       nodes: readonly TemplateNode[],
       path: PropertyKey[],
@@ -1157,6 +1191,7 @@ const validatedTemplateDefinitionSchema =
       const allowProps = componentOwner !== undefined;
       for (const [index, node] of nodes.entries()) {
         const nodePath = [...path, index];
+        if (node.type === "qr") qrNodeCount += 1;
         if (node.type === "page") {
           const master = node.master ?? Object.keys(masters)[0];
           if (!master || !(master in masters))
@@ -1263,6 +1298,12 @@ const validatedTemplateDefinitionSchema =
         )
           issue([...nodePath, "source"], "image requires an image field");
         if (
+          node.type === "qr" &&
+          sourceField &&
+          sourceField.type !== "text"
+        )
+          issue([...nodePath, "source"], "qr requires a text field");
+        if (
           node.type === "table" &&
           sourceField?.type === "list" &&
           sourceField.item
@@ -1305,6 +1346,11 @@ const validatedTemplateDefinitionSchema =
     inspectNodes(definition.document, ["document"], {});
     for (const [name, nodes] of Object.entries(components))
       inspectNodes(nodes, ["components", name], {}, name);
+    if (qrNodeCount > 20)
+      issue(
+        ["document"],
+        "Templates cannot contain more than 20 qr nodes",
+      );
 
     const componentVisiting = new Set<string>();
     const componentVisited = new Set<string>();

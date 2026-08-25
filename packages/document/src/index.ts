@@ -18,6 +18,7 @@ import {
 import { marked } from "marked";
 import sanitizeHtml from "sanitize-html";
 import { builtInFonts } from "./built-in-fonts.js";
+import { encodeQr } from "./vendor/qrcodegen.js";
 
 export const DOCUMENT_BODY_MAX_BYTES = 256 * 1024;
 export const DOCUMENT_MAX_PAGES = 100;
@@ -538,6 +539,8 @@ export interface RenderTemplateDocumentInput {
 
 const TEMPLATE_MAX_DEPTH = 32;
 const TEMPLATE_MAX_EXPANDED_NODES = 5_000;
+/** Defensive render-time twin of the contract's 20-qr-node save cap. */
+const TEMPLATE_MAX_QR_NODES = 20;
 const TEMPLATE_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 const htmlEscape = (value: unknown) =>
@@ -1044,6 +1047,7 @@ export function renderTemplateDocumentHtml(
       })
       .join("");
 
+  let renderedQrCount = 0;
   const renderPass = (
     nodes: readonly TemplateNode[],
     headings: readonly Heading[],
@@ -1051,6 +1055,7 @@ export function renderTemplateDocumentHtml(
   ): string => {
     expandedNodes = 0;
     generatedId = 0;
+    renderedQrCount = 0;
     const renderNodes = (
       values: readonly TemplateNode[],
       locals: Readonly<Record<string, TemplateValue>>,
@@ -1157,6 +1162,39 @@ export function renderTemplateDocumentHtml(
               if (node.frame)
                 imageStyle += `;border:${frameWeights[node.frame.weight]} solid ${templateColor(node.frame.color, input.style)}`;
               return `<figure class="template-image"><img src="data:${asset.contentType};base64,${asset.base64}" alt="${htmlEscape(alt)}" style="${imageStyle}">${caption}</figure>`;
+            }
+            case "qr": {
+              const resolved =
+                node.value ??
+                templateDisplayValue(
+                  templatePath(root, locals, node.source ?? ""),
+                  "text",
+                  undefined,
+                  locale,
+                );
+              if (typeof resolved !== "string" || !resolved.length) return "";
+              renderedQrCount += 1;
+              if (renderedQrCount > TEMPLATE_MAX_QR_NODES)
+                fail("body_too_large");
+              // Deterministic inline SVG: modules are built from booleans,
+              // so no escaping is involved in the symbol itself.
+              const code = encodeQr(resolved, node.errorCorrection ?? "medium");
+              const quietZone = 4;
+              const span = code.size + quietZone * 2;
+              let pathData = "";
+              for (let y = 0; y < code.size; y++)
+                for (let x = 0; x < code.size; x++)
+                  if (code.getModule(x, y))
+                    pathData += `M${x + quietZone} ${y + quietZone}h1v1h-1z`;
+              const captionText = node.caption?.length
+                ? inlineText(node.caption, locals, false)
+                : "";
+              const label = captionText.length ? captionText : "QR code";
+              const svg = `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${htmlEscape(label)}" width="${node.sizeMm ?? 25}mm" height="${node.sizeMm ?? 25}mm" viewBox="0 0 ${span} ${span}" shape-rendering="crispEdges"><title>${htmlEscape(label)}</title><rect width="${span}" height="${span}" fill="#ffffff"/><path fill="#000000" d="${pathData}"/></svg>`;
+              const caption = node.caption?.length
+                ? `<figcaption>${inlineText(node.caption, locals, true)}</figcaption>`
+                : "";
+              return `<figure class="template-qr">${svg}${caption}</figure>`;
             }
             case "list": {
               const value = templatePath(
@@ -1319,6 +1357,7 @@ export function renderTemplateDocumentHtml(
 .template-page tfoot td{border-top:2px solid ${input.style.colors.heading};font-weight:600;}
 .template-table-zebra tbody tr:nth-child(even) td{background:${input.style.colors.muted};}
 .template-toc ol{list-style:none;padding:0;}.template-toc li{margin:.35em 0;}.template-toc a{display:flex;color:inherit;text-decoration:none;gap:.5em;}.template-toc-leader{flex:1;border-bottom:1px dotted currentColor;transform:translateY(-.25em);}.template-toc-page{min-width:2ch;text-align:right;}
+.template-qr{margin:0;break-inside:avoid-page;}.template-qr svg{display:block;}
 .template-color-text{color:${input.style.colors.text}}.template-color-heading{color:${input.style.colors.heading}}.template-color-primary{color:${input.style.colors.primary}}.template-color-accent{color:${input.style.colors.accent}}.template-color-muted{color:${input.style.colors.muted}}
 `;
   const placeholder = "HYPERGENDOC_TEMPLATE_PLACEHOLDER_7D38";

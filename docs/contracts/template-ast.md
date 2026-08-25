@@ -47,6 +47,7 @@ Every node is strict: properties not listed for its node type are rejected.
 | `paragraph`            | non-empty inline `content`              | —                                                          |
 | `richText`             | text/rich-text `source` path            | —                                                          |
 | `image`                | image `source` path or owned-image UUID | `fit`, `altPath`, inline `caption`, `heightMm`, `widthMm` (1–190), `cornerRadiusMm` (0–20), `frame` (`color`: one of the five style color tokens; `weight`: `"thin"` \| `"normal"` \| `"thick"`) |
+| `qr`                   | literal `value` or text `source` path (exactly one)        | `sizeMm` (10–80), `errorCorrection` (`"low"` \| `"medium"` \| `"quartile"` \| `"high"`), inline `caption` |
 | `list`                 | list `source` or `itemsPath`            | `ordered`                                                  |
 | `table`                | list `source`, non-empty `tableColumns` | column format/currency/alignment, `footerRow`, `zebraRows` |
 | `repeat`               | list `source`, non-empty `children`     | `as` alias                                                 |
@@ -57,6 +58,8 @@ Every node is strict: properties not listed for its node type are rejected.
 | `spacer`               | —                                       | `heightMm`                                                 |
 
 Image frame controls emit constrained CSS only: fixed border widths per weight (`thin` 0.4 mm, `normal` 0.8 mm, `thick` 1.6 mm) with the named style token resolved to its color, plus bounded numeric width and radius values. Free-form colors, images, and remote URLs stay rejected.
+
+QR nodes render data text only: a fixed literal value or a bound text field is encoded into a renderer-owned inline SVG symbol (default size 25 mm, medium error correction, at most 20 QR nodes per template). No URLs are fetched, no images are embedded, and captions come from the same restricted inline content as every other node.
 
 Inline content is either `{ "type": "text", "value": "..." }` or `{ "type": "binding", "path": "..." }`; bindings may specify display `format`, `currency`, emphasis, weight, and a style color token.
 
