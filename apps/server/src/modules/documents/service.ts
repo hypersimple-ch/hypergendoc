@@ -264,6 +264,104 @@ export class DocumentService {
     return { document, current };
   }
 
+  /**
+   * Creates a new document in the same company copying the source's current
+   * revision (format, body, style pin, and — for template documents — the
+   * pinned template version id plus data). The copy gets a fresh initial
+   * commit through the normal creation flow.
+   */
+  async duplicate(
+    actor: ActorContext | undefined,
+    documentId: string,
+  ): Promise<{ document: Document; current: DocumentCurrentSource }> {
+    requireActor(actor);
+    let checkpoint: GitDocumentCheckpoint | undefined;
+    let mutationCommitId: string | undefined;
+    let operationId: string | undefined;
+    let document!: Document;
+    try {
+      document = await this.deps.repository.transaction(
+        async (repository, audit) => {
+          const locked = await repository.lockDocument(
+            actor.workspaceId,
+            documentId,
+          );
+          if (!locked) throw notFound();
+          requireAction(actor, "documents:write", locked.companyId);
+          const previous = await this.readCurrentRevision(
+            actor.workspaceId,
+            locked,
+          );
+          // Mirror revert semantics: only duplicate while every pinned
+          // reference still resolves inside this company.
+          if (
+            !(await repository.findStyleVersion(
+              actor.workspaceId,
+              locked.companyId,
+              previous.styleVersionId,
+            ))
+          )
+            throw notFound();
+          if (previous.format === "template") {
+            if (!previous.templateVersionId || !locked.templateId)
+              throw notFound();
+            const template = await repository.findTemplateVersion(
+              actor.workspaceId,
+              locked.companyId,
+              previous.templateVersionId,
+            );
+            if (!template || template.templateId !== locked.templateId)
+              throw notFound();
+          }
+          await repository.lockCompanyForGitWrites(
+            actor.workspaceId,
+            locked.companyId,
+          );
+          checkpoint = await this.deps.git.checkpoint(
+            actor.workspaceId,
+            locked.companyId,
+          );
+          const created = await repository.insertDocument({
+            workspaceId: actor.workspaceId,
+            companyId: locked.companyId,
+            ...(previous.format === "template" && locked.templateId
+              ? { templateId: locked.templateId }
+              : {}),
+            title: `${locked.title} (copy)`.slice(0, 200),
+            metadata: { ...locked.metadata },
+          });
+          operationId = await this.beginGitOperation(
+            actor,
+            "document.duplicate",
+            created,
+            checkpoint,
+          );
+          mutationCommitId = await this.writeRevisionCopy(actor, created, previous);
+          await this.markGitApplied(operationId, mutationCommitId, checkpoint);
+          await this.audit(
+            actor,
+            "document.duplicate",
+            created.id,
+            "success",
+            audit,
+          );
+          return created;
+        },
+      );
+      if (checkpoint) this.deps.git.completeCheckpoint(checkpoint);
+      if (operationId) await this.deps.operations?.complete(operationId);
+    } catch (error) {
+      await this.compensateGit(
+        checkpoint,
+        mutationCommitId,
+        operationId,
+        error,
+      );
+    }
+    const current = await this.currentSource(actor.workspaceId, document);
+    return { document, current };
+  }
+
   async updateFromTemplate(
     actor: ActorContext | undefined,
     documentId: string,
@@ -803,6 +901,31 @@ export class DocumentService {
         actor: { type: actorType(actor), id: actorId(actor) },
       });
       return revision.commitId;
+    } catch (error) {
+      mapGitError(error);
+    }
+  }
+
+  /** Copies an existing revision verbatim as a fresh document's initial commit. */
+  private async writeRevisionCopy(
+    actor: ActorContext,
+    document: Document,
+    revision: GitDocumentRevision,
+  ): Promise<string> {
+    try {
+      const created = await this.deps.git.write({
+        workspaceId: actor.workspaceId,
+        companyId: document.companyId,
+        documentId: document.id,
+        body: revision.body,
+        format: revision.format,
+        styleVersionId: revision.styleVersionId,
+        ...(revision.templateVersionId
+          ? { templateVersionId: revision.templateVersionId }
+          : {}),
+        actor: { type: actorType(actor), id: actorId(actor) },
+      });
+      return created.commitId;
     } catch (error) {
       mapGitError(error);
     }
