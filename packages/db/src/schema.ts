@@ -23,6 +23,7 @@ import {
   sessions,
   users,
   verifications,
+  workspaceRole,
   workspaces,
 } from "./core-schema.js";
 

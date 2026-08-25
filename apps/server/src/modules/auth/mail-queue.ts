@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import type { Database } from "@hypergendoc/db";
 import { mailJobs } from "@hypergendoc/db";
 
-export type MailKind = "verification" | "password_reset";
+export type MailKind = "verification" | "password_reset" | "workspace_invite";
 export interface EnqueueMail {
   kind: MailKind;
   recipient: string;

@@ -53,6 +53,15 @@ import {
 } from "../modules/memberships/repository.js";
 import { createMembershipRoutes } from "../modules/memberships/routes.js";
 import {
+  createInviteService,
+  InviteError,
+} from "../modules/invites/service.js";
+import {
+  createPublicInviteRoutes,
+  createWorkspaceInviteRoutes,
+} from "../modules/invites/routes.js";
+import { createInviteRepository } from "../modules/invites/repository.js";
+import {
   AuthorizationError,
   createInitialWorkspace,
 } from "../modules/memberships/service.js";
@@ -450,11 +459,15 @@ export async function createApplication(
               subject:
                 job.kind === "verification"
                   ? "Verify your email"
-                  : "Reset your password",
+                  : job.kind === "workspace_invite"
+                    ? "You are invited to join a HyperGenDoc workspace"
+                    : "Reset your password",
               text:
                 job.kind === "verification"
                   ? `Verify your email: ${job.url}`
-                  : `Reset your password: ${job.url}`,
+                  : job.kind === "workspace_invite"
+                    ? `You have been invited to join a HyperGenDoc workspace. Accept with this single-use link: ${job.url}`
+                    : `Reset your password: ${job.url}`,
             });
           },
         },
@@ -524,6 +537,17 @@ export async function createApplication(
                 ? 409
                 : 404,
           )
+        : error instanceof InviteError
+          ? new AppError(
+              error.code,
+              error.code === "gone"
+                ? 410
+                : error.code === "conflict"
+                  ? 409
+                  : error.code === "forbidden"
+                    ? 403
+                    : 404,
+            )
         : error instanceof ZodError || error instanceof DocumentInputError
           ? new AppError("validation_failed", 400)
           : normalizeTransportError(error);
@@ -628,6 +652,24 @@ export async function createApplication(
       memberships: createMembershipRepository(db),
     }),
   );
+  const invites = createInviteService({
+    repository: createInviteRepository(db),
+    mailQueue: mailRepository,
+    appOrigin: environment.appOrigin,
+    signupMode: environment.signupMode,
+  });
+  await app.register(
+    createWorkspaceInviteRoutes({ actorFor: preauthenticatedActor, service: invites }),
+  );
+  await app.register(
+    createPublicInviteRoutes({
+      service: invites,
+      rateLimiter: createInMemoryRateLimiter(),
+    }),
+  );
+  // Minimal public deployment policy so the web register page can hint that
+  // registration happens by invitation without leaking anything else.
+  app.get("/api/signup-policy", () => ({ mode: environment.signupMode }));
   await app.register(
     createCompanyRoutes({
       actorFor: preauthenticatedActor,

@@ -13,7 +13,8 @@ export interface AuthMail {
   ): Promise<void>;
 }
 
-const argon2id: Options = {
+/** Shared Argon2id parameters; invitation acceptance hashes with the same profile. */
+export const argon2idOptions: Options = {
   algorithm: 2,
   memoryCost: 65_536,
   timeCost: 3,
@@ -101,9 +102,9 @@ export function createAuth(options: CreateAuthOptions) {
       resetPasswordTokenExpiresIn: 60 * 60,
       revokeSessionsOnPasswordReset: true,
       password: {
-        hash: (password) => hash(password, argon2id),
+        hash: (password) => hash(password, argon2idOptions),
         verify: ({ hash: encoded, password }) =>
-          verify(encoded, password, argon2id),
+          verify(encoded, password, argon2idOptions),
       },
       sendResetPassword: mailCallbacks.sendResetPassword,
     },
