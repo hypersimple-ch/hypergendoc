@@ -41,9 +41,8 @@ export function CredentialsDashboard() {
   );
   const [name, setName] = useState("");
   const [companyIds, setCompanyIds] = useState<string[]>([]);
-  const [selectedActions, setActions] = useState<McpAction[]>([
-    "documents:read",
-  ]);
+  // Least privilege by default: the agent gets only the actions you tick.
+  const [selectedActions, setActions] = useState<McpAction[]>([]);
   const [expiresAt, setExpiresAt] = useState("");
   const [token, setToken] = useState<string>();
   const [ack, setAck] = useState(false);

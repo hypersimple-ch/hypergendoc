@@ -268,7 +268,7 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
                   disabled={busy}
                   onClick={() => void save(false)}
                 >
-                  Save inactive
+                  Save inactive version
                 </Button>
                 <Button
                   disabled={busy}

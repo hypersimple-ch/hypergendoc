@@ -44,7 +44,7 @@ export function starterTemplateDefinition(
         type: "richText",
         label: "Document body",
         description:
-          "Add the document content. Basic HTML formatting is supported.",
+          "Add the document content. Accepts sanitized HTML fragments only (paragraphs, lists, links). CSS and JavaScript are not supported.",
         required: true,
       },
     },
