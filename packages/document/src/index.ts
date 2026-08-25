@@ -1021,22 +1021,45 @@ export function renderTemplateDocumentHtml(
   let expandedNodes = 0;
   let generatedId = 0;
 
+  /** Active grouped-repeat scope used by groupSum bindings. */
+  type GroupScope = { readonly items: readonly TemplateValue[] } | undefined;
   const inlineText = (
     inline: readonly TemplateInline[] | undefined,
     locals: Readonly<Record<string, TemplateValue>>,
     markup: boolean,
+    group?: GroupScope,
   ) =>
     (inline ?? [])
       .map((part) => {
-        const raw =
-          part.type === "binding"
-            ? templateDisplayValue(
-                templatePath(root, locals, part.path ?? ""),
-                part.format,
-                part.currency,
-                locale,
-              )
-            : (part.value ?? "");
+        let raw: string;
+        if (part.type === "binding") {
+          if (part.groupSum) {
+            // Missing or non-numeric entries contribute 0, matching sum.
+            let total = 0;
+            for (const item of group?.items ?? []) {
+              const value = isTemplateRecord(item)
+                ? templatePath(item, {}, part.groupSum.path)
+                : undefined;
+              if (typeof value === "number" && Number.isFinite(value))
+                total += value;
+            }
+            raw = templateDisplayValue(
+              total,
+              part.format,
+              part.currency,
+              locale,
+            );
+          } else {
+            raw = templateDisplayValue(
+              templatePath(root, locals, part.path ?? ""),
+              part.format,
+              part.currency,
+              locale,
+            );
+          }
+        } else {
+          raw = part.value ?? "";
+        }
         let value = htmlEscape(raw);
         if (!markup) return raw;
         if (part.strong) value = `<strong>${value}</strong>`;
@@ -1060,6 +1083,7 @@ export function renderTemplateDocumentHtml(
       values: readonly TemplateNode[],
       locals: Readonly<Record<string, TemplateValue>>,
       depth: number,
+      group?: GroupScope,
     ): string => {
       if (depth > TEMPLATE_MAX_DEPTH) fail("invalid_body");
       return values
@@ -1102,25 +1126,25 @@ export function renderTemplateDocumentHtml(
                     1_000,
                 ) / 1_000,
               );
-              return `<section class="template-page template-master-${htmlEscape(master)}" data-page-content-mm="${contentHeightMm}" data-page-width-mm="${contentWidthMm}" data-page-start="${pageMaster.startOn ?? "any"}">${renderNodes(node.children ?? [], locals, depth + 1)}</section>`;
+              return `<section class="template-page template-master-${htmlEscape(master)}" data-page-content-mm="${contentHeightMm}" data-page-width-mm="${contentWidthMm}" data-page-start="${pageMaster.startOn ?? "any"}">${renderNodes(node.children ?? [], locals, depth + 1, group)}</section>`;
             }
             case "section": {
               const id = node.id ?? `section-${++generatedId}`;
-              return `<section id="${htmlEscape(id)}" class="template-section">${renderNodes(node.children ?? [], locals, depth + 1)}</section>`;
+              return `<section id="${htmlEscape(id)}" class="template-section">${renderNodes(node.children ?? [], locals, depth + 1, group)}</section>`;
             }
             case "stack":
-              return `<div class="template-stack" style="--template-gap:${node.gapMm ?? 4}mm">${renderNodes(node.children ?? [], locals, depth + 1)}</div>`;
+              return `<div class="template-stack" style="--template-gap:${node.gapMm ?? 4}mm">${renderNodes(node.children ?? [], locals, depth + 1, group)}</div>`;
             case "grid":
-              return `<div class="template-grid" style="--template-columns:${node.columns ?? 2};--template-gap:${node.gapMm ?? 4}mm">${renderNodes(node.children ?? [], locals, depth + 1)}</div>`;
+              return `<div class="template-grid" style="--template-columns:${node.columns ?? 2};--template-gap:${node.gapMm ?? 4}mm">${renderNodes(node.children ?? [], locals, depth + 1, group)}</div>`;
             case "heading": {
               const level = node.level ?? 2;
-              const text = inlineText(node.content, locals, false);
+              const text = inlineText(node.content, locals, false, group);
               const id = node.id ?? `heading-${++generatedId}`;
               if (collecting) collectHeadings.push({ id, level, text });
-              return `<h${level} id="${htmlEscape(id)}">${inlineText(node.content, locals, true)}</h${level}>`;
+              return `<h${level} id="${htmlEscape(id)}">${inlineText(node.content, locals, true, group)}</h${level}>`;
             }
             case "paragraph":
-              return `<p>${inlineText(node.content, locals, true)}</p>`;
+              return `<p>${inlineText(node.content, locals, true, group)}</p>`;
             case "richText": {
               const value = templatePath(root, locals, node.source ?? "");
               return `<div class="template-rich-text">${typeof value === "string" ? sanitizeFragment(value) : ""}</div>`;
@@ -1142,7 +1166,7 @@ export function renderTemplateDocumentHtml(
                   )
                 : "";
               const caption = node.caption?.length
-                ? `<figcaption>${inlineText(node.caption, locals, true)}</figcaption>`
+                ? `<figcaption>${inlineText(node.caption, locals, true, group)}</figcaption>`
                 : "";
               // Frame controls emit constrained CSS only: token colors from
               // the style, fixed border widths per weight, and bounded
@@ -1187,12 +1211,12 @@ export function renderTemplateDocumentHtml(
                   if (code.getModule(x, y))
                     pathData += `M${x + quietZone} ${y + quietZone}h1v1h-1z`;
               const captionText = node.caption?.length
-                ? inlineText(node.caption, locals, false)
+                ? inlineText(node.caption, locals, false, group)
                 : "";
               const label = captionText.length ? captionText : "QR code";
               const svg = `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${htmlEscape(label)}" width="${node.sizeMm ?? 25}mm" height="${node.sizeMm ?? 25}mm" viewBox="0 0 ${span} ${span}" shape-rendering="crispEdges"><title>${htmlEscape(label)}</title><rect width="${span}" height="${span}" fill="#ffffff"/><path fill="#000000" d="${pathData}"/></svg>`;
               const caption = node.caption?.length
-                ? `<figcaption>${inlineText(node.caption, locals, true)}</figcaption>`
+                ? `<figcaption>${inlineText(node.caption, locals, true, group)}</figcaption>`
                 : "";
               return `<figure class="template-qr">${svg}${caption}</figure>`;
             }
@@ -1242,21 +1266,72 @@ export function renderTemplateDocumentHtml(
             case "repeat": {
               const value = templatePath(root, locals, node.source ?? "");
               if (!Array.isArray(value)) return "";
+              const items = value as readonly TemplateValue[];
               const alias = node.as ?? "item";
-              return (value as readonly TemplateValue[])
-                .map((item, index) =>
-                  renderNodes(
-                    node.children ?? [],
-                    { ...locals, [alias]: item, index },
-                    depth + 1,
-                  ),
-                )
+              if (!node.groupBy)
+                return items
+                  .map((item, index) =>
+                    renderNodes(
+                      node.children ?? [],
+                      { ...locals, [alias]: item, index },
+                      depth + 1,
+                      group,
+                    ),
+                  )
+                  .join("");
+              // Group by the item's groupBy value in first-appearance order.
+              type GroupBucket = {
+                key: TemplateValue | undefined;
+                entries: { item: TemplateValue; index: number }[];
+              };
+              const buckets: GroupBucket[] = [];
+              const byToken = new Map<string, GroupBucket>();
+              for (const [index, item] of items.entries()) {
+                const key = isTemplateRecord(item)
+                  ? templatePath(item, {}, node.groupBy)
+                  : undefined;
+                const token =
+                  key === undefined
+                    ? "\u0000undefined"
+                    : JSON.stringify(key);
+                let bucket = byToken.get(token);
+                if (!bucket) {
+                  bucket = { key, entries: [] };
+                  byToken.set(token, bucket);
+                  buckets.push(bucket);
+                }
+                bucket.entries.push({ item, index });
+              }
+              return buckets
+                .map((bucket) => {
+                  const groupScope: GroupScope = {
+                    items: bucket.entries.map((entry) => entry.item),
+                  };
+                  const groupBinding = {
+                    key: bucket.key === undefined ? null : bucket.key,
+                    count: bucket.entries.length,
+                  };
+                  const header = node.groupHeader?.length
+                    ? `<div class="template-group-header">${inlineText(node.groupHeader, { ...locals, group: groupBinding }, true, groupScope)}</div>`
+                    : "";
+                  const body = bucket.entries
+                    .map(({ item, index }) =>
+                      renderNodes(
+                        node.children ?? [],
+                        { ...locals, [alias]: item, index, group: groupBinding },
+                        depth + 1,
+                        groupScope,
+                      ),
+                    )
+                    .join("");
+                  return `${header}${body}`;
+                })
                 .join("");
             }
             case "condition":
               return node.condition &&
                 templateConditionMatches(node.condition, root, locals)
-                ? renderNodes(node.children ?? [], locals, depth + 1)
+                ? renderNodes(node.children ?? [], locals, depth + 1, group)
                 : "";
             case "component": {
               const component =
@@ -1266,6 +1341,7 @@ export function renderTemplateDocumentHtml(
                 component,
                 { ...locals, props: node.props ?? {} },
                 depth + 1,
+                group,
               );
             }
             case "toc":
@@ -1356,6 +1432,7 @@ export function renderTemplateDocumentHtml(
 .template-page-break{break-after:page;}.template-rich-text>:first-child{margin-top:0;}.template-rich-text>:last-child{margin-bottom:0;}
 .template-page tfoot td{border-top:2px solid ${input.style.colors.heading};font-weight:600;}
 .template-table-zebra tbody tr:nth-child(even) td{background:${input.style.colors.muted};}
+.template-group-header{font-size:8pt;font-weight:700;color:${input.style.colors.heading};break-after:avoid-page;}
 .template-toc ol{list-style:none;padding:0;}.template-toc li{margin:.35em 0;}.template-toc a{display:flex;color:inherit;text-decoration:none;gap:.5em;}.template-toc-leader{flex:1;border-bottom:1px dotted currentColor;transform:translateY(-.25em);}.template-toc-page{min-width:2ch;text-align:right;}
 .template-qr{margin:0;break-inside:avoid-page;}.template-qr svg{display:block;}
 .template-color-text{color:${input.style.colors.text}}.template-color-heading{color:${input.style.colors.heading}}.template-color-primary{color:${input.style.colors.primary}}.template-color-accent{color:${input.style.colors.accent}}.template-color-muted{color:${input.style.colors.muted}}

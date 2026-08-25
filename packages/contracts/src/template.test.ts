@@ -705,4 +705,181 @@ describe("template contracts", () => {
     });
     expect(result.actions).toContain("templates:read");
   });
+  it("accepts grouped repeats with groupBy, groupHeader, group bindings, and groupSum", () => {
+    const repeatNode = {
+      type: "repeat",
+      source: "rows",
+      as: "row",
+      groupBy: "amount",
+      groupHeader: [
+        { type: "binding", path: "group.key" },
+        { type: "binding", path: "group.count" },
+      ],
+      children: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "binding", path: "row.amount" },
+            {
+              type: "binding",
+              groupSum: { path: "amount" },
+              format: "money",
+              currency: "CHF",
+            },
+          ],
+        },
+      ],
+    };
+    expect(
+      TemplateDefinitionSchema.safeParse({
+        ...valid,
+        document: [
+          { type: "page", master: "cover", children: [repeatNode] },
+        ],
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects invalid grouped-repeat schemas across the failure matrix", () => {
+    const documentFor = (repeatNode: unknown) => ({
+      ...valid,
+      document: [{ type: "page", master: "cover", children: [repeatNode] }],
+    });
+    const parses = (repeatNode: unknown) =>
+      TemplateDefinitionSchema.safeParse(documentFor(repeatNode)).success;
+    const base = { type: "repeat", source: "rows", children: [] as unknown[] };
+    // Unknown groupBy path.
+    expect(
+      parses({ ...base, groupBy: "unknown", children: [{ type: "divider" }] }),
+    ).toBe(false);
+    // Non-scalar and unknown item paths for groupBy need a nested item shape.
+    const nested = {
+      ...valid,
+      fields: {
+        rows: {
+          type: "list",
+          label: "Rows",
+          item: {
+            type: "object",
+            label: "Row",
+            fields: {
+              meta: { type: "object", label: "Meta", fields: {} },
+              amount: { type: "money", label: "Amount" },
+            },
+          },
+        },
+      },
+    };
+    expect(
+      TemplateDefinitionSchema.safeParse({
+        ...nested,
+        document: [
+          {
+            type: "page",
+            master: "cover",
+            children: [
+              {
+                type: "repeat",
+                source: "rows",
+                groupBy: "meta",
+                children: [{ type: "divider" }],
+              },
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    // Bad groupHeader shape (not inline content).
+    expect(
+      parses({
+        type: "repeat",
+        source: "rows",
+        groupBy: "amount",
+        groupHeader: ["plain text"],
+        children: [{ type: "divider" }],
+      }),
+    ).toBe(false);
+    expect(
+      parses({
+        type: "repeat",
+        source: "rows",
+        groupBy: "amount",
+        groupHeader: [{ type: "binding" }],
+        children: [{ type: "divider" }],
+      }),
+    ).toBe(false);
+    // groupSum outside a grouped repeat.
+    expect(
+      parses({
+        type: "repeat",
+        source: "rows",
+        children: [
+          {
+            type: "paragraph",
+            content: [{ type: "binding", groupSum: { path: "amount" } }],
+          },
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      TemplateDefinitionSchema.safeParse({
+        ...valid,
+        document: [
+          {
+            type: "page",
+            master: "cover",
+            children: [
+              {
+                type: "paragraph",
+                content: [{ type: "binding", groupSum: { path: "amount" } }],
+              },
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    // groupSum with non-numeric or unknown item paths.
+    const withText = {
+      ...valid,
+      fields: {
+        rows: {
+          type: "list",
+          label: "Rows",
+          item: {
+            type: "object",
+            label: "Row",
+            fields: {
+              name: { type: "text", label: "Name" },
+              amount: { type: "money", label: "Amount" },
+            },
+          },
+        },
+      },
+    };
+    const groupedWith = (groupSumPath: string) =>
+      TemplateDefinitionSchema.safeParse({
+        ...withText,
+        document: [
+          {
+            type: "page",
+            master: "cover",
+            children: [
+              {
+                type: "repeat",
+                source: "rows",
+                groupBy: "name",
+                children: [
+                  {
+                    type: "paragraph",
+                    content: [{ type: "binding", groupSum: { path: groupSumPath } }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }).success;
+    expect(groupedWith("name")).toBe(false);
+    expect(groupedWith("unknown")).toBe(false);
+  });
 });

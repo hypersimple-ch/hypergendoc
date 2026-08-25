@@ -329,6 +329,7 @@ export const TemplateInlineSchema = z
     type: z.enum(["text", "binding"]),
     value: z.string().max(20_000).optional(),
     path: TemplatePathSchema.optional(),
+    groupSum: z.object({ path: TemplatePathSchema }).strict().optional(),
     format: z.enum(["text", "date", "number", "money"]).optional(),
     currency: z
       .string()
@@ -345,6 +346,7 @@ export const TemplateInlineSchema = z
     if (
       inline.type === "text" &&
       (inline.path !== undefined ||
+        inline.groupSum !== undefined ||
         inline.format !== undefined ||
         inline.currency !== undefined)
     )
@@ -352,8 +354,17 @@ export const TemplateInlineSchema = z
         code: "custom",
         message: "Text inlines cannot define binding properties",
       });
-    if (inline.type === "binding" && !inline.path)
+    if (inline.type === "binding" && !inline.path && !inline.groupSum)
       context.addIssue({ code: "custom", message: "Binding path is required" });
+    if (
+      inline.type === "binding" &&
+      inline.groupSum !== undefined &&
+      inline.path !== undefined
+    )
+      context.addIssue({
+        code: "custom",
+        message: "Binding cannot define both path and groupSum",
+      });
     if (inline.type === "binding" && inline.value !== undefined)
       context.addIssue({
         code: "custom",
@@ -394,6 +405,8 @@ export type TemplateNode = Readonly<{
   children?: readonly TemplateNode[] | undefined;
   source?: string | undefined;
   as?: string | undefined;
+  groupBy?: string | undefined;
+  groupHeader?: readonly TemplateInline[] | undefined;
   component?: string | undefined;
   props?: Readonly<Record<string, TemplateValue>> | undefined;
   condition?: TemplateCondition | undefined;
@@ -454,7 +467,7 @@ const nodeProperties: Readonly<
   qr: new Set(["type", "value", "source", "sizeMm", "errorCorrection", "caption"]),
   list: new Set(["type", "source", "itemsPath", "ordered"]),
   table: new Set(["type", "source", "tableColumns", "footerRow", "zebraRows"]),
-  repeat: new Set(["type", "source", "as", "children"]),
+  repeat: new Set(["type", "source", "as", "groupBy", "groupHeader", "children"]),
   condition: new Set(["type", "condition", "children"]),
   component: new Set(["type", "component", "props"]),
   toc: new Set(["type", "tocDepth"]),
@@ -499,6 +512,8 @@ export const TemplateNodeSchema: z.ZodType<TemplateNode> = z.lazy(() =>
         .string()
         .regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/)
         .optional(),
+      groupBy: TemplatePathSchema.optional(),
+      groupHeader: z.array(TemplateInlineSchema).max(100).optional(),
       component: TemplateIdentifierSchema.optional(),
       props: z.record(TemplateIdentifierSchema, TemplateValueSchema).optional(),
       condition: TemplateConditionSchema.optional(),
@@ -1155,9 +1170,24 @@ const validatedTemplateDefinitionSchema =
       path: PropertyKey[],
       locals: Readonly<Record<string, TemplateFieldDefinition | undefined>>,
       allowProps: boolean,
+      groupedItem?: TemplateFieldDefinition,
     ) => {
       for (const [index, inline] of (values ?? []).entries()) {
-        if (inline.type !== "binding" || !inline.path) continue;
+        if (inline.type !== "binding") continue;
+        if (inline.groupSum) {
+          if (!groupedItem)
+            issue([...path, index], "groupSum requires a grouped repeat");
+          else {
+            const target = fieldWithin(groupedItem, inline.groupSum.path);
+            if (!target || !["number", "money"].includes(target.type))
+              issue(
+                [...path, index, "groupSum", "path"],
+                "groupSum requires a numeric repeated-item field",
+              );
+          }
+          continue;
+        }
+        if (!inline.path) continue;
         if (!knownPath(inline.path, locals, allowProps)) {
           issue(
             [...path, index, "path"],
@@ -1187,6 +1217,7 @@ const validatedTemplateDefinitionSchema =
       path: PropertyKey[],
       locals: Readonly<Record<string, TemplateFieldDefinition | undefined>>,
       componentOwner?: string,
+      groupedItem?: TemplateFieldDefinition,
     ) => {
       const allowProps = componentOwner !== undefined;
       for (const [index, node] of nodes.entries()) {
@@ -1218,12 +1249,14 @@ const validatedTemplateDefinitionSchema =
           [...nodePath, "content"],
           locals,
           allowProps,
+          groupedItem,
         );
         inspectInlines(
           node.caption,
           [...nodePath, "caption"],
           locals,
           allowProps,
+          groupedItem,
         );
         const source = node.itemsPath ?? node.source;
         if (
@@ -1329,16 +1362,63 @@ const validatedTemplateDefinitionSchema =
                 `Unknown table footer path: ${cell.path}`,
               );
         }
-        const childLocals =
-          node.type === "repeat" && node.as
-            ? { ...locals, [node.as]: sourceField?.item }
-            : locals;
+        let childLocals = locals;
+        let childGroupedItem: TemplateFieldDefinition | undefined;
+        if (node.type === "repeat") {
+          if (node.as) childLocals = { ...locals, [node.as]: sourceField?.item };
+          if (node.groupBy) {
+            const item = sourceField?.item;
+            if (sourceField?.type !== "list" || !item) {
+              issue(
+                [...nodePath, "groupBy"],
+                "groupBy requires a list source with typed items",
+              );
+            } else {
+              const keyField = fieldWithin(item, node.groupBy);
+              if (!keyField)
+                issue(
+                  [...nodePath, "groupBy"],
+                  `Unknown groupBy path: ${node.groupBy}`,
+                );
+              else if (!["text", "number", "money"].includes(keyField.type))
+                issue(
+                  [...nodePath, "groupBy"],
+                  "groupBy must resolve to a text or number field",
+                );
+              if (node.as === "group")
+                issue(
+                  [...nodePath, "as"],
+                  "group is a reserved alias on grouped repeats",
+                );
+              childLocals = {
+                ...childLocals,
+                group: {
+                  type: "object",
+                  label: "Group",
+                  fields: {
+                    key: { ...(keyField ?? { type: "text" }), label: "Key" },
+                    count: { type: "number", label: "Count" },
+                  },
+                },
+              };
+              childGroupedItem = item;
+            }
+            inspectInlines(
+              node.groupHeader,
+              [...nodePath, "groupHeader"],
+              childLocals,
+              allowProps,
+              childGroupedItem,
+            );
+          }
+        }
         if (node.children)
           inspectNodes(
             node.children,
             [...nodePath, "children"],
             childLocals,
             componentOwner,
+            childGroupedItem,
           );
       }
     };

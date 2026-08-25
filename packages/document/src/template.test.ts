@@ -1075,4 +1075,143 @@ describe("template document renderer", () => {
     });
     expect(unbound).not.toContain('<figure class="template-qr">');
   });
+  it("groups repeat items in first-appearance order with group bindings, headers, and groupSum", () => {
+    const grouped: TemplateDefinition = {
+      ...definition,
+      fields: {
+        title: { type: "text", label: "Title", required: true },
+        items: {
+          type: "list",
+          label: "Items",
+          item: {
+            type: "object",
+            label: "Item",
+            fields: {
+              category: { type: "text", label: "Category", required: true },
+              name: { type: "text", label: "Name", required: true },
+              amount: { type: "money", label: "Amount" },
+            },
+          },
+        },
+      },
+      computed: undefined,
+      document: [
+        {
+          type: "page",
+          master: "standard",
+          children: [
+            {
+              type: "repeat",
+              source: "items",
+              as: "item",
+              groupBy: "category",
+              groupHeader: [
+                { type: "binding", path: "group.key" },
+                { type: "text", value: " (" },
+                { type: "binding", path: "group.count" },
+                { type: "text", value: ")" },
+              ],
+              children: [
+                {
+                  type: "paragraph",
+                  content: [
+                    { type: "binding", path: "item.name" },
+                    { type: "binding", path: "group.count" },
+                    {
+                      type: "binding",
+                      groupSum: { path: "amount" },
+                      format: "money",
+                      currency: "CHF",
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const html = renderTemplateDocumentHtml({
+      definition: grouped,
+      data: {
+        title: "Grouped",
+        items: [
+          { category: "work", name: "A", amount: 1200 },
+          { category: "admin", name: "B", amount: 300.5 },
+          { category: "work", name: "C", amount: 800 },
+          { category: "work", name: "D", amount: 0.25 },
+          { category: "admin", name: "E", amount: 99.5 },
+        ],
+      },
+      style,
+    });
+    // First-appearance order: work before admin.
+    const work = html.indexOf("template-group-header");
+    expect(work).toBeGreaterThan(-1);
+    expect(html.indexOf("work (3)")).toBeGreaterThan(-1);
+    expect(html.indexOf("admin (2)")).toBeGreaterThan(-1);
+    expect(html.indexOf("work (3)")).toBeLessThan(html.indexOf("admin (2)"));
+    // Group header rows are styled as small bold labels.
+    expect(html).toContain(".template-group-header{font-size:8pt;font-weight:700");
+    // group.count and groupSum over each group's items, money-formatted.
+    expect(html).toContain("A3CHF\u00a02,000.25");
+    expect(html).toContain("C3CHF\u00a02,000.25");
+    expect(html).toContain("B2CHF\u00a0400.00");
+    expect(html).toContain("E2CHF\u00a0400.00");
+  });
+
+  it("renders ungrouped repeats unchanged alongside grouped siblings", () => {
+    const mixed: TemplateDefinition = {
+      ...definition,
+      document: [
+        {
+          type: "page",
+          master: "standard",
+          children: [
+            {
+              type: "repeat",
+              source: "items",
+              as: "item",
+              children: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "binding", path: "item.name" }],
+                },
+              ],
+            },
+            {
+              type: "repeat",
+              source: "items",
+              as: "item",
+              groupBy: "name",
+              groupHeader: [{ type: "binding", path: "group.key" }],
+              children: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "binding", path: "item.amount" }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const html = renderTemplateDocumentHtml({
+      definition: mixed,
+      data: {
+        title: "Mixed",
+        items: [
+          { name: "Design", amount: 1200 },
+          { name: "Design", amount: 300 },
+          { name: "Delivery", amount: 50 },
+        ],
+      },
+      style,
+    });
+    expect(html.indexOf("Design")).toBeGreaterThan(-1);
+    // Ungrouped repeat emits every item; grouped one emits per-group items.
+    expect(html).toContain("Delivery");
+    expect((html.match(/<p>Design/g) ?? []).length).toBe(2);
+    expect((html.match(/<p>Delivery/g) ?? []).length).toBe(1);
+  });
 });
