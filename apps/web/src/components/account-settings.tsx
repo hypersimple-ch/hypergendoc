@@ -2,7 +2,10 @@
 
 import { useRef, useState } from "react";
 import { KeyRound, MonitorSmartphone, UserRound } from "lucide-react";
-import { authClient } from "../lib/auth-client";
+import {
+  authClient,
+  type AuthSessionRecord,
+} from "../lib/auth-client";
 import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
 import {
   Button,
@@ -28,6 +31,15 @@ function describeAgent(userAgent?: string | null) {
   if (/chrome|crios/i.test(userAgent)) return "Chrome";
   if (/safari/i.test(userAgent)) return "Safari";
   return "Other device";
+}
+
+function sortedSessions(
+  sessions: Array<AuthSessionRecord & { current: boolean }>,
+) {
+  return [...sessions].sort((a, b) => {
+    if (a.current !== b.current) return a.current ? -1 : 1;
+    return (b.createdAt ?? "").localeCompare(a.createdAt ?? "");
+  });
 }
 
 export function AccountSettings() {
@@ -278,7 +290,7 @@ export function AccountSettings() {
         <LoadState {...overview} />
         {overview.value && (
           <>
-            {overview.value.sessions.length > 1 && (
+            {sortedSessions(overview.value.sessions).length > 1 && (
                 <div className="mb-3">
                   <Button
                     tone="quiet"
@@ -295,7 +307,7 @@ export function AccountSettings() {
                 caption="Signed-in sessions"
                 columns={["Device", "Signed in", "Expires", "Status", "Actions"]}
               >
-                {overview.value.sessions.map((session) => (
+                {sortedSessions(overview.value.sessions).map((session) => (
                   <tr key={session.id}>
                     <td>
                       <strong>{describeAgent(session.userAgent)}</strong>
