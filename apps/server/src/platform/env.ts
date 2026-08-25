@@ -14,6 +14,7 @@ export interface ServerEnvironment {
     "silent" | "fatal" | "error" | "warn" | "info" | "debug" | "trace";
   readonly signupMode: "open" | "invite" | "closed";
   readonly trustProxy: boolean;
+  readonly metricsEnabled: boolean;
   readonly documentGitRoot: string;
   readonly databaseUrl: string;
   readonly s3: {
@@ -91,6 +92,13 @@ function trustProxy(value: string | undefined): boolean {
   return parsed === "1" || parsed === "true";
 }
 
+function metricsEnabled(value: string | undefined): boolean {
+  const parsed = value?.trim() || "0";
+  if (!["0", "1", "false", "true"].includes(parsed))
+    throw new Error("METRICS_ENABLED must be 0, 1, false, or true");
+  return parsed === "1" || parsed === "true";
+}
+
 function smtpPort(value: string | undefined): number {
   const parsed = Number(value?.trim());
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65_535)
@@ -162,6 +170,7 @@ export function loadServerEnvironment(
   return {
     signupMode: signupMode(values.SIGNUP_MODE),
     trustProxy: trustProxy(values.TRUST_PROXY),
+    metricsEnabled: metricsEnabled(values.METRICS_ENABLED),
     nodeEnv,
     host: values.HOST?.trim() || "0.0.0.0",
     port: port(values.PORT),

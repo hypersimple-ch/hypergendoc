@@ -103,6 +103,7 @@ import {
   createAwsS3ObjectClient,
 } from "../platform/object-store.js";
 import { createInMemoryRateLimiter } from "../platform/rate-limit.js";
+import { createServerMetrics } from "../platform/metrics.js";
 import { checkUnixSocket } from "./dependency-health.js";
 import { shouldRejectMutationOrigin } from "./origin-policy.js";
 import { page } from "./page.js";
@@ -173,11 +174,20 @@ export async function createApplication(
     companyAssetRepository,
     objects,
   );
-  const renderer = createDocumentRenderer({
+  const baseRenderer = createDocumentRenderer({
     socketPath: environment.rendererSocket,
     // The worker owns the render deadline; the client allows bounded IPC cleanup.
     timeoutMs: environment.renderTimeoutMs + 5_000,
   });
+  const renderer = environment.metricsEnabled
+    ? {
+        render: async (request: Parameters<typeof baseRenderer.render>[0]) => {
+          const result = await baseRenderer.render(request);
+          metrics.recordRender(result.ok ? "ok" : "error");
+          return result;
+        },
+      }
+    : baseRenderer;
   const styles = createStyleService({
     repository: createStyleRepository(db),
     renderer: {
@@ -256,9 +266,29 @@ export async function createApplication(
       },
     },
   });
-  const documentGit = new CompanyDocumentGitStore({
+  const documentGitBase = new CompanyDocumentGitStore({
     rootDir: environment.documentGitRoot,
   });
+  // Single cheap hook point: every durable mutation funnels through write or
+  // revert on this store instance.
+  const documentGit = environment.metricsEnabled
+    ? Object.assign(documentGitBase, {
+        write: async (
+          input: Parameters<typeof documentGitBase.write>[0],
+        ) => {
+          const revision = await documentGitBase.write(input);
+          metrics.recordGitMutation("write");
+          return revision;
+        },
+        revert: async (
+          input: Parameters<typeof documentGitBase.revert>[0],
+        ) => {
+          const revision = await documentGitBase.revert(input);
+          metrics.recordGitMutation("revert");
+          return revision;
+        },
+      })
+    : documentGitBase;
   const documents = createDocumentService({
     repository: documentRepository,
     git: documentGit,
@@ -466,6 +496,11 @@ export async function createApplication(
   await app.register(multipart, {
     limits: { fileSize: environment.limits.logoBytes, files: 1 },
   });
+  const metrics = createServerMetrics();
+  // Instrumentation must precede route registration so every route is counted;
+  // /metrics itself is registered only when METRICS_ENABLED=true and stays
+  // internal-only (never added to the Dokploy public ingress rules).
+  metrics.register(app, { enabled: environment.metricsEnabled });
   app.addHook("onRequest", (request) => {
     if (
       shouldRejectMutationOrigin({

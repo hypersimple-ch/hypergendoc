@@ -75,6 +75,8 @@ services:
       # IPs resolve from X-Forwarded-For.
       TRUST_PROXY: "1"
       RENDERER_SOCKET: /run/hypergendoc/renderer.sock
+      # Optional Prometheus endpoint; internal-only (not exposed via Dokploy).
+      # METRICS_ENABLED: ${METRICS_ENABLED:-0}
     expose: ["4000"]
     depends_on:
       postgres:
