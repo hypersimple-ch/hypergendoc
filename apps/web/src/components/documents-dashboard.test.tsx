@@ -24,6 +24,10 @@ const {
   documents,
   duplicateDocument,
   revertDocument,
+  restyleDocument,
+  style,
+  styles,
+  template,
 } = vi.hoisted(() => ({
   activeCompany: vi.fn(),
   document: vi.fn(),
@@ -31,6 +35,10 @@ const {
   documents: vi.fn(),
   duplicateDocument: vi.fn(),
   revertDocument: vi.fn(),
+  restyleDocument: vi.fn(),
+  style: vi.fn(),
+  styles: vi.fn(),
+  template: vi.fn(),
 }));
 
 vi.mock("../lib/dashboard-api", () => ({
@@ -40,12 +48,21 @@ vi.mock("../lib/dashboard-api", () => ({
     documents,
     duplicateDocument,
     revertDocument,
+    restyleDocument,
+    style,
+    styles,
+    template,
     pdfUrl: (id: string) => `/api/documents/${id}/pdf`,
     sourceUrl: (id: string, commitSha: string) =>
       `/api/documents/${id}/commits/${commitSha}/source`,
   },
 }));
 vi.mock("./active-company", () => ({ useActiveCompany: activeCompany }));
+
+Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+  value: () => undefined,
+  configurable: true,
+});
 
 import { DocumentsDashboard } from "./documents-dashboard";
 
@@ -353,6 +370,72 @@ describe("DocumentsDashboard", () => {
 
     expect(await screen.findByText("No matching documents")).toBeVisible();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("restyles a template document after confirming current and target styles", async () => {
+    const templateVersionId = "66666666-6666-4666-8666-666666666666";
+    const newStyleVersionId = "77777777-7777-4777-8777-777777777777";
+    const templateDocument: Document = {
+      ...baseDocument,
+      templateId: "88888888-8888-4888-8888-888888888888",
+    };
+    const templateDetail = (): DocumentDetail => ({
+      document: templateDocument,
+      current: source(
+        commit(currentSha, oldSha, "template"),
+        JSON.stringify({ schemaVersion: 1, templateVersionId, data: {} }),
+      ),
+      commits: [commit(currentSha, oldSha, "template"), oldCommit],
+    });
+    setActiveCompany(acme);
+    documents.mockResolvedValue([templateDocument]);
+    document.mockResolvedValue(templateDetail());
+    styles.mockResolvedValue([
+      { id: "style-1", name: "Corporate" },
+    ]);
+    style.mockResolvedValue({
+      style: { id: "style-1", name: "Corporate" },
+      versions: [
+        { id: styleVersionId, version: 1 },
+        { id: newStyleVersionId, version: 2 },
+      ],
+    });
+    template.mockResolvedValue({ template: {}, versions: [] });
+    const restyledCommit = commit("d".repeat(40), currentSha, "template");
+    restyleDocument.mockResolvedValue({
+      commit: restyledCommit,
+      snapshot: { format: "template" },
+    });
+    render(<DocumentsDashboard />);
+    fireEvent.click(await screen.findByRole("button", { name: "View history" }));
+    await screen.findByText("Template data");
+
+    fireEvent.click(
+      await screen.findByRole("combobox", { name: "Target style version" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("option", { name: "Corporate · v2" }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Restyle" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent("Current style:");
+    expect(dialog).toHaveTextContent("Corporate · v1");
+    expect(dialog).toHaveTextContent("New style:");
+    expect(dialog).toHaveTextContent("Corporate · v2");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Restyle document" }),
+    );
+
+    await waitFor(() =>
+      expect(restyleDocument).toHaveBeenCalledWith(
+        documentId,
+        newStyleVersionId,
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByText(/restyled to Corporate · v2/i)).toBeVisible(),
+    );
+    await waitFor(() => expect(document).toHaveBeenCalledTimes(2));
   });
 
   it("duplicates a document and confirms the copy after refreshing the list", async () => {

@@ -5,6 +5,7 @@ import type {
   ResolvedTemplateAssets,
   StyleDefinition,
   TemplateDefinition,
+  TemplateVersion,
 } from "@hypergendoc/contracts";
 import type { AuditWriter } from "../../platform/audit.js";
 import type { MutationOperationJournal } from "../../platform/mutation-operations.js";
@@ -85,6 +86,20 @@ export interface DocumentRepository {
     | { templateId: string; versionId: string; definition: TemplateDefinition }
     | undefined
   >;
+  /**
+   * Allocates the next immutable template version while holding a database
+   * lock, without changing the template's active-version pointer.
+   */
+  createTemplateVersion(
+    input: Readonly<{
+      workspaceId: string;
+      companyId: string;
+      templateId: string;
+      definition: TemplateDefinition;
+      /** User id for human actors; credential restyles leave this unset. */
+      createdByUserId?: string | undefined;
+    }>,
+  ): Promise<TemplateVersion>;
   findDocument(
     workspaceId: string,
     documentId: string,

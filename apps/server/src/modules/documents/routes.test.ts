@@ -21,6 +21,7 @@ const update = vi.fn();
 const createFromTemplate = vi.fn();
 const updateFromTemplate = vi.fn();
 const revert = vi.fn();
+const restyle = vi.fn();
 const duplicate = vi.fn();
 
 function appFor() {
@@ -35,6 +36,7 @@ function appFor() {
       createFromTemplate,
       updateFromTemplate,
       revert,
+      restyle,
       duplicate,
     } as unknown as DocumentService,
     actorFor: () => actor,
@@ -74,6 +76,45 @@ describe("document duplication routes", () => {
     expect(response.json<{ error: { code: string } }>().error.code).toBe(
       "not_found",
     );
+    await app.close();
+  });
+});
+
+describe("document restyle route", () => {
+  it("forwards the style version pin to the service", async () => {
+    restyle.mockResolvedValue({
+      commit: { commitSha: sha },
+      snapshot: { format: "template" },
+    });
+    const app = appFor();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/documents/document/restyle",
+      body: { styleVersionId: "00000000-0000-4000-8000-000000000009" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(restyle).toHaveBeenCalledWith(actor, "document", {
+      styleVersionId: "00000000-0000-4000-8000-000000000009",
+    });
+    await app.close();
+  });
+
+  it("surfaces typed errors for markdown documents and missing styles", async () => {
+    const app = appFor();
+    restyle.mockRejectedValue(new AppError("validation_failed", 400));
+    const invalid = await app.inject({
+      method: "POST",
+      url: "/api/documents/document/restyle",
+      body: { styleVersionId: "00000000-0000-4000-8000-000000000009" },
+    });
+    expect(invalid.statusCode).toBe(400);
+    restyle.mockRejectedValue(new AppError("not_found", 404));
+    const missing = await app.inject({
+      method: "POST",
+      url: "/api/documents/document/restyle",
+      body: { styleVersionId: "00000000-0000-4000-8000-000000000009" },
+    });
+    expect(missing.statusCode).toBe(404);
     await app.close();
   });
 });

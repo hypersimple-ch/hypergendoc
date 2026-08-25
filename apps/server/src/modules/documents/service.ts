@@ -3,6 +3,7 @@ import {
   CreateTemplateDocumentInputSchema,
   UpdateTemplateDocumentInputSchema,
   RevertDocumentInputSchema,
+  RestyleDocumentInputSchema,
   UpdateDocumentInputSchema,
   type Document,
   type DocumentCommit,
@@ -706,6 +707,131 @@ export class DocumentService {
           await this.audit(
             actor,
             "document.revert",
+            touched.id,
+            "success",
+            audit,
+          );
+          return touched;
+        },
+      );
+      if (checkpoint) this.deps.git.completeCheckpoint(checkpoint);
+      if (operationId) await this.deps.operations?.complete(operationId);
+    } catch (error) {
+      await this.compensateGit(
+        checkpoint,
+        mutationCommitId,
+        operationId,
+        error,
+      );
+    }
+    const current = await this.currentSource(actor.workspaceId, document);
+    return current;
+  }
+
+  /**
+   * Restyles a template-format document by pinning its rendering to another
+   * style version. Template versions are immutable and their definition pins
+   * the authoritative styleVersionId, so restyling creates a NEW inactive
+   * template version of the same template (identical definition except the
+   * styleVersionId) and then a new document commit that references that new
+   * version with unchanged data. Existing versions, the template's
+   * active-version pointer, and prior commits all stay untouched.
+   */
+  async restyle(
+    actor: ActorContext | undefined,
+    documentId: string,
+    raw: unknown,
+  ): Promise<DocumentCurrentSource> {
+    requireActor(actor);
+    const parsed = RestyleDocumentInputSchema.safeParse(raw);
+    if (!parsed.success) throw invalid();
+    let checkpoint: GitDocumentCheckpoint | undefined;
+    let mutationCommitId: string | undefined;
+    let operationId: string | undefined;
+    let document!: Document;
+    try {
+      document = await this.deps.repository.transaction(
+        async (repository, audit) => {
+          const locked = await repository.lockDocument(
+            actor.workspaceId,
+            documentId,
+          );
+          if (!locked) throw notFound();
+          requireAction(actor, "documents:write", locked.companyId);
+          const previous = await this.readCurrentRevision(
+            actor.workspaceId,
+            locked,
+          );
+          // Only template-format documents restyle; markdown/html documents
+          // own their style choice through the regular source update.
+          if (previous.format !== "template" || !previous.templateVersionId)
+            throw invalid();
+          if (!locked.templateId) throw notFound();
+          const stored = parseTemplateBody(previous.body);
+          if (stored.templateVersionId !== previous.templateVersionId)
+            throw notFound();
+          const template = await repository.findTemplateVersion(
+            actor.workspaceId,
+            locked.companyId,
+            previous.templateVersionId,
+          );
+          if (!template || template.templateId !== locked.templateId)
+            throw notFound();
+          const styleVersion = await repository.findStyleVersion(
+            actor.workspaceId,
+            locked.companyId,
+            parsed.data.styleVersionId,
+          );
+          // Missing or foreign-company style versions both reject here.
+          if (!styleVersion) throw notFound();
+          if (styleVersion.id === template.definition.styleVersionId)
+            throw invalid();
+          const restyledDefinition: TemplateDefinition = {
+            ...structuredClone(template.definition),
+            styleVersionId: styleVersion.id,
+          };
+          // Save-time validation before render-time trust: prove the restyled
+          // definition still resolves against the target style.
+          await this.resolveTemplate(
+            actor.workspaceId,
+            locked.companyId,
+            restyledDefinition,
+            stored.data,
+            locked.title,
+          );
+          await repository.lockCompanyForGitWrites(
+            actor.workspaceId,
+            locked.companyId,
+          );
+          checkpoint = await this.deps.git.checkpoint(
+            actor.workspaceId,
+            locked.companyId,
+          );
+          const touched =
+            (await repository.touchDocument(actor.workspaceId, documentId)) ??
+            locked;
+          operationId = await this.beginGitOperation(
+            actor,
+            "document.restyle",
+            locked,
+            checkpoint,
+          );
+          const version = await repository.createTemplateVersion({
+            workspaceId: actor.workspaceId,
+            companyId: locked.companyId,
+            templateId: locked.templateId,
+            definition: restyledDefinition,
+            ...(actor.type === "human" ? { createdByUserId: actor.userId } : {}),
+          });
+          mutationCommitId = await this.writeTemplateGit(actor, locked, {
+            body: canonicalTemplateBody(version.id, stored.data),
+            styleVersionId: styleVersion.id,
+            templateVersionId: version.id,
+          });
+          await this.markGitApplied(operationId, mutationCommitId, checkpoint);
+          await this.audit(
+            actor,
+            "document.restyle",
             touched.id,
             "success",
             audit,

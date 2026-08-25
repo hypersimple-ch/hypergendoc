@@ -66,6 +66,12 @@ export const RevertDocumentInputSchema = z
   })
   .strict();
 
+export const RestyleDocumentInputSchema = z
+  .object({
+    styleVersionId: UuidSchema,
+  })
+  .strict();
+
 export const DocumentSchema = z
   .object({
     id: UuidSchema,
@@ -124,6 +130,9 @@ export type CommitSha = z.infer<typeof CommitShaSchema>;
 export type CreateDocumentInput = z.infer<typeof CreateDocumentInputSchema>;
 export type UpdateDocumentInput = z.infer<typeof UpdateDocumentInputSchema>;
 export type RevertDocumentInput = z.infer<typeof RevertDocumentInputSchema>;
+export type RestyleDocumentInput = z.infer<
+  typeof RestyleDocumentInputSchema
+>;
 export type Document = z.infer<typeof DocumentSchema>;
 export type DocumentCommit = z.infer<typeof DocumentCommitSchema>;
 export type DocumentSnapshot = z.infer<typeof DocumentSnapshotSchema>;

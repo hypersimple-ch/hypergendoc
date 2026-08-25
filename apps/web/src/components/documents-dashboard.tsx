@@ -14,6 +14,7 @@ import {
   FormField,
   Input,
   PageHeader,
+  Select,
   Status,
   Table,
 } from "./primitives";
@@ -202,6 +203,107 @@ export function DocumentsDashboard() {
           onClose={() => setSelected(undefined)}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * One-click restyle for template-format documents: pick a target style
+ * version, confirm current vs. target, and create a new immutable commit.
+ */
+function RestyleControl({
+  document,
+  currentStyleVersionId,
+  onDone,
+}: {
+  document: Document;
+  currentStyleVersionId: string | undefined;
+  onDone: (message: { text: string; error: boolean }) => void;
+}) {
+  const options = useLoaded(async () => {
+    const styles = await dashboardApi.styles(document.companyId);
+    return (
+      await Promise.all(
+        styles.map((style) => dashboardApi.style(style.id)),
+      )
+    ).flatMap((detail) =>
+      detail.versions.map((version) => ({
+        versionId: version.id,
+        label: `${detail.style.name} · v${version.version}`,
+      })),
+    );
+  }, [document.companyId]);
+  const [targetId, setTargetId] = useState("");
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const choices = (options.value ?? []).map((option) => ({
+    value: option.versionId,
+    label: option.label,
+    ...(option.versionId === currentStyleVersionId ? { disabled: true } : {}),
+  }));
+  const currentLabel =
+    options.value?.find((option) => option.versionId === currentStyleVersionId)
+      ?.label ?? currentStyleVersionId;
+  const targetLabel = options.value?.find(
+    (option) => option.versionId === targetId,
+  )?.label;
+
+  async function restyle() {
+    if (!targetId || pending) return;
+    setPending(true);
+    try {
+      await dashboardApi.restyleDocument(document.id, targetId);
+      setOpen(false);
+      setTargetId("");
+      onDone({ text: `Document restyled to ${targetLabel}.`, error: false });
+    } catch (reason) {
+      onDone({ text: safeError(reason), error: true });
+    } finally {
+      setPending(false);
+    }
+  }
+
+  if (!options.value && !options.error) return null;
+  if (!choices.length) return null;
+  return (
+    <div className="flex flex-wrap items-end gap-3">
+      <FormField label="Restyle with a style version">
+        <Select
+          value={targetId}
+          onValueChange={setTargetId}
+          options={choices}
+          placeholder="Choose a style"
+          aria-label="Target style version"
+        />
+      </FormField>
+      <Button
+        tone="quiet"
+        disabled={!targetId || pending}
+        onClick={() => setOpen(true)}
+      >
+        Restyle
+      </Button>
+      <ConfirmDialog
+        open={open}
+        title="Restyle this document?"
+        description={
+          <>
+            Current style: <strong>{currentLabel}</strong>
+            <br />
+            New style: <strong>{targetLabel}</strong>
+            <br />
+            Restyling creates a new immutable commit and a new template version
+            pinned to that style; existing history is unchanged.
+          </>
+        }
+        confirmLabel="Restyle document"
+        tone="primary"
+        pending={pending}
+        onConfirm={() => void restyle()}
+        onClose={() => {
+          if (!pending) setOpen(false);
+        }}
+      />
     </div>
   );
 }
@@ -462,6 +564,18 @@ function DocumentDetail({
                   </div>
                 </>
               )}
+              {isCurrent &&
+                activeSource?.snapshot.format === "template" &&
+                document.templateId && (
+                  <RestyleControl
+                    document={document}
+                    currentStyleVersionId={active.styleVersionId}
+                    onDone={(restyleMessage) => {
+                      setMessage(restyleMessage);
+                      if (!restyleMessage.error) detail.reload();
+                    }}
+                  />
+                )}
               {message && (
                 <div
                   aria-live="polite"

@@ -91,6 +91,7 @@ async function fixture(
       : Promise.resolve(),
   );
   const lockCompanyForGitWrites = vi.fn(() => Promise.resolve());
+  let templateVersionCounter = 0;
   const touchDocument = vi.fn((_workspaceId: string, documentId: string) =>
     options.failTouch
       ? Promise.reject(new Error("database"))
@@ -134,7 +135,7 @@ async function fixture(
           : styleVersionId === ids.activeStyleVersion
             ? { id: styleVersionId, definition: options.styleDefinition ?? definition }
             : styleVersionId === ids.oldStyleVersion
-              ? { id: styleVersionId, definition: oldDefinition }
+              ? { id: styleVersionId, definition: options.styleDefinition ?? oldDefinition }
               : undefined,
       ),
     findActiveStyleVersion: (_workspaceId, companyId, styleVersionId) =>
@@ -197,6 +198,18 @@ async function fixture(
       };
       documents.push(document);
       return Promise.resolve(document);
+    },
+    createTemplateVersion: (input) => {
+      const versionNumber = (templateVersionCounter =
+        templateVersionCounter + 1);
+      return Promise.resolve({
+        id: `00000000-0000-4000-8000-${String(versionNumber).padStart(12, "0")}`,
+        templateId: input.templateId,
+        version: 99 + versionNumber,
+        definition: input.definition,
+        createdByUserId: input.createdByUserId ?? "",
+        createdAt: new Date(0).toISOString(),
+      });
     },
     touchDocument,
     lockCompanyForGitWrites,
@@ -429,6 +442,82 @@ describe("DocumentService duplication", () => {
     ).rejects.toMatchObject({ code: "not_found" });
     const ok = await service.duplicate(agent(), ids.document);
     expect(ok.document.title).toBe("Proposal (copy)");
+  });
+});
+
+describe("DocumentService restyle", () => {
+  const templateIds = {
+    templateId: ids.credential,
+    versionId: ids.user,
+  };
+  const data: TemplateData = { title: "Quarterly review" };
+
+  async function templated() {
+    const state = await fixture({
+      templateVersion: { ...templateIds, definition: templateDefinition },
+      styleDefinition: templateStyle,
+    });
+    await state.service.createFromTemplate(human, {
+      companyId: ids.company,
+      templateId: templateIds.templateId,
+      title: "Q1 report",
+      data,
+    });
+    return state;
+  }
+
+  it("creates a new template version pin and a new commit with unchanged data", async () => {
+    const { service } = await templated();
+    const result = await service.restyle(human, ids.document, {
+      styleVersionId: ids.oldStyleVersion,
+    });
+    expect(result.snapshot.format).toBe("template");
+    expect(result.snapshot.styleVersionId).toBe(ids.oldStyleVersion);
+    expect(result.snapshot.templateVersionId).not.toBe(templateIds.versionId);
+    expect(JSON.parse(result.snapshot.body)).toEqual({
+      schemaVersion: 1,
+      templateVersionId: result.snapshot.templateVersionId,
+      data,
+    });
+    // Exactly one new commit; prior history remains immutable.
+    const commits = await service.history(human, ids.document);
+    expect(commits).toHaveLength(2);
+    expect(commits[1]?.commitSha).toBe(commits[0]?.parentCommitSha);
+  });
+
+  it("rejects markdown documents, unknown styles, and no-op pins", async () => {
+    const { service } = await created();
+    await expect(
+      service.restyle(human, ids.document, {
+        styleVersionId: ids.oldStyleVersion,
+      }),
+    ).rejects.toMatchObject({ code: "validation_failed" });
+
+    const state = await templated();
+    await expect(
+      state.service.restyle(human, ids.document, {
+        styleVersionId: "00000000-0000-4000-8000-0000000000ff",
+      }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    // Restyling to the currently pinned style is a rejected no-op.
+    await expect(
+      state.service.restyle(human, ids.document, {
+        styleVersionId: templateDefinition.styleVersionId,
+      }),
+    ).rejects.toMatchObject({ code: "validation_failed" });
+  });
+
+  it("requires the documents:write action for agent restyles", async () => {
+    const { service } = await templated();
+    await expect(
+      service.restyle(agent(["documents:read"]), ids.document, {
+        styleVersionId: ids.oldStyleVersion,
+      }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    const ok = await service.restyle(agent(), ids.document, {
+      styleVersionId: ids.oldStyleVersion,
+    });
+    expect(ok.snapshot.styleVersionId).toBe(ids.oldStyleVersion);
   });
 });
 

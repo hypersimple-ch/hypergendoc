@@ -169,6 +169,17 @@ export function registerDocumentRoutes(
       ),
   );
 
+  app.post(
+    "/api/documents/:documentId/restyle",
+    mutationOptions,
+    async (request) =>
+      deps.service.restyle(
+        actor(request),
+        (request.params as { documentId: string }).documentId,
+        request.body,
+      ),
+  );
+
   app.get("/api/documents/:documentId/pdf", async (request, reply) => {
     const documentId = (request.params as { documentId: string }).documentId;
     const query = request.query as { disposition?: string };

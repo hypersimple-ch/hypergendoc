@@ -269,6 +269,11 @@ export const dashboardApi = {
       method: "POST",
       body: input,
     }),
+  restyleDocument: (id: string, styleVersionId: string) =>
+    api<DocumentCurrentSource>(`/api/documents/${id}/restyle`, {
+      method: "POST",
+      body: { styleVersionId },
+    }),
   uploadImage: (id: string, file: File): Promise<CompanyImageAsset> => {
     const form = new FormData();
     form.set("image", file);
