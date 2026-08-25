@@ -941,8 +941,8 @@ describe("chart node contract", () => {
   });
 
   it("rejects unknown item paths and non-scalar labels", () => {
-    const badLabel = JSON.parse(JSON.stringify(baseDefinition));
-    const badLabelDoc = badLabel.document as Record<string, unknown>[];
+    const badLabel = JSON.parse(JSON.stringify(baseDefinition)) as typeof baseDefinition;
+    const badLabelDoc = (badLabel as { document: Record<string, unknown>[] }).document;
     badLabelDoc[0] = {
       type: "page",
       master: "standard",
@@ -959,8 +959,8 @@ describe("chart node contract", () => {
       /Unknown chart label path/,
     );
 
-    const badValue = JSON.parse(JSON.stringify(baseDefinition));
-    const badValueDoc = badValue.document as Record<string, unknown>[];
+    const badValue = JSON.parse(JSON.stringify(baseDefinition)) as typeof baseDefinition;
+    const badValueDoc = (badValue as { document: Record<string, unknown>[] }).document;
     badValueDoc[0] = {
       type: "page",
       master: "standard",
@@ -979,8 +979,8 @@ describe("chart node contract", () => {
   });
 
   it("caps the document at 10 chart nodes", () => {
-    const many = JSON.parse(JSON.stringify(baseDefinition));
-    const manyDoc = many.document as Record<string, unknown>[];
+    const many = JSON.parse(JSON.stringify(baseDefinition)) as typeof baseDefinition;
+    const manyDoc = (many as { document: Record<string, unknown>[] }).document;
     manyDoc[0] = {
       type: "page",
       master: "standard",

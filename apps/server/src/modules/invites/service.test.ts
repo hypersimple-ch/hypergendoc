@@ -58,7 +58,11 @@ function operationsFor(
 ): InviteOperations {
   return {
     findByTokenHash: (tokenHash) =>
-      Promise.resolve(rows.find((row) => row.tokenHash === tokenHash)),
+      Promise.resolve(
+        rows.find((row) => row.tokenHash === tokenHash) as
+          | (SeededRow & { workspaceName: string })
+          | undefined,
+      ),
     findPending: (workspaceId, email) =>
       Promise.resolve(
         rows.find(
