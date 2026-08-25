@@ -541,6 +541,8 @@ const TEMPLATE_MAX_DEPTH = 32;
 const TEMPLATE_MAX_EXPANDED_NODES = 5_000;
 /** Defensive render-time twin of the contract's 20-qr-node save cap. */
 const TEMPLATE_MAX_QR_NODES = 20;
+/** Defensive render-time twin of the contract's 10-chart-node save cap. */
+const TEMPLATE_MAX_CHART_NODES = 10;
 const TEMPLATE_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 const htmlEscape = (value: unknown) =>
@@ -1071,6 +1073,7 @@ export function renderTemplateDocumentHtml(
       .join("");
 
   let renderedQrCount = 0;
+  let renderedChartCount = 0;
   const renderPass = (
     nodes: readonly TemplateNode[],
     headings: readonly Heading[],
@@ -1079,6 +1082,7 @@ export function renderTemplateDocumentHtml(
     expandedNodes = 0;
     generatedId = 0;
     renderedQrCount = 0;
+    renderedChartCount = 0;
     const renderNodes = (
       values: readonly TemplateNode[],
       locals: Readonly<Record<string, TemplateValue>>,
@@ -1219,6 +1223,86 @@ export function renderTemplateDocumentHtml(
                 ? `<figcaption>${inlineText(node.caption, locals, true, group)}</figcaption>`
                 : "";
               return `<figure class="template-qr">${svg}${caption}</figure>`;
+            }
+            case "chart": {
+              renderedChartCount += 1;
+              if (renderedChartCount > TEMPLATE_MAX_CHART_NODES)
+                fail("body_too_large");
+              const value = templatePath(root, locals, node.source ?? "");
+              const rows = Array.isArray(value) ? value : [];
+              const valueFormat = node.currency ? "money" : "number";
+              const barColor = templateColor(node.color ?? "primary", input.style);
+              const mutedColor = input.style.colors.muted;
+              const textColor = input.style.colors.text;
+              const maxItems = node.maxItems ?? 12;
+              const title = node.title;
+              const caption = node.caption?.length
+                ? `<figcaption>${inlineText(node.caption, locals, true, group)}</figcaption>`
+                : "";
+              const entries = rows
+                .slice(0, maxItems)
+                .map((item) => {
+                  if (!isTemplateRecord(item)) return undefined;
+                  const rawLabel = templatePath(item, {}, node.labelPath ?? "");
+                  const rawValue = templatePath(item, {}, node.valuePath ?? "");
+                  if (typeof rawValue !== "number" || !Number.isFinite(rawValue))
+                    return undefined;
+                  const label = htmlEscape(
+                    templateDisplayValue(rawLabel, "text", undefined, locale),
+                  );
+                  return { label, value: rawValue };
+                })
+                .filter((entry): entry is { label: string; value: number } =>
+                  Boolean(entry),
+                );
+              if (!entries.length)
+                return `<figure class="template-chart">${title ? `<p class="template-chart-title">${htmlEscape(title)}</p>` : ""}<p class="template-chart-empty">No data available.</p>${caption}</figure>`;
+              const maxValue = Math.max(...entries.map((e) => e.value), 0);
+              // All-zero data renders zero-length bars against a unit scale.
+              const scale = maxValue > 0 ? maxValue : 1;
+              const formatValue = (amount: number) =>
+                htmlEscape(
+                  templateDisplayValue(amount, valueFormat, node.currency, locale),
+                );
+              let svg: string;
+              if ((node.orientation ?? "horizontal") === "horizontal") {
+                const rowPitch = 9.5;
+                const height = entries.length * rowPitch + 4;
+                const barRows = entries
+                  .map((entry, index) => {
+                    const y = index * rowPitch + 4;
+                    const width = (Math.max(entry.value, 0) / scale) * 92;
+                    return (
+                      `<text x="38" y="${y + 4.6}" text-anchor="end" font-size="4.4" fill="${textColor}">${entry.label}</text>` +
+                      `<rect x="41" y="${y}" width="${width.toFixed(3)}" height="5.4" fill="${barColor}"/>` +
+                      `<text x="${(43 + width).toFixed(3)}" y="${y + 4.6}" font-size="4.4" fill="${mutedColor}">${formatValue(entry.value)}</text>`
+                    );
+                  })
+                  .join("");
+                svg = `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${htmlEscape(title ?? "Bar chart")}" viewBox="0 0 160 ${height}" width="100%"><title>${htmlEscape(title ?? "Bar chart")}</title><line x1="41" y1="2" x2="41" y2="${height - 2}" stroke="${mutedColor}" stroke-width="0.4"/>${barRows}</svg>`;
+              } else {
+                const columnPitch = 160 / entries.length;
+                const chartHeight = 62;
+                const baseline = chartHeight + 6;
+                const barColumns = entries
+                  .map((entry, index) => {
+                    const barWidth = Math.min(columnPitch * 0.55, 14);
+                    const x = index * columnPitch + (columnPitch - barWidth) / 2;
+                    const height = (Math.max(entry.value, 0) / scale) * chartHeight;
+                    const shortLabel =
+                      entry.label.length > 10
+                        ? `${entry.label.slice(0, 9)}…`
+                        : entry.label;
+                    return (
+                      `<text x="${(x + barWidth / 2).toFixed(3)}" y="${(chartHeight - height - 1.6).toFixed(3)}" text-anchor="middle" font-size="4" fill="${mutedColor}">${formatValue(entry.value)}</text>` +
+                      `<rect x="${x.toFixed(3)}" y="${(chartHeight - height).toFixed(3)}" width="${barWidth.toFixed(3)}" height="${height.toFixed(3)}" fill="${barColor}"/>` +
+                      `<text x="${(x + barWidth / 2).toFixed(3)}" y="${baseline + 5}" text-anchor="middle" font-size="4" fill="${textColor}">${shortLabel}</text>`
+                    );
+                  })
+                  .join("");
+                svg = `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${htmlEscape(title ?? "Bar chart")}" viewBox="0 0 160 ${baseline + 7}" width="100%"><title>${htmlEscape(title ?? "Bar chart")}</title><line x1="2" y1="${baseline}" x2="158" y2="${baseline}" stroke="${mutedColor}" stroke-width="0.4"/>${barColumns}</svg>`;
+              }
+              return `<figure class="template-chart">${title ? `<p class="template-chart-title">${htmlEscape(title)}</p>` : ""}${svg}${caption}</figure>`;
             }
             case "list": {
               const value = templatePath(
@@ -1429,6 +1513,7 @@ export function renderTemplateDocumentHtml(
 .template-stack{display:flex;flex-direction:column;gap:var(--template-gap);}
 .template-grid{display:grid;grid-template-columns:repeat(var(--template-columns),minmax(0,1fr));gap:var(--template-gap);}
 .template-image{margin:0;break-inside:avoid-page;}.template-image img{display:block;width:100%;max-height:220mm;}.template-image figcaption{margin-top:2mm;font-size:8pt;color:${input.style.colors.muted};}
+.template-chart{margin:2mm 0;break-inside:avoid-page;}.template-chart svg{display:block;width:100%;height:auto;}.template-chart-title{margin:0 0 1.5mm;font-size:9pt;font-weight:600;color:${input.style.colors.heading};}.template-chart figcaption{margin-top:1.5mm;font-size:8pt;color:${input.style.colors.muted};}.template-chart-empty{margin:0;font-size:8pt;color:${input.style.colors.muted};}
 .template-page-break{break-after:page;}.template-rich-text>:first-child{margin-top:0;}.template-rich-text>:last-child{margin-bottom:0;}
 .template-page tfoot td{border-top:2px solid ${input.style.colors.heading};font-weight:600;}
 .template-table-zebra tbody tr:nth-child(even) td{background:${input.style.colors.muted};}

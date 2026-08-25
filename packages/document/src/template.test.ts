@@ -1215,3 +1215,154 @@ describe("template document renderer", () => {
     expect((html.match(/<p>Delivery/g) ?? []).length).toBe(1);
   });
 });
+
+describe("chart nodes", () => {
+  const chartData = {
+    title: "Chart",
+    rows: [
+      { name: "Alpha", amount: 12 },
+      { name: "Beta", amount: 7 },
+      { name: "Gamma", amount: 0 },
+    ],
+  };
+  const chartDefinition: TemplateDefinition = {
+    ...definition,
+    fields: {
+      ...definition.fields,
+      rows: {
+        type: "list",
+        label: "Rows",
+        item: {
+          type: "object",
+          label: "Row",
+          fields: {
+            name: { type: "text", label: "Name" },
+            amount: { type: "number", label: "Amount" },
+          },
+        },
+      },
+    },
+    document: [
+      {
+        type: "page",
+        master: "standard",
+        children: [
+          {
+            type: "chart",
+            source: "rows",
+            labelPath: "name",
+            valuePath: "amount",
+            title: "Spend by client",
+          },
+        ],
+      },
+    ],
+  };
+  const render = (input?: Partial<Parameters<typeof renderTemplateDocumentHtml>[0]>) =>
+    renderTemplateDocumentHtml({
+      definition: chartDefinition,
+      data: chartData,
+      style,
+      ...input,
+    });
+
+  it("renders deterministic horizontal bars scaled to the max value", () => {
+    const first = render();
+    const second = render();
+    expect(first).toBe(second);
+    expect(first).toContain('class="template-chart"');
+    expect(first).toContain("Spend by client");
+    // Alpha has the max value (12) -> full 92-unit bar; Beta scales to 7/12.
+    expect(first).toContain('width="92.000"');
+    expect(first).toContain(`width="${((7 / 12) * 92).toFixed(3)}"`);
+    // Zero-value row renders a zero-width bar, not a negative or NaN one.
+    expect(first).toContain('width="0.000"');
+  });
+
+  it("formats value labels with locale-aware money", () => {
+    const money = render({
+      definition: {
+        ...chartDefinition,
+        document: [
+          {
+            type: "page",
+            master: "standard",
+            children: [
+              {
+                type: "chart",
+                source: "rows",
+                labelPath: "name",
+                valuePath: "amount",
+                currency: "USD",
+              },
+            ],
+          },
+        ],
+      },
+      locale: "de-DE",
+    });
+    expect(money).toContain("12,00\u00a0$");
+  });
+
+  it("truncates entries beyond maxItems and switches orientation", () => {
+    const manyRows = {
+      title: "Chart",
+      rows: Array.from({ length: 20 }, (_, index) => ({
+        name: `Row ${index + 1}`,
+        amount: index + 1,
+      })),
+    };
+    const capped = render({
+      data: manyRows,
+      definition: {
+        ...chartDefinition,
+        document: [
+          {
+            type: "page",
+            master: "standard",
+            children: [
+              {
+                type: "chart",
+                source: "rows",
+                labelPath: "name",
+                valuePath: "amount",
+                maxItems: 5,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(capped).toContain("Row 5");
+    expect(capped).not.toContain("Row 6");
+
+    const vertical = render({
+      definition: {
+        ...chartDefinition,
+        document: [
+          {
+            type: "page",
+            master: "standard",
+            children: [
+              {
+                type: "chart",
+                source: "rows",
+                labelPath: "name",
+                valuePath: "amount",
+                orientation: "vertical",
+              },
+            ],
+          },
+        ],
+      },
+    });
+    // Vertical bars grow upward from the shared baseline.
+    expect(vertical).toContain('stroke-width="0.4"');
+    expect(vertical).not.toContain('width="92.000"');
+  });
+
+  it("renders an empty-state block for missing data", () => {
+    const empty = render({ data: { title: "Chart", rows: [] } });
+    expect(empty).toContain("No data available.");
+  });
+});

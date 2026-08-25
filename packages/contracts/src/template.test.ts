@@ -883,3 +883,116 @@ describe("template contracts", () => {
     expect(groupedWith("unknown")).toBe(false);
   });
 });
+
+describe("chart node contract", () => {
+  const baseDefinition = {
+    schemaVersion: 1 as const,
+    styleVersionId: "00000000-0000-4000-8000-000000000001",
+    fields: {
+      title: { type: "text", label: "Title" },
+      rows: {
+        type: "list",
+        label: "Rows",
+        item: {
+          type: "object",
+          label: "Row",
+          fields: {
+            name: { type: "text", label: "Name" },
+            amount: { type: "number", label: "Amount" },
+          },
+        },
+      },
+    },
+    pageMasters: { standard: {} },
+    document: [
+      {
+        type: "page",
+        master: "standard",
+        children: [
+          {
+            type: "chart",
+            source: "rows",
+            labelPath: "name",
+            valuePath: "amount",
+          },
+        ],
+      } as const,
+    ],
+  };
+
+  it("accepts a well-formed chart node", () => {
+    expect(() =>
+      TemplateDefinitionSchema.parse(baseDefinition),
+    ).not.toThrow();
+  });
+
+  it("rejects charts missing labelPath or valuePath", () => {
+    const missing = {
+      ...baseDefinition,
+      document: [
+        {
+          type: "page",
+          master: "standard",
+          children: [{ type: "chart", source: "rows" }],
+        },
+      ],
+    };
+    expect(() => TemplateDefinitionSchema.parse(missing)).toThrow(/labelPath/);
+  });
+
+  it("rejects unknown item paths and non-scalar labels", () => {
+    const badLabel = JSON.parse(JSON.stringify(baseDefinition));
+    const badLabelDoc = badLabel.document as Record<string, unknown>[];
+    badLabelDoc[0] = {
+      type: "page",
+      master: "standard",
+      children: [
+        {
+          type: "chart",
+          source: "rows",
+          labelPath: "nope",
+          valuePath: "amount",
+        },
+      ],
+    };
+    expect(() => TemplateDefinitionSchema.parse(badLabel)).toThrow(
+      /Unknown chart label path/,
+    );
+
+    const badValue = JSON.parse(JSON.stringify(baseDefinition));
+    const badValueDoc = badValue.document as Record<string, unknown>[];
+    badValueDoc[0] = {
+      type: "page",
+      master: "standard",
+      children: [
+        {
+          type: "chart",
+          source: "rows",
+          labelPath: "name",
+          valuePath: "name",
+        },
+      ],
+    };
+    expect(() => TemplateDefinitionSchema.parse(badValue)).toThrow(
+      /number or money field/,
+    );
+  });
+
+  it("caps the document at 10 chart nodes", () => {
+    const many = JSON.parse(JSON.stringify(baseDefinition));
+    const manyDoc = many.document as Record<string, unknown>[];
+    manyDoc[0] = {
+      type: "page",
+      master: "standard",
+      children: Array.from({ length: 11 }, () => ({
+        type: "chart",
+        source: "rows",
+        labelPath: "name",
+        valuePath: "amount",
+      })),
+    };
+    expect(() => TemplateDefinitionSchema.parse(many)).toThrow(
+      /more than 10 chart nodes/,
+    );
+  });
+});

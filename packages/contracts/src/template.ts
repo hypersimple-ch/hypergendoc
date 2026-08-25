@@ -389,6 +389,7 @@ export type TemplateNode = Readonly<{
     | "richText"
     | "image"
     | "qr"
+    | "chart"
     | "list"
     | "table"
     | "repeat"
@@ -418,6 +419,13 @@ export type TemplateNode = Readonly<{
   value?: string | undefined;
   sizeMm?: number | undefined;
   errorCorrection?: "low" | "medium" | "quartile" | "high" | undefined;
+  labelPath?: string | undefined;
+  valuePath?: string | undefined;
+  currency?: string | undefined;
+  title?: string | undefined;
+  orientation?: "vertical" | "horizontal" | undefined;
+  color?: "text" | "heading" | "primary" | "accent" | "muted" | undefined;
+  maxItems?: number | undefined;
   widthMm?: number | undefined;
   cornerRadiusMm?: number | undefined;
   frame?:
@@ -465,6 +473,18 @@ const nodeProperties: Readonly<
     "frame",
   ]),
   qr: new Set(["type", "value", "source", "sizeMm", "errorCorrection", "caption"]),
+  chart: new Set([
+    "type",
+    "source",
+    "labelPath",
+    "valuePath",
+    "title",
+    "orientation",
+    "color",
+    "currency",
+    "maxItems",
+    "caption",
+  ]),
   list: new Set(["type", "source", "itemsPath", "ordered"]),
   table: new Set(["type", "source", "tableColumns", "footerRow", "zebraRows"]),
   repeat: new Set(["type", "source", "as", "groupBy", "groupHeader", "children"]),
@@ -489,6 +509,7 @@ export const TemplateNodeSchema: z.ZodType<TemplateNode> = z.lazy(() =>
         "richText",
         "image",
         "qr",
+        "chart",
         "list",
         "table",
         "repeat",
@@ -536,6 +557,16 @@ export const TemplateNodeSchema: z.ZodType<TemplateNode> = z.lazy(() =>
       errorCorrection: z
         .enum(["low", "medium", "quartile", "high"])
         .optional(),
+      labelPath: TemplatePathSchema.optional(),
+      valuePath: TemplatePathSchema.optional(),
+      currency: z
+        .string()
+        .regex(/^[A-Z]{3}$/)
+        .optional(),
+      title: z.string().min(1).max(120).optional(),
+      orientation: z.enum(["vertical", "horizontal"]).optional(),
+      color: z.enum(["text", "heading", "primary", "accent", "muted"]).optional(),
+      maxItems: z.number().int().min(2).max(30).optional(),
       ordered: z.boolean().optional(),
       itemsPath: TemplatePathSchema.optional(),
       tableColumns: z
@@ -596,13 +627,25 @@ export const TemplateNodeSchema: z.ZodType<TemplateNode> = z.lazy(() =>
           message: `${node.type} nodes require content`,
         });
       if (
-        ["richText", "image", "table", "repeat"].includes(node.type) &&
+        ["richText", "image", "table", "repeat", "chart"].includes(node.type) &&
         !node.source
       )
         context.addIssue({
           code: "custom",
           path: ["source"],
           message: `${node.type} nodes require a source`,
+        });
+      if (node.type === "chart" && !node.labelPath)
+        context.addIssue({
+          code: "custom",
+          path: ["labelPath"],
+          message: "chart nodes require a labelPath",
+        });
+      if (node.type === "chart" && !node.valuePath)
+        context.addIssue({
+          code: "custom",
+          path: ["valuePath"],
+          message: "chart nodes require a valuePath",
         });
       if (
         node.source &&
@@ -1212,6 +1255,7 @@ const validatedTemplateDefinitionSchema =
     };
 
     let qrNodeCount = 0;
+    let chartNodeCount = 0;
     const inspectNodes = (
       nodes: readonly TemplateNode[],
       path: PropertyKey[],
@@ -1223,6 +1267,7 @@ const validatedTemplateDefinitionSchema =
       for (const [index, node] of nodes.entries()) {
         const nodePath = [...path, index];
         if (node.type === "qr") qrNodeCount += 1;
+        if (node.type === "chart") chartNodeCount += 1;
         if (node.type === "page") {
           const master = node.master ?? Object.keys(masters)[0];
           if (!master || !(master in masters))
@@ -1349,6 +1394,34 @@ const validatedTemplateDefinitionSchema =
                 [...nodePath, "tableColumns", columnIndex, "path"],
                 `Unknown table column path: ${column.path}`,
               );
+        if (
+          node.type === "chart" &&
+          sourceField?.type === "list" &&
+          sourceField.item
+        ) {
+          const labelField = fieldWithin(sourceField.item, node.labelPath ?? "");
+          if (!labelField)
+            issue(
+              [...nodePath, "labelPath"],
+              `Unknown chart label path: ${node.labelPath}`,
+            );
+          else if (!["text", "number"].includes(labelField.type))
+            issue(
+              [...nodePath, "labelPath"],
+              "chart labelPath must resolve to a text or number field",
+            );
+          const valueField = fieldWithin(sourceField.item, node.valuePath ?? "");
+          if (!valueField)
+            issue(
+              [...nodePath, "valuePath"],
+              `Unknown chart value path: ${node.valuePath}`,
+            );
+          else if (!["number", "money"].includes(valueField.type))
+            issue(
+              [...nodePath, "valuePath"],
+              "chart valuePath must resolve to a number or money field",
+            );
+        }
         if (node.type === "table" && node.footerRow) {
           if (node.footerRow.length > (node.tableColumns?.length ?? 0))
             issue(
@@ -1430,6 +1503,11 @@ const validatedTemplateDefinitionSchema =
       issue(
         ["document"],
         "Templates cannot contain more than 20 qr nodes",
+      );
+    if (chartNodeCount > 10)
+      issue(
+        ["document"],
+        "Templates cannot contain more than 10 chart nodes",
       );
 
     const componentVisiting = new Set<string>();

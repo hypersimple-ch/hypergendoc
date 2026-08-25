@@ -48,6 +48,7 @@ Every node is strict: properties not listed for its node type are rejected.
 | `richText`             | text/rich-text `source` path            | —                                                          |
 | `image`                | image `source` path or owned-image UUID | `fit`, `altPath`, inline `caption`, `heightMm`, `widthMm` (1–190), `cornerRadiusMm` (0–20), `frame` (`color`: one of the five style color tokens; `weight`: `"thin"` \| `"normal"` \| `"thick"`) |
 | `qr`                   | literal `value` or text `source` path (exactly one)        | `sizeMm` (10–80), `errorCorrection` (`"low"` \| `"medium"` \| `"quartile"` \| `"high"`), inline `caption` |
+| `chart`                | list `source`, item `labelPath` (text/number), item `valuePath` (number/money) | `title`, `orientation` (`"vertical"` \| `"horizontal"`), `color` (style token), `currency`, `maxItems` (2–30), inline `caption` |
 | `list`                 | list `source` or `itemsPath`            | `ordered`                                                  |
 | `table`                | list `source`, non-empty `tableColumns` | column format/currency/alignment, `footerRow`, `zebraRows` |
 | `repeat`               | list `source`, non-empty `children`     | `as` alias, `groupBy` (item scalar path), `groupHeader`    |
@@ -78,6 +79,10 @@ Table columns bind to fields of the list item and may declare display `format`, 
 ### Page-master watermarks
 
 A page master may declare an optional `watermark`: `{ text (1–64 characters), tone ("neutral" | "warning" | "danger"), opacity ("subtle" | "normal" | "strong") }`. Tones map to fixed renderer-owned colors and opacity presets to fixed values; free-form colors and images are not accepted. The watermark renders centered at a fixed −30° rotation behind content on every physical page flowed from pages using that master.
+
+### Charts
+
+The `chart` node renders a deterministic inline SVG bar chart over a list field: `labelPath` (item text/number) names each bar, `valuePath` (item number/money) sizes it. Values scale to the largest entry; all-zero data renders zero-length bars against a unit scale. Entries beyond `maxItems` (default 12) are dropped, value labels use locale-aware number/money formatting, and a document may contain at most 10 chart nodes.
 
 ## Starter templates
 
