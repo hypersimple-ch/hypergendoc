@@ -7,6 +7,7 @@ const messages: Record<AppErrorCode, string> = {
   unauthenticated: "Authentication required",
   forbidden: "Access denied",
   not_found: "Not found",
+  gone: "This link is no longer valid",
   conflict: "Conflict",
   validation_failed: "Invalid request",
   rate_limited: "Too many requests",

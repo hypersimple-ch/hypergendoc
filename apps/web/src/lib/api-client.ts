@@ -5,6 +5,7 @@ const errorCodes = new Set<ContractErrorCode>([
   "unauthenticated",
   "forbidden",
   "not_found",
+  "gone",
   "conflict",
   "validation_failed",
   "rate_limited",
