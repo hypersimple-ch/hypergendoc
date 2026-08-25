@@ -492,6 +492,187 @@ describe("template document renderer", () => {
     expect(html).toContain("<p>Design:10</p>");
   });
 
+  it("evaluates min, max, round, abs, ceil, floor, concat, and if", () => {
+    const richDefinition: TemplateDefinition = {
+      ...definition,
+      fields: {
+        ...definition.fields,
+        amounts: {
+          type: "list",
+          label: "Amounts",
+          item: { type: "money", label: "Amount", currency: "CHF" },
+        },
+        when: { type: "date", label: "When" },
+      },
+      computed: {
+        total: { op: "sum", path: "items", valuePath: "amount" },
+        smallest: { op: "min", path: "amounts" },
+        largest: {
+          op: "max",
+          operands: [
+            { op: "path", path: "total" },
+            { op: "value", value: 10 },
+          ],
+        },
+        rounded: {
+          op: "round",
+          value: { op: "divide", left: { op: "path", path: "total" }, right: { op: "value", value: 3 } },
+          decimals: 2,
+        },
+        magnitude: {
+          op: "abs",
+          value: {
+            op: "subtract",
+            left: { op: "value", value: 3 },
+            right: { op: "path", path: "total" },
+          },
+        },
+        ceiling: { op: "ceil", value: { op: "count", path: "items" } },
+        floored: { op: "floor", value: { op: "value", value: 4.7 } },
+        halfUp: { op: "round", value: { op: "value", value: 2.5 } },
+        halfDown: { op: "round", value: { op: "value", value: -2.5 } },
+        label: {
+          op: "concat",
+          parts: [
+            { op: "value", value: "Total " },
+            { op: "path", path: "total" },
+          ],
+        },
+        tier: {
+          op: "if",
+          condition: { path: "total", operator: "gt", value: 1000 },
+          then: { op: "value", value: "high" },
+          otherwise: { op: "value", value: "low" },
+        },
+      },
+      document: [
+        {
+          type: "page",
+          master: "standard",
+          children: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "binding", path: "smallest", format: "number" },
+                { type: "text", value: "/" },
+                { type: "binding", path: "largest", format: "number" },
+                { type: "text", value: "/" },
+                { type: "binding", path: "rounded", format: "number" },
+                { type: "text", value: "/" },
+                { type: "binding", path: "magnitude", format: "number" },
+                { type: "text", value: "/" },
+                { type: "binding", path: "ceiling", format: "number" },
+                { type: "text", value: "/" },
+                { type: "binding", path: "floored", format: "number" },
+                { type: "text", value: "/" },
+                { type: "binding", path: "halfUp", format: "number" },
+                { type: "text", value: "/" },
+                { type: "binding", path: "halfDown", format: "number" },
+                { type: "text", value: "/" },
+                { type: "binding", path: "label" },
+                { type: "text", value: "/" },
+                { type: "binding", path: "tier" },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const html = renderTemplateDocumentHtml({
+      definition: richDefinition,
+      data: {
+        title: "Rich",
+        when: "2026-01-31",
+        items: [
+          { name: "Design", amount: 1200 },
+          { name: "Delivery", amount: 300 },
+        ],
+        amounts: [12.5, 3, 40],
+      },
+      style,
+    });
+    // min over a numeric list; max of operands
+    expect(html).toContain("3/1,500");
+    // 1500 / 3 rounds to 500 with 2 decimals
+    expect(html).toContain("/500/");
+    // |3 - 1500| = 1497; ceil(count)=2; floor(4.7)=4
+    expect(html).toContain("/1,497/2/4/");
+    // round(2.5) -> 3 and round(-2.5) -> -3 (half away from zero)
+    expect(html).toContain("/3/-3/");
+    expect(html).toContain("/Total 1,500/");
+    expect(html).toContain("Total 1,500/high");
+    // A list path that resolves to no numeric entries at runtime degrades to
+    // an empty value instead of failing or emitting NaN.
+    const degraded = renderTemplateDocumentHtml({
+      definition: richDefinition,
+      data: {
+        title: "Rich",
+        when: "2026-01-31",
+        items: [{ name: "Design", amount: 1200 }],
+        amounts: [],
+      },
+      style,
+    });
+    expect(degraded).not.toMatch(/\bNaN\b/);
+    expect(degraded).not.toContain("Infinity");
+    expect(degraded).toContain("/1,200/");
+  });
+
+  it("formats concat numbers with the active locale", () => {
+    const concatDefinition: TemplateDefinition = {
+      ...definition,
+      computed: {
+        total: { op: "sum", path: "items", valuePath: "amount" },
+        label: {
+          op: "concat",
+          parts: [
+            { op: "value", value: "Sum: " },
+            { op: "path", path: "total" },
+            { op: "value", value: " CHF" },
+          ],
+        },
+      },
+      document: [
+        {
+          type: "page",
+          master: "standard",
+          children: [
+            {
+              type: "paragraph",
+              content: [{ type: "binding", path: "label" }],
+            },
+          ],
+        },
+      ],
+    };
+    const data = {
+      title: "Concat",
+      items: [{ name: "Design", amount: 1200500.25 }],
+    };
+    expect(
+      renderTemplateDocumentHtml({
+        definition: { ...concatDefinition, locale: "en-US" },
+        data,
+        style,
+      }),
+    ).toContain("Sum: 1,200,500.25 CHF");
+    expect(
+      renderTemplateDocumentHtml({
+        definition: { ...concatDefinition, locale: "de-CH" },
+        data,
+        style,
+      }),
+    // Apostrophes arrive HTML-escaped in the rendered document.
+    ).toContain("Sum: 1&#39;200&#39;500.25 CHF");
+    expect(
+      renderTemplateDocumentHtml({
+        definition: { ...concatDefinition, locale: "fr-FR" },
+        data,
+        style,
+      }),
+    ).toMatch(/Sum: 1\u202f200\u202f500,25 CHF/u);
+  });
+
   it("rejects missing required business-specific data without leaking details", () => {
     expect(() =>
       renderTemplateDocumentHtml({ definition, data: {}, style }),

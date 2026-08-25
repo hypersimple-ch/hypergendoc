@@ -199,6 +199,27 @@ export const TemplateFieldDefinitionSchema: z.ZodType<TemplateFieldDefinition> =
       }),
   );
 
+export const TemplateConditionSchema = z
+  .object({
+    path: TemplatePathSchema,
+    operator: z
+      .enum([
+        "truthy",
+        "falsy",
+        "equals",
+        "notEquals",
+        "contains",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+      ])
+      .default("truthy"),
+    value: TemplateValueSchema.optional(),
+  })
+  .strict();
+export type TemplateCondition = z.infer<typeof TemplateConditionSchema>;
+
 export type TemplateExpression =
   | { readonly op: "value"; readonly value: TemplateValue }
   | { readonly op: "path"; readonly path: string }
@@ -220,7 +241,30 @@ export type TemplateExpression =
       readonly op: "dateAdd";
       readonly path: string;
       readonly days: TemplateExpression;
+    }
+  | { readonly op: "min" | "max"; readonly path: string }
+  | {
+      readonly op: "min" | "max";
+      readonly operands: readonly TemplateExpression[];
+    }
+  | {
+      readonly op: "round";
+      readonly value: TemplateExpression;
+      readonly decimals?: number | undefined;
+    }
+  | { readonly op: "abs" | "ceil" | "floor"; readonly value: TemplateExpression }
+  | { readonly op: "concat"; readonly parts: readonly TemplateExpression[] }
+  | {
+      readonly op: "if";
+      readonly condition: TemplateCondition;
+      readonly then: TemplateExpression;
+      readonly otherwise: TemplateExpression;
     };
+
+const ExpressionOperandsSchema = z
+  .array(z.lazy(() => TemplateExpressionSchema))
+  .min(2)
+  .max(8);
 
 export const TemplateExpressionSchema: z.ZodType<TemplateExpression> = z.lazy(
   () =>
@@ -249,29 +293,36 @@ export const TemplateExpressionSchema: z.ZodType<TemplateExpression> = z.lazy(
           days: TemplateExpressionSchema,
         })
         .strict(),
+      z
+        .object({ op: z.enum(["min", "max"]), path: TemplatePathSchema })
+        .strict(),
+      z
+        .object({ op: z.enum(["min", "max"]), operands: ExpressionOperandsSchema })
+        .strict(),
+      z
+        .object({
+          op: z.literal("round"),
+          value: TemplateExpressionSchema,
+          decimals: z.number().int().min(0).max(6).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          op: z.enum(["abs", "ceil", "floor"]),
+          value: TemplateExpressionSchema,
+        })
+        .strict(),
+      z.object({ op: z.literal("concat"), parts: ExpressionOperandsSchema }).strict(),
+      z
+        .object({
+          op: z.literal("if"),
+          condition: TemplateConditionSchema,
+          then: TemplateExpressionSchema,
+          otherwise: TemplateExpressionSchema,
+        })
+        .strict(),
     ]),
 );
-
-export const TemplateConditionSchema = z
-  .object({
-    path: TemplatePathSchema,
-    operator: z
-      .enum([
-        "truthy",
-        "falsy",
-        "equals",
-        "notEquals",
-        "contains",
-        "gt",
-        "gte",
-        "lt",
-        "lte",
-      ])
-      .default("truthy"),
-    value: TemplateValueSchema.optional(),
-  })
-  .strict();
-export type TemplateCondition = z.infer<typeof TemplateConditionSchema>;
 
 export const TemplateInlineSchema = z
   .object({
@@ -695,11 +746,35 @@ const validatedTemplateDefinitionSchema =
         case "divide":
         case "sum":
         case "count":
+        case "min":
+        case "max":
+        case "round":
+        case "abs":
+        case "ceil":
+        case "floor":
           field = { type: "number", label: name };
           break;
         case "dateAdd":
           field = { type: "date", label: name };
           break;
+        case "concat":
+          field = { type: "text", label: name };
+          break;
+        case "if": {
+          const thenType = inferExpressionType(
+            expression.then,
+            new Set([...seen, name]),
+          );
+          const otherwiseType = inferExpressionType(
+            expression.otherwise,
+            new Set([...seen, name]),
+          );
+          field =
+            thenType !== undefined && thenType === otherwiseType
+              ? { type: thenType, label: name }
+              : undefined;
+          break;
+        }
         case "value":
           field =
             typeof expression.value === "number"
@@ -748,45 +823,140 @@ const validatedTemplateDefinitionSchema =
             ...expressionPaths(expression.left),
             ...expressionPaths(expression.right),
           ];
+        case "min":
+        case "max":
+          return "path" in expression
+            ? [expression.path]
+            : (expression.operands ?? []).flatMap(expressionPaths);
+        case "round":
+        case "abs":
+        case "ceil":
+        case "floor":
+          return expressionPaths(expression.value);
+        case "concat":
+          return expression.parts.flatMap(expressionPaths);
+        case "if":
+          return [
+            expression.condition.path,
+            ...expressionPaths(expression.then),
+            ...expressionPaths(expression.otherwise),
+          ];
+      }
+    };
+    /** Resolves a path against declared fields, then computed values. */
+    const pathType = (
+      path: string,
+      stack: ReadonlySet<string>,
+    ): "number" | "text" | "date" | "boolean" | undefined => {
+      const field = fieldAt(path);
+      if (field) {
+        switch (field.type) {
+          case "number":
+          case "money":
+            return "number";
+          case "text":
+          case "richText":
+            return "text";
+          case "date":
+            return "date";
+          case "boolean":
+            return "boolean";
+          default:
+            return undefined;
+        }
+      }
+      const root = path.split(".")[0]!;
+      const dependency = computed[root];
+      if (!dependency || stack.has(root)) return undefined;
+      return inferExpressionType(dependency, new Set([...stack, root]));
+    };
+    /** Inferred scalar type of an expression; `undefined` means unknown. */
+    const inferExpressionType = (
+      expression: TemplateExpression,
+      stack: ReadonlySet<string> = new Set(),
+    ): "number" | "text" | "date" | "boolean" | undefined => {
+      switch (expression.op) {
+        case "value":
+          return typeof expression.value === "number"
+            ? "number"
+            : typeof expression.value === "string"
+              ? "text"
+              : typeof expression.value === "boolean"
+                ? "boolean"
+                : undefined;
+        case "path":
+          return pathType(expression.path, stack);
+        case "add":
+        case "subtract":
+        case "multiply":
+        case "divide":
+          return inferExpressionType(expression.left, stack) === "number" &&
+            inferExpressionType(expression.right, stack) === "number"
+            ? "number"
+            : undefined;
+        case "sum": {
+          const source = fieldAt(expression.path);
+          if (source?.type !== "list" || !source.item) return undefined;
+          const item = expression.valuePath
+            ? fieldWithin(source.item, expression.valuePath)
+            : source.item;
+          return item && ["number", "money"].includes(item.type)
+            ? "number"
+            : undefined;
+        }
+        case "count":
+          return fieldAt(expression.path)?.type === "list" ? "number" : undefined;
+        case "dateAdd":
+          return pathType(expression.path, stack) === "date" &&
+            inferExpressionType(expression.days, stack) === "number"
+            ? "date"
+            : undefined;
+        case "min":
+        case "max": {
+          if ("path" in expression) {
+            const source = fieldAt(expression.path);
+            return source?.type === "list" &&
+              source.item &&
+              ["number", "money"].includes(source.item.type)
+              ? "number"
+              : undefined;
+          }
+          return (expression.operands ?? []).every(
+            (operand) => inferExpressionType(operand, stack) === "number",
+          )
+            ? "number"
+            : undefined;
+        }
+        case "round":
+        case "abs":
+        case "ceil":
+        case "floor":
+          return inferExpressionType(expression.value, stack) === "number"
+            ? "number"
+            : undefined;
+        case "concat":
+          return expression.parts.every((part) => {
+            const type = inferExpressionType(part, stack);
+            return type === "text" || type === "number" || type === "date";
+          })
+            ? "text"
+            : undefined;
+        case "if": {
+          const thenType = inferExpressionType(expression.then, stack);
+          const otherwiseType = inferExpressionType(
+            expression.otherwise,
+            stack,
+          );
+          return thenType !== undefined && thenType === otherwiseType
+            ? thenType
+            : undefined;
+        }
       }
     };
     const numericExpression = (
       expression: TemplateExpression,
       stack = new Set<string>(),
-    ): boolean => {
-      switch (expression.op) {
-        case "value":
-          return typeof expression.value === "number";
-        case "path": {
-          const root = expression.path.split(".")[0]!;
-          const field = fieldAt(expression.path);
-          if (field) return ["number", "money"].includes(field.type);
-          const dependency = computed[root];
-          if (!dependency || stack.has(root)) return false;
-          return numericExpression(dependency, new Set([...stack, root]));
-        }
-        case "add":
-        case "subtract":
-        case "multiply":
-        case "divide":
-          return (
-            numericExpression(expression.left, stack) &&
-            numericExpression(expression.right, stack)
-          );
-        case "sum": {
-          const source = fieldAt(expression.path);
-          if (source?.type !== "list" || !source.item) return false;
-          const item = expression.valuePath
-            ? fieldWithin(source.item, expression.valuePath)
-            : source.item;
-          return Boolean(item && ["number", "money"].includes(item.type));
-        }
-        case "count":
-          return fieldAt(expression.path)?.type === "list";
-        case "dateAdd":
-          return false;
-      }
-    };
+    ): boolean => inferExpressionType(expression, stack) === "number";
     const computedGraph = new Map<string, string[]>();
     for (const [name, expression] of Object.entries(computed)) {
       const paths = expressionPaths(expression);
@@ -836,6 +1006,64 @@ const validatedTemplateDefinitionSchema =
         const source = fieldAt(expression.path);
         if (source && source.type !== "date")
           issue(["computed", name], "dateAdd requires a date path");
+      }
+      if (
+        (expression.op === "min" || expression.op === "max") &&
+        "path" in expression
+      ) {
+        const source = fieldAt(expression.path);
+        if (
+          source &&
+          (source.type !== "list" ||
+            !source.item ||
+            !["number", "money"].includes(source.item.type))
+        )
+          issue(
+            ["computed", name],
+            `${expression.op} requires a numeric list path`,
+          );
+      }
+      if (
+        (expression.op === "min" || expression.op === "max") &&
+        "operands" in expression
+      )
+        for (const [index, operand] of expression.operands.entries())
+          if (!numericExpression(operand, new Set([name])))
+            issue(
+              ["computed", name, "operands", index],
+              `${expression.op} operands must be numeric`,
+            );
+      if (
+        (expression.op === "round" ||
+          expression.op === "abs" ||
+          expression.op === "ceil" ||
+          expression.op === "floor") &&
+        !numericExpression(expression.value, new Set([name]))
+      )
+        issue(
+          ["computed", name],
+          `${expression.op} requires a numeric value`,
+        );
+      if (expression.op === "concat")
+        for (const [index, part] of expression.parts.entries()) {
+          const type = inferExpressionType(part, new Set([name]));
+          if (type !== "text" && type !== "number" && type !== "date")
+            issue(
+              ["computed", name, "parts", index],
+              "concat parts must be text, number, money, or date values",
+            );
+        }
+      if (expression.op === "if") {
+        const thenType = inferExpressionType(expression.then, new Set([name]));
+        const otherwiseType = inferExpressionType(
+          expression.otherwise,
+          new Set([name]),
+        );
+        if (!thenType || thenType !== otherwiseType)
+          issue(
+            ["computed", name],
+            "if branches must agree on a single value type",
+          );
       }
     }
     const visiting = new Set<string>();

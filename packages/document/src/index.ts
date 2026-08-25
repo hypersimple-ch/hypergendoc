@@ -708,9 +708,16 @@ export function templateImageIds(
   return [...ids].sort();
 }
 
+/** Rounds half away from zero for stable money-like semantics. */
+const roundHalfAwayFromZero = (value: number, decimals: number): number => {
+  const factor = 10 ** decimals;
+  return (Math.round(Math.abs(value) * factor) / factor) * Math.sign(value);
+};
+
 const evaluateTemplateExpression = (
   expression: TemplateExpression,
   root: Readonly<Record<string, TemplateValue>>,
+  locale: string,
 ): TemplateValue => {
   if (expression.op === "value") return expression.value;
   if (expression.op === "path")
@@ -737,20 +744,96 @@ const evaluateTemplateExpression = (
   }
   if (expression.op === "dateAdd") {
     const value = templatePath(root, {}, expression.path);
-    const days = evaluateTemplateExpression(expression.days, root);
+    const days = evaluateTemplateExpression(expression.days, root, locale);
     if (typeof value !== "string" || typeof days !== "number") return null;
     const date = new Date(`${value}T00:00:00.000Z`);
     if (Number.isNaN(date.valueOf())) return null;
     date.setUTCDate(date.getUTCDate() + days);
     return date.toISOString().slice(0, 10);
   }
-  const left = evaluateTemplateExpression(expression.left, root);
-  const right = evaluateTemplateExpression(expression.right, root);
+  switch (expression.op) {
+    case "min":
+    case "max": {
+      let candidates: readonly TemplateValue[];
+      if ("path" in expression) {
+        const values = templatePath(root, {}, expression.path);
+        candidates = Array.isArray(values)
+          ? (values as readonly TemplateValue[]).filter(
+              (entry) =>
+                typeof entry === "number" && Number.isFinite(entry),
+            )
+          : [];
+      } else {
+        candidates = expression.operands.map((operand) =>
+          evaluateTemplateExpression(operand, root, locale),
+        );
+      }
+      if (
+        !candidates.length ||
+        !candidates.every(
+          (entry) => typeof entry === "number" && Number.isFinite(entry),
+        )
+      )
+        return null;
+      const numbers = candidates as readonly number[];
+      const result =
+        expression.op === "min" ? Math.min(...numbers) : Math.max(...numbers);
+      return Number.isFinite(result) ? result : null;
+    }
+    case "abs": {
+      const value = evaluateTemplateExpression(expression.value, root, locale);
+      return typeof value === "number" && Number.isFinite(value)
+        ? Math.abs(value)
+        : null;
+    }
+    case "ceil": {
+      const value = evaluateTemplateExpression(expression.value, root, locale);
+      return typeof value === "number" && Number.isFinite(value)
+        ? Math.ceil(value)
+        : null;
+    }
+    case "floor": {
+      const value = evaluateTemplateExpression(expression.value, root, locale);
+      return typeof value === "number" && Number.isFinite(value)
+        ? Math.floor(value)
+        : null;
+    }
+    case "round": {
+      const value = evaluateTemplateExpression(expression.value, root, locale);
+      if (typeof value !== "number" || !Number.isFinite(value)) return null;
+      // Half-away-from-zero keeps money-like rounding symmetric (2.5 -> 3,
+      // -2.5 -> -3), unlike Math.round's half-up behavior.
+      return roundHalfAwayFromZero(value, expression.decimals ?? 0);
+    }
+    case "concat": {
+      return expression.parts
+        .map((part) => {
+          const value = evaluateTemplateExpression(part, root, locale);
+          if (typeof value === "number") {
+            if (!Number.isFinite(value)) return "";
+            return new Intl.NumberFormat(locale).format(value);
+          }
+          return typeof value === "string" ? value : "";
+        })
+        .join("");
+    }
+    case "if": {
+      const branch = templateConditionMatches(expression.condition, root, {})
+        ? expression.then
+        : expression.otherwise;
+      return evaluateTemplateExpression(branch, root, locale);
+    }
+  }
+  const left = evaluateTemplateExpression(expression.left, root, locale);
+  const right = evaluateTemplateExpression(expression.right, root, locale);
   if (typeof left !== "number" || typeof right !== "number") return null;
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return null;
   if (expression.op === "add") return left + right;
   if (expression.op === "subtract") return left - right;
   if (expression.op === "multiply") return left * right;
-  return right === 0 ? null : left / right;
+  if (right === 0) return null;
+  const quotient = left / right;
+  return Number.isFinite(quotient) ? quotient : null;
 };
 
 const templateConditionMatches = (
@@ -848,6 +931,7 @@ export function renderTemplateDocumentHtml(
   const renderDate = new Date();
   const baseData = validateTemplateData(input.definition, input.data);
   const root: Record<string, TemplateValue> = { ...baseData };
+  const locale = input.locale ?? input.definition.locale ?? "en";
   const computed = input.definition.computed ?? {};
   const computedDependencies = (expression: TemplateExpression): string[] => {
     switch (expression.op) {
@@ -870,6 +954,24 @@ export function renderTemplateDocumentHtml(
           ...computedDependencies(expression.left),
           ...computedDependencies(expression.right),
         ];
+      case "min":
+      case "max":
+        return "path" in expression
+          ? [expression.path.split(".")[0]!]
+          : expression.operands.flatMap(computedDependencies);
+      case "round":
+      case "abs":
+      case "ceil":
+      case "floor":
+        return computedDependencies(expression.value);
+      case "concat":
+        return expression.parts.flatMap(computedDependencies);
+      case "if":
+        return [
+          expression.condition.path.split(".")[0]!,
+          ...computedDependencies(expression.then),
+          ...computedDependencies(expression.otherwise),
+        ];
     }
   };
   const resolvedComputed = new Set<string>();
@@ -881,12 +983,11 @@ export function renderTemplateDocumentHtml(
     resolvingComputed.add(key);
     for (const dependency of computedDependencies(expression))
       if (computed[dependency]) resolveComputed(dependency);
-    root[key] = evaluateTemplateExpression(expression, root);
+    root[key] = evaluateTemplateExpression(expression, root, locale);
     resolvingComputed.delete(key);
     resolvedComputed.add(key);
   };
   for (const key of Object.keys(computed)) resolveComputed(key);
-  const locale = input.locale ?? input.definition.locale ?? "en";
   const imageAssets = new Map<
     string,
     NonNullable<ResolvedTemplateAssets>["images"][number]
