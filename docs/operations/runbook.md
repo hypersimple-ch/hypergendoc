@@ -39,10 +39,16 @@ Run exactly one `server` replica while authentication and MCP rate-limit counter
 `SIGNUP_MODE` controls public registration and is enforced server-side, not just in the UI:
 
 - `open` (default): anyone may register. Email verification is still mandatory before any workspace access.
-- `invite`: public sign-ups are rejected by the server with `403`. New users must be provisioned by an operator.
-- `closed`: identical enforcement to `invite` today; kept as an explicit value so a deployment can document that registration is permanently closed. It is reserved for a future token-gated sign-up flow.
+- `invite`: public sign-ups are rejected by the server with `403`. New members join through owner-sent email invitations instead.
+- `closed`: no new members at all. Public registration and invitation acceptance both return errors; existing accounts keep working.
 
-Bootstrap procedure for an agency deployment: deploy once with `SIGNUP_MODE=open`, register and verify the owner account through `/register` and `/setup`, then set `SIGNUP_MODE=closed` (or `invite`) and redeploy through Dokploy. Workspace member invitations require the invited user to already exist as a verified account; they never create accounts, so closing registration does not affect inviting verified users into an existing workspace.
+## Email invitations
+
+Workspace owners invite members by email from the Members page (`POST /api/workspaces/current/invites`). The server stores only the SHA-256 hash of a single-use token, returns the raw link exactly once, and queues a durable `workspace_invite` mail job with an `APP_ORIGIN/invite/<token>` acceptance link. If SMTP is unavailable, the queued-mail recovery flow delivers or dead-letters it like any other mail kind.
+
+The public endpoints `GET /api/invites/<token>` and `POST /api/invites/<token>/accept` are rate-limited (10 requests per minute per IP). Acceptance creates a pre-verified account with the invited role in one transaction and marks the invite accepted; expired or already-used tokens answer `410 gone`. Pending invitations expire after seven days and can be revoked by owners. In `closed` mode acceptance is rejected, so switch to `invite` (not `closed`) before inviting new members.
+
+Bootstrap procedure for an agency deployment: deploy once with `SIGNUP_MODE=open`, register and verify the owner account through `/register` and `/setup`, then set `SIGNUP_MODE=invite` (or `closed`) and redeploy through Dokploy. Additional owners then invite teammates directly from the Members page without operator involvement.
 
 ## Browser security headers
 
