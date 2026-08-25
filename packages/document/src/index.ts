@@ -391,10 +391,12 @@ const pageMarginBoxes = (
   mutedColor: string,
   fontFamily: string,
   context: Readonly<{ title?: string; dateText: string }>,
+  logoOccupiesLeft = false,
 ) => {
   if (!value.enabled) return "";
   return (["left", "center", "right"] as const)
     .map((alignment) => {
+      if (alignment === "left" && logoOccupiesLeft) return "";
       const text = value[`${alignment}Text`];
       const pageNumber = alignment === "right" && value.showPageNumber;
       const expanded = headerFooterTokens(text, context)
@@ -407,6 +409,40 @@ const pageMarginBoxes = (
       return `@${position}-${alignment} { color: ${mutedColor}; content: ${expanded || '""'}${pageNumber ? ' " " counter(page)' : ""}; font-family: ${fontFamily}; font-size: 8pt; }`;
     })
     .join("\n");
+};
+
+const runningLogoLayers = (
+  style: StyleDefinition,
+  logo: ResolvedStyleAssets["logo"] | null | undefined,
+): string => {
+  if (!logo) return "";
+  const uri = `url("data:${logo.contentType};base64,${logo.base64}")`;
+  const layers: string[] = [];
+  if (style.header.enabled && style.header.showLogo)
+    layers.push(`${uri} no-repeat ${style.page.marginLeftMm}mm 5mm / auto 9mm`);
+  if (style.footer.enabled && style.footer.showLogo)
+    layers.push(
+      `${uri} no-repeat left ${style.page.marginLeftMm}mm bottom 5mm / auto 9mm`,
+    );
+  return layers.join(", ");
+};
+
+const runningLogoCss = (
+  style: StyleDefinition,
+  logo: ResolvedStyleAssets["logo"] | null | undefined,
+) => {
+  const layers = runningLogoLayers(style, logo);
+  return layers
+    ? `.running-logos { position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; background: ${layers}; }\n`
+    : "";
+};
+
+const runningLogoMarkup = (
+  style: StyleDefinition,
+  logo: ResolvedStyleAssets["logo"] | null | undefined,
+) => {
+  const layers = runningLogoLayers(style, logo);
+  return layers ? '<div class="running-logos" aria-hidden="true"></div>' : "";
 };
 
 /** Builds deterministic, standalone, server-owned HTML without external assets. */
@@ -500,12 +536,12 @@ h1 { font-size: ${(style.bodySizePt * style.headingScale).toFixed(2)}pt; } h2 { 
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <style>
 ${fontFaceCss ? `${fontFaceCss}\n` : ""}@page { size: ${pageSize}; margin: ${style.page.marginTopMm}mm ${style.page.marginRightMm}mm ${style.page.marginBottomMm}mm ${style.page.marginLeftMm}mm;
-${pageMarginBoxes("top", style.header, style.colors.muted, bodyFont, marginContext)}
-${pageMarginBoxes("bottom", style.footer, style.colors.muted, bodyFont, marginContext)}
+${pageMarginBoxes("top", style.header, style.colors.muted, bodyFont, marginContext, Boolean(logo && style.header.enabled && style.header.showLogo))}
+${pageMarginBoxes("bottom", style.footer, style.colors.muted, bodyFont, marginContext, Boolean(logo && style.footer.enabled && style.footer.showLogo))}
 }
 * { box-sizing: border-box; }
 body { ${bodyCss} margin: 0; }
-${logo ? ".document-logo { display: block; max-height: 24mm; max-width: 100%; object-fit: contain; margin: 0 0 6mm; }\n" : ""}main { min-height: 100%; }
+${logo ? ".document-logo { display: block; max-height: 24mm; max-width: 100%; object-fit: contain; margin: 0 0 6mm; }\n" : ""}${runningLogoCss(style, logo)}main { min-height: 100%; }
 ${textStylesCss}
 em { font-style: ${emphasis}; } a { color: ${style.colors.primary}; } blockquote { border-left: 3px solid ${style.colors.accent}; color: ${style.colors.muted}; margin-left: 0; padding-left: 1em; }
 h1, h2, h3, h4, h5, h6, caption { break-after: avoid-page; } table, blockquote, pre { break-inside: avoid-page; } thead { display: table-header-group; } tr { break-inside: avoid-page; }
@@ -513,7 +549,7 @@ table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid ${s
 </style>
 </head>
 <body>
-<main>${logoMarkup}${fragment}</main>
+${runningLogoMarkup(style, logo)}<main>${logoMarkup}${fragment}</main>
 </body>
 </html>`;
 }
@@ -1501,10 +1537,34 @@ export function renderTemplateDocumentHtml(
       // Fixed-position so the mark repeats behind content on every physical
       // page flowed from pages using this master. Renderer-owned tone colors
       // and opacity presets only: no free-form colors, no images.
+      const logoAsset = input.styleAssets?.logo ?? null;
+      const runningLogoLayers: string[] = [];
+      if (logoAsset) {
+        const logoUri = `url("data:${logoAsset.contentType};base64,${logoAsset.base64}")`;
+        if (
+          input.style.header.enabled &&
+          input.style.header.showLogo &&
+          !master.hideHeader
+        )
+          runningLogoLayers.push(
+            `${logoUri} no-repeat left ${margins[3]}mm top 5mm / auto 9mm`,
+          );
+        if (
+          input.style.footer.enabled &&
+          input.style.footer.showLogo &&
+          !master.hideFooter
+        )
+          runningLogoLayers.push(
+            `${logoUri} no-repeat left ${margins[3]}mm bottom 5mm / auto 9mm`,
+          );
+      }
+      const runningLogo = runningLogoLayers.length
+        ? `.template-master-${name}{position:relative;}.template-master-${name}::after{content:"";position:fixed;top:0;left:0;right:0;bottom:0;pointer-events:none;background:${runningLogoLayers.join(", ")};}`
+        : "";
       const watermark = master.watermark
         ? `.template-master-${name}{isolation:isolate;}.template-master-${name}::before{content:"${escapeCssString(master.watermark.text)}";position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);font-size:48pt;font-weight:700;white-space:nowrap;color:${watermarkTones[master.watermark.tone]};opacity:${watermarkOpacities[master.watermark.opacity]};z-index:-1;pointer-events:none;-webkit-print-color-adjust:exact;print-color-adjust:exact;}`
         : "";
-      return `@page ${name}{size:${input.style.page.size === "A4" ? "A4" : "letter"}${landscape ? " landscape" : ""};margin:${margins.map((value) => `${value}mm`).join(" ")};${hiddenMarginBoxes}}${master.startOn === "recto" ? `.template-master-${name}{break-before:right;}` : master.startOn === "verso" ? `.template-master-${name}{break-before:left;}` : ""}.template-master-${name}{page:${name};width:${contentWidthMm}mm;min-height:${contentHeightMm}mm;background:${templateColor(master.background, input.style)};color:${templateColor(master.color, input.style)};}${edge}${watermark}`;
+      return `@page ${name}{size:${input.style.page.size === "A4" ? "A4" : "letter"}${landscape ? " landscape" : ""};margin:${margins.map((value) => `${value}mm`).join(" ")};${hiddenMarginBoxes}}${master.startOn === "recto" ? `.template-master-${name}{break-before:right;}` : master.startOn === "verso" ? `.template-master-${name}{break-before:left;}` : ""}.template-master-${name}{page:${name};width:${contentWidthMm}mm;min-height:${contentHeightMm}mm;background:${templateColor(master.background, input.style)};color:${templateColor(master.color, input.style)};}${edge}${watermark}${runningLogo}`;
     })
     .join("\n");
   const templateCss = `${masterCss}
@@ -1535,6 +1595,7 @@ export function renderTemplateDocumentHtml(
     },
   );
   shell = shell.replace(/<img class="document-logo"[^>]*>/, "");
+  shell = shell.replace(/<div class="running-logos"[^>]*><\/div>/, "");
   shell = shell.replace(`<p>${placeholder}</p>`, body);
   shell = shell.replace("</style>", `${templateCss}</style>`);
   shell = shell.replace(

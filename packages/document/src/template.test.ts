@@ -1216,6 +1216,65 @@ describe("template document renderer", () => {
   });
 });
 
+describe("running logo", () => {
+  const logoId = "44444444-4444-4444-8444-444444444444";
+  const base64 = "bG9nbw==";
+  const logoStyle = {
+    ...style,
+    assetVersion: 1 as const,
+    logoObjectId: logoId,
+    header: { ...style.header, enabled: true, showLogo: true },
+  };
+  const bytes = Buffer.from("logo");
+  const assets = {
+    logo: {
+      id: logoId,
+      contentType: "image/png",
+      byteSize: bytes.length,
+      sha256: createHash("sha256").update(bytes.toString("binary")).digest("hex"),
+      base64: bytes.toString("base64"),
+    },
+    fonts: [],
+  };
+  const logoDefinition: TemplateDefinition = {
+    ...definition,
+    document: [
+      {
+        type: "page",
+        master: "standard",
+        children: [{ type: "paragraph", content: [{ type: "text", value: "Hello" }] }],
+      },
+    ],
+  };
+
+  it("stamps the logo on masters with a visible header and skips hidden ones", () => {
+    const html = renderTemplateDocumentHtml({
+      definition: logoDefinition,
+      data: { title: "T" },
+      style: logoStyle,
+      styleAssets: assets,
+      templateAssets: { images: [] },
+    });
+    expect(html).toContain(".template-master-standard::after");
+    expect(html).toContain(
+      `url("data:image/png;base64,${base64}") no-repeat left 18mm top 5mm / auto 9mm`,
+    );
+    expect(html).not.toContain('<div class="running-logos"');
+
+    const hidden = renderTemplateDocumentHtml({
+      definition: {
+        ...logoDefinition,
+        pageMasters: { standard: { hideHeader: true } },
+      },
+      data: { title: "T" },
+      style: logoStyle,
+      styleAssets: assets,
+      templateAssets: { images: [] },
+    });
+    expect(hidden).not.toContain("::after");
+  });
+});
+
 describe("chart nodes", () => {
   const chartData = {
     title: "Chart",

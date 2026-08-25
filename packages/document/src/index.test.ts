@@ -461,6 +461,32 @@ describe("document content foundation", () => {
     expect(output).not.toContain("@bottom-left");
   });
 
+  it("renders a running logo overlay only when the style asks for it", () => {
+    const assets = { logo: asset(logoId, "image/png", "logo"), fonts: [] };
+    const logoStyle = {
+      ...style,
+      assetVersion: 1 as const,
+      logoObjectId: logoId,
+      header: { ...style.header, enabled: true, showLogo: true },
+    };
+    const withLogo = renderDocumentHtml("# Heading", "markdown", logoStyle, assets);
+    expect(withLogo).toContain('<div class="running-logos" aria-hidden="true"></div>');
+    expect(withLogo).toContain(
+      'background: url("data:image/png;base64,bG9nbw==") no-repeat 18mm 5mm / auto 9mm',
+    );
+    // The logo occupies the header's left box: the left text is suppressed.
+    expect(withLogo).not.toContain('@top-left { color:');
+    // Without the style opt-in nothing changes.
+    const without = renderDocumentHtml("# Heading", "markdown", style, assets);
+    expect(without).not.toContain("running-logos");
+    // No logo asset, no overlay even when enabled.
+    const noAsset = renderDocumentHtml("# Heading", "markdown", {
+      ...logoStyle,
+      logoObjectId: null,
+    });
+    expect(noAsset).not.toContain("running-logos");
+  });
+
   it("renders verified v1 logo and custom fonts with deterministic data URLs", () => {
     const assets = {
       logo: asset(logoId, "image/png", "logo"),

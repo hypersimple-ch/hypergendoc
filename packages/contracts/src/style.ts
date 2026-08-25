@@ -87,6 +87,7 @@ const HeaderFooterSchema = z
     centerText: z.string().max(120).default(""),
     rightText: z.string().max(120).default(""),
     showPageNumber: z.boolean().default(false),
+    showLogo: z.boolean().optional(),
   })
   .strict();
 
