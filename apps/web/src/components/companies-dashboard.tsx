@@ -65,7 +65,7 @@ export function CompaniesDashboard() {
   return (
     <div className="space-y-5 text-foreground">
       <PageHeader
-        eyebrow="Operations console"
+        eyebrow="Content"
         title="Companies"
         description="Maintain the company scope used by workspace styles and documents."
         aside={

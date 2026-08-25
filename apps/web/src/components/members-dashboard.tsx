@@ -57,8 +57,8 @@ export function MembersDashboard() {
   return (
     <>
       <PageHeader
-        eyebrow="Governance / members"
-        title="Members & permissions"
+        eyebrow="Administration"
+        title="Members"
         description="Manage workspace access with server-enforced roles. Changes apply to every request immediately."
         aside={
           <div className="flex items-center gap-2 text-sm text-muted-foreground">

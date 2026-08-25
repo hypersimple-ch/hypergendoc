@@ -99,8 +99,8 @@ export function TemplatesDashboard() {
   return (
     <div className="space-y-5 text-foreground">
       <PageHeader
-        eyebrow="Template library"
-        title="Reusable document structures."
+        eyebrow="Content"
+        title="Templates"
         description="Create governed, versioned templates that turn validated form data into consistent documents."
         aside={
           <div className="hidden items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground sm:flex">

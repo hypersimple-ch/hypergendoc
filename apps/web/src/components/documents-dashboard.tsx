@@ -70,7 +70,7 @@ export function DocumentsDashboard() {
   return (
     <div className="space-y-5 text-foreground">
       <PageHeader
-        eyebrow="Operations console"
+        eyebrow="Content"
         title="Documents"
         description={
           <>

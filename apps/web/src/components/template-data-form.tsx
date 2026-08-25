@@ -507,8 +507,8 @@ export function TemplateDocumentCreate() {
   return (
     <div className="space-y-5 text-foreground">
       <PageHeader
-        eyebrow="Document creation"
-        title="Create from a template."
+        eyebrow="Content"
+        title="New document"
         description="Choose an active template, complete its validated fields, and create a governed document revision."
         aside={
           <Link

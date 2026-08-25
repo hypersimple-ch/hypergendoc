@@ -209,7 +209,7 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
   return (
     <div className="space-y-5 text-foreground">
       <PageHeader
-        eyebrow="Template studio"
+        eyebrow="Content"
         title={detail.value?.template.name ?? "Template"}
         description="Edit the typed definition, test it with representative data, and save immutable versions."
         aside={
