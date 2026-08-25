@@ -17,20 +17,28 @@ import type {
   DocumentDetail,
 } from "@hypergendoc/contracts";
 
-const { activeCompany, document, documentCommit, documents, revertDocument } =
-  vi.hoisted(() => ({
-    activeCompany: vi.fn(),
-    document: vi.fn(),
-    documentCommit: vi.fn(),
-    documents: vi.fn(),
-    revertDocument: vi.fn(),
-  }));
+const {
+  activeCompany,
+  document,
+  documentCommit,
+  documents,
+  duplicateDocument,
+  revertDocument,
+} = vi.hoisted(() => ({
+  activeCompany: vi.fn(),
+  document: vi.fn(),
+  documentCommit: vi.fn(),
+  documents: vi.fn(),
+  duplicateDocument: vi.fn(),
+  revertDocument: vi.fn(),
+}));
 
 vi.mock("../lib/dashboard-api", () => ({
   dashboardApi: {
     document,
     documentCommit,
     documents,
+    duplicateDocument,
     revertDocument,
     pdfUrl: (id: string) => `/api/documents/${id}/pdf`,
     sourceUrl: (id: string, commitSha: string) =>
@@ -187,7 +195,7 @@ describe("DocumentsDashboard", () => {
       screen.getByRole("link", { name: "Create document" }),
     ).toHaveAttribute("href", "/workspace/documents/new");
     expect(
-      screen.getByRole("link", { name: "Set up document creation" }),
+      screen.getByRole("link", { name: "New document" }),
     ).toBeVisible();
     fireEvent.change(
       screen.getByLabelText("Search documents in this company"),
@@ -345,5 +353,26 @@ describe("DocumentsDashboard", () => {
 
     expect(await screen.findByText("No matching documents")).toBeVisible();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("duplicates a document and confirms the copy after refreshing the list", async () => {
+    mockDashboard();
+    duplicateDocument.mockResolvedValue({
+      ...baseDocument,
+      id: "99999999-9999-4999-8999-999999999999",
+      title: "Proposal (copy)",
+    });
+
+    render(<DocumentsDashboard />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Duplicate" }));
+
+    expect(
+      await screen.findByText("Document duplicated as an independent copy"),
+    ).toBeVisible();
+    expect(duplicateDocument).toHaveBeenCalledWith(documentId);
+    await waitFor(() =>
+      expect(documents.mock.calls.length).toBeGreaterThan(1),
+    );
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { FileText, History } from "lucide-react";
+import { Copy, FileText, History } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Document, DocumentCommit } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
@@ -42,6 +42,8 @@ export function DocumentsDashboard() {
   );
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Document>();
+  const [notice, setNotice] = useState<{ text: string; error: boolean }>();
+  const [duplicatingId, setDuplicatingId] = useState<string>();
   const historyTrigger = useRef<HTMLButtonElement | null>(null);
   const visible = useMemo(
     () =>
@@ -67,6 +69,21 @@ export function DocumentsDashboard() {
     setSelected(document);
   }
 
+  async function duplicateDocument(document: Document) {
+    if (duplicatingId) return;
+    setDuplicatingId(document.id);
+    setNotice(undefined);
+    try {
+      await dashboardApi.duplicateDocument(document.id);
+      data.reload();
+      setNotice({ text: "Document duplicated as an independent copy", error: false });
+    } catch (reason) {
+      setNotice({ text: safeError(reason), error: true });
+    } finally {
+      setDuplicatingId(undefined);
+    }
+  }
+
   return (
     <div className="space-y-5 text-foreground">
       <PageHeader
@@ -90,7 +107,7 @@ export function DocumentsDashboard() {
               className="button inline-flex items-center"
               href="/workspace/documents/new"
             >
-              Set up document creation
+              New document
             </Link>
           </div>
         }
@@ -147,17 +164,26 @@ export function DocumentsDashboard() {
           ) : activeCompany ? (
             <>
               <LoadState {...data} />
+              {notice && !selected && (
+                <div className="mb-4" aria-live="polite" aria-atomic="true">
+                  <Status kind={notice.error ? "error" : "success"}>
+                    {notice.text}
+                  </Status>
+                </div>
+              )}
               {data.value &&
                 (visible.length ? (
                   <Table
                     caption={`Documents for ${activeCompany.name}`}
-                    columns={["Document", "Updated", "History"]}
+                    columns={["Document", "Updated", "Actions"]}
                   >
                     {visible.map((document) => (
                       <DocumentRow
                         key={document.id}
                         document={document}
+                        duplicating={duplicatingId === document.id}
                         onOpen={openHistory}
+                        onDuplicate={() => void duplicateDocument(document)}
                       />
                     ))}
                   </Table>
@@ -231,10 +257,14 @@ function NoMatchingDocuments({ onClear }: { onClear: () => void }) {
 }
 function DocumentRow({
   document,
+  duplicating,
   onOpen,
+  onDuplicate,
 }: {
   document: Document;
+  duplicating: boolean;
   onOpen: (document: Document, trigger: HTMLButtonElement) => void;
+  onDuplicate: () => void;
 }) {
   return (
     <tr className="hover:bg-muted/50">
@@ -247,14 +277,20 @@ function DocumentRow({
       <td data-label="Updated" className="text-sm text-muted-foreground">
         {new Date(document.updatedAt).toLocaleDateString()}
       </td>
-      <td data-label="History">
-        <Button
-          tone="quiet"
-          onClick={(event) => onOpen(document, event.currentTarget)}
-        >
-          <History className="size-3.5" aria-hidden="true" />
-          View history
-        </Button>
+      <td data-label="Actions">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            tone="quiet"
+            onClick={(event) => onOpen(document, event.currentTarget)}
+          >
+            <History className="size-3.5" aria-hidden="true" />
+            View history
+          </Button>
+          <Button tone="quiet" disabled={duplicating} onClick={onDuplicate}>
+            <Copy className="size-3.5" aria-hidden="true" />
+            {duplicating ? "Duplicating…" : "Duplicate"}
+          </Button>
+        </div>
       </td>
     </tr>
   );
