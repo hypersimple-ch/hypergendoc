@@ -254,15 +254,16 @@ tbody tr:hover {
   background: var(--muted);
 }
 
-@media (max-width: 980px) and (min-width: 701px) {
+@media (max-width: 980px) and (min-width: 48.0625rem) {
   .workspace-shell {
     grid-template-columns: 13.25rem minmax(0, 1fr);
   }
   .workspace-brand__name {
     font-size: 1rem;
   }
+  /* Keep the block display from the base rule so text-overflow: ellipsis
+   * keeps working; flex containers silently drop the ellipsis. */
   .workspace-context__identity {
-    display: flex;
     max-width: 7rem;
   }
 }
@@ -282,7 +283,9 @@ tbody tr:hover {
   }
 }
 
-@media (max-width: 700px) {
+/* Collapse the sidebar into the disclosure pattern at <= 48rem (768px):
+ * content gets the full width and navigation moves into the sheet. */
+@media (max-width: 48rem) {
   .workspace-shell {
     display: block;
     min-height: 100vh;
@@ -311,7 +314,8 @@ tbody tr:hover {
     display: block;
   }
   .workspace-context__identity {
-    display: none;
+    margin-left: 0.75rem;
+    max-width: none;
   }
   .workspace-context__company {
     grid-template-columns: minmax(0, 1fr);
@@ -363,5 +367,13 @@ tbody tr:hover {
   }
   .panel-heading {
     align-items: flex-start;
+  }
+}
+
+/* Below 24rem the top bar cannot fit the identity label next to the
+ * wordmark without crowding the controls; hide it there only. */
+@media (max-width: 24rem) {
+  .workspace-context__identity {
+    display: none;
   }
 }
