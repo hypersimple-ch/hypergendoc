@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { RegisterForm } from "../../../components/auth-forms";
+import { RegisterForm, SignupPolicyHint } from "../../../components/auth-forms";
 
 export const metadata: Metadata = { title: "Create account" };
 export default function RegisterPage() {
@@ -17,6 +17,7 @@ export default function RegisterPage() {
           Create the first owner account for your agency workspace.
         </p>
       </header>
+      <SignupPolicyHint />
       <RegisterForm />
       <p className="auth-form-footer text-center text-sm text-muted-foreground">
         Already have an account?{" "}

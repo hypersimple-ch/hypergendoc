@@ -1,9 +1,14 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ShieldCheck, UserPlus, Users } from "lucide-react";
+import { Copy, MailPlus, ShieldCheck, Users } from "lucide-react";
 import type { WorkspaceRole } from "@hypergendoc/contracts";
-import { dashboardApi, type Member } from "../lib/dashboard-api";
+import {
+  dashboardApi,
+  type InviteCreation,
+  type Member,
+  type WorkspaceInvite,
+} from "../lib/dashboard-api";
 import { useActiveCompany } from "./active-company";
 import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
 import {
@@ -26,11 +31,15 @@ export function MembersDashboard() {
     reload,
   } = useActiveCompany();
   const members = useLoaded(dashboardApi.members);
+  const invites = useLoaded(dashboardApi.invites);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<WorkspaceRole>("member");
   const [notice, setNotice] = useState<Notice>();
   const [inviting, setInviting] = useState(false);
   const invitingRef = useRef(false);
+  const [oneTime, setOneTime] = useState<InviteCreation>();
+  const [copied, setCopied] = useState(false);
+  const [revoking, setRevoking] = useState<string>();
   const owner = context?.role === "owner";
   const ownerCount =
     members.value?.filter((member) => member.role === "owner").length ?? 0;
@@ -41,16 +50,47 @@ export function MembersDashboard() {
     invitingRef.current = true;
     setInviting(true);
     setNotice(undefined);
+    setOneTime(undefined);
+    setCopied(false);
     try {
-      await dashboardApi.invite(email, role);
+      const creation = await dashboardApi.createInvite(email, role);
       setEmail("");
-      setNotice({ kind: "success", text: "Member added." });
-      members.reload();
+      setOneTime(creation);
+      setNotice({
+        kind: "success",
+        text: `An invitation email for ${creation.invite.email} was queued.`,
+      });
+      invites.reload();
     } catch (error) {
       setNotice({ kind: "error", text: safeError(error) });
     } finally {
       invitingRef.current = false;
       setInviting(false);
+    }
+  }
+
+  async function copyLink() {
+    if (!oneTime) return;
+    try {
+      await navigator.clipboard.writeText(oneTime.link);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  async function revoke(inviteId: string) {
+    if (revoking) return;
+    setRevoking(inviteId);
+    setNotice(undefined);
+    try {
+      await dashboardApi.revokeInvite(inviteId);
+      setNotice({ kind: "success", text: "Invitation revoked." });
+      invites.reload();
+    } catch (error) {
+      setNotice({ kind: "error", text: safeError(error) });
+    } finally {
+      setRevoking(undefined);
     }
   }
 
@@ -124,14 +164,14 @@ export function MembersDashboard() {
         <section className="panel dashboard-panel border border-border bg-card p-4 sm:p-5">
           <div className="mb-4 flex items-start gap-3">
             <div className="shrink-0 self-start rounded-md bg-accent p-2 text-accent-foreground">
-              <UserPlus className="size-4" aria-hidden="true" />
+              <MailPlus className="size-4" aria-hidden="true" />
             </div>
             <div>
               <p className="eyebrow">Access control</p>
-              <h2 className="text-base font-semibold">Add a verified member</h2>
+              <h2 className="text-base font-semibold">Invite by email</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Add an already registered, verified user. Email invitation links
-                are not available in this MVP.
+                Send an email invitation. The invited person creates their
+                account through a single-use link; no verification needed.
               </p>
             </div>
           </div>
@@ -139,7 +179,7 @@ export function MembersDashboard() {
             className="grid gap-4 md:grid-cols-[minmax(0,1fr)_12rem_auto] md:items-end"
             onSubmit={(event) => void invite(event)}
           >
-            <FormField label="Verified account email">
+            <FormField label="Invite email">
               <Input
                 type="email"
                 value={email}
@@ -162,9 +202,29 @@ export function MembersDashboard() {
               </select>
             </FormField>
             <Button type="submit" disabled={inviting}>
-              {inviting ? "Adding…" : "Add verified member"}
+              {inviting ? "Sending…" : "Send invite"}
             </Button>
           </form>
+          {oneTime && (
+            <div className="mt-4 rounded-md border border-border bg-background p-3">
+              <Status kind="warning">
+                This invite link appears only once. Copy it now.
+              </Status>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                <input
+                  className="input font-mono text-xs"
+                  readOnly
+                  value={oneTime.link}
+                  aria-label="One-time invite link"
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+                <Button type="button" tone="quiet" onClick={() => void copyLink()}>
+                  <Copy className="size-4" aria-hidden="true" />
+                  {copied ? "Copied" : "Copy link"}
+                </Button>
+              </div>
+            </div>
+          )}
         </section>
       )}
 
@@ -219,7 +279,69 @@ export function MembersDashboard() {
             </Empty>
           ))}
       </section>
+
+      {owner && (
+        <section className="panel dashboard-panel border border-border bg-card p-4 sm:p-5">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="eyebrow">Pending</p>
+              <h2 className="text-base font-semibold">Open invitations</h2>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Each invitation expires after seven days and can be revoked once.
+            </p>
+          </div>
+          <LoadState {...invites} />
+          {invites.value &&
+            (invites.value.length ? (
+              <Table caption="Open invitations" columns={["Email", "Role", "Expires", "Actions"]}>
+                {invites.value.map((invite) => (
+                  <InviteRow
+                    key={invite.id}
+                    invite={invite}
+                    revoking={revoking === invite.id}
+                    onRevoke={() => void revoke(invite.id)}
+                  />
+                ))}
+              </Table>
+            ) : (
+              <Empty>
+                <strong>No open invitations</strong>
+                <p>Invitations appear here until they are accepted or revoked.</p>
+              </Empty>
+            ))}
+        </section>
+      )}
     </>
+  );
+}
+
+function InviteRow({
+  invite,
+  revoking,
+  onRevoke,
+}: {
+  invite: WorkspaceInvite;
+  revoking: boolean;
+  onRevoke: () => void;
+}) {
+  return (
+    <tr>
+      <td data-label="Email" className="font-medium">
+        {invite.email}
+      </td>
+      <td data-label="Role">{invite.role === "owner" ? "Owner" : "Member"}</td>
+      <td data-label="Expires">
+        <time dateTime={invite.expiresAt}>
+          {new Date(invite.expiresAt).toLocaleDateString()}
+        </time>
+      </td>
+      <td data-label="Actions">
+        <Button tone="quiet" disabled={revoking} onClick={onRevoke}>
+          {revoking ? "Revoking…" : "Revoke"}
+        </Button>
+      </td>
+    </tr>
   );
 }
 

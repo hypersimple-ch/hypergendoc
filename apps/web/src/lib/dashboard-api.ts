@@ -48,6 +48,14 @@ export type WorkspaceAuditPage = {
   nextOffset?: number;
 };
 export type CredentialCreation = { credential: McpCredential; token: string };
+export type WorkspaceInvite = {
+  id: string;
+  email: string;
+  role: WorkspaceRole;
+  createdAt: string;
+  expiresAt: string;
+};
+export type InviteCreation = { invite: WorkspaceInvite; link: string };
 export type StyleDetail = { style: Style; versions: StyleVersion[] };
 export type StyleCreation = { style: Style; version: StyleVersion };
 export type TemplateDetail = {
@@ -96,10 +104,20 @@ export const dashboardApi = {
     items<Member>(
       await api<Collection<Member>>("/api/workspaces/current/members"),
     ),
-  invite: (email: string, role: WorkspaceRole) =>
-    api<Member>("/api/workspaces/current/members", {
+  createInvite: (email: string, role: WorkspaceRole) =>
+    api<InviteCreation>("/api/workspaces/current/invites", {
       method: "POST",
       body: { email, role },
+    }),
+  invites: async () =>
+    items<WorkspaceInvite>(
+      await api<Collection<WorkspaceInvite>>(
+        "/api/workspaces/current/invites",
+      ),
+    ),
+  revokeInvite: (inviteId: string) =>
+    api<void>(`/api/workspaces/current/invites/${inviteId}`, {
+      method: "DELETE",
     }),
   changeMemberRole: (userId: string, role: WorkspaceRole) =>
     api<Member>(`/api/workspaces/current/members/${userId}`, {
