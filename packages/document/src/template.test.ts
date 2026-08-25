@@ -768,6 +768,74 @@ describe("template document renderer", () => {
     expect(html).toContain('data-page-content-mm="249.4"');
   });
 
+  it("swaps page dimensions for landscape masters in a mixed document", () => {
+    const wideTable = {
+      type: "table",
+      source: "items",
+      tableColumns: [
+        { header: "Name", path: "name" },
+        { header: "Amount", path: "amount", format: "money" },
+        { header: "Extra", path: "amount", format: "number" },
+        { header: "Again", path: "amount", format: "number" },
+      ],
+    } as const;
+    const mixed: TemplateDefinition = {
+      ...definition,
+      pageMasters: {
+        portrait: {},
+        landscape: { orientation: "landscape" },
+      },
+      document: [
+        {
+          type: "page",
+          master: "portrait",
+          children: [
+            {
+              type: "heading",
+              level: 1,
+              content: [{ type: "binding", path: "title" }],
+            },
+          ],
+        },
+        {
+          type: "page",
+          master: "landscape",
+          children: [wideTable],
+        },
+      ],
+    };
+    const html = renderTemplateDocumentHtml({
+      definition: mixed,
+      data: {
+        title: "Mixed",
+        items: [{ name: "Design", amount: 120 }],
+      },
+      style,
+    });
+    // Portrait A4 keeps 297mm height minus the 18mm style margins.
+    expect(html).toContain('data-page-content-mm="261"');
+    expect(html).toContain('data-page-width-mm="174"');
+    // Landscape swaps width/height for content measurement and the @page rule.
+    expect(html).toContain("@page landscape{size:A4 landscape;");
+    const landscapeSection = html.slice(
+      html.indexOf("template-master-landscape"),
+    );
+    expect(landscapeSection).toContain('data-page-content-mm="174"');
+    expect(landscapeSection).toContain('data-page-width-mm="261"');
+    // Letter sizes swap too, using the letter long/short sides.
+    const letterHtml = renderTemplateDocumentHtml({
+      definition: mixed,
+      data: {
+        title: "Mixed",
+        items: [{ name: "Design", amount: 120 }],
+      },
+      style: { ...style, page: { ...style.page, size: "LETTER" } },
+    });
+    expect(letterHtml).toContain("@page landscape{size:letter landscape;");
+    expect(letterHtml).toContain('data-page-content-mm="243.4"');
+    expect(letterHtml).toContain('data-page-width-mm="179.9"');
+  });
+
   it("rejects undeclared values nested inside typed objects", () => {
     expect(() =>
       renderTemplateDocumentHtml({

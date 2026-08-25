@@ -84,7 +84,7 @@ When a style header or footer is enabled and `showPageNumber` is set, the page c
 
 ## Page masters and pagination
 
-At least one page master is required. A master may override style margins, background/text color, running-header/footer visibility, recto/verso start behavior, an inside/outside edge bar, and a watermark. Named `@page` rules remain renderer-owned; identifier restrictions prevent CSS injection. Logical page nodes establish page boundaries, content flows onto additional physical pages, explicit `pageBreak` nodes are honored, and the renderer fills TOC page numbers from measured physical flow. PDF output uses tagged-PDF and outline generation.
+At least one page master is required. A master may override style margins, background/text color, running-header/footer visibility, recto/verso start behavior, an inside/outside edge bar, a watermark, and page `orientation` (`"portrait"` by default; `"landscape"` swaps the style's long and short page sides in both the emitted `@page` rule and the measured pagination math). Named `@page` rules remain renderer-owned; identifier restrictions prevent CSS injection. Logical page nodes establish page boundaries, content flows onto additional physical pages, explicit `pageBreak` nodes are honored, and the renderer fills TOC page numbers from measured physical flow. PDF output uses tagged-PDF and outline generation.
 
 ## Minimal example
 

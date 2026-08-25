@@ -155,6 +155,21 @@ describe("template contracts", () => {
     ).toBe(false);
   });
 
+  it("accepts portrait/landscape page-master orientation and rejects other values", () => {
+    expect(
+      TemplateDefinitionSchema.safeParse({
+        ...valid,
+        pageMasters: { cover: { orientation: "landscape" }, standard: {} },
+      }).success,
+    ).toBe(true);
+    expect(
+      TemplateDefinitionSchema.safeParse({
+        ...valid,
+        pageMasters: { cover: { orientation: "seascape" }, standard: {} },
+      }).success,
+    ).toBe(false);
+  });
+
   it("validates page-master watermarks strictly", () => {
     const masterFor = (watermark: unknown) => ({
       ...valid,

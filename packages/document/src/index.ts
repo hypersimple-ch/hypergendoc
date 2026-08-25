@@ -1070,8 +1070,13 @@ export function renderTemplateDocumentHtml(
                 fail("invalid_body");
               const pageMaster =
                 input.definition.pageMasters[master] ?? fail("invalid_body");
-              const pageHeightMm = input.style.page.size === "A4" ? 297 : 279.4;
-              const pageWidthMm = input.style.page.size === "A4" ? 210 : 215.9;
+              const landscape = pageMaster.orientation === "landscape";
+              const longSideMm =
+                input.style.page.size === "A4" ? 297 : 279.4;
+              const shortSideMm =
+                input.style.page.size === "A4" ? 210 : 215.9;
+              const pageHeightMm = landscape ? shortSideMm : longSideMm;
+              const pageWidthMm = landscape ? longSideMm : shortSideMm;
               const contentHeightMm = Math.max(
                 1,
                 Math.round(
@@ -1244,8 +1249,11 @@ export function renderTemplateDocumentHtml(
         master.marginBottomMm ?? input.style.page.marginBottomMm,
         master.marginLeftMm ?? input.style.page.marginLeftMm,
       ];
-      const pageHeightMm = input.style.page.size === "A4" ? 297 : 279.4;
-      const pageWidthMm = input.style.page.size === "A4" ? 210 : 215.9;
+      const landscape = master.orientation === "landscape";
+      const longSideMm = input.style.page.size === "A4" ? 297 : 279.4;
+      const shortSideMm = input.style.page.size === "A4" ? 210 : 215.9;
+      const pageHeightMm = landscape ? shortSideMm : longSideMm;
+      const pageWidthMm = landscape ? longSideMm : shortSideMm;
       const contentHeightMm = Math.max(
         1,
         Math.round((pageHeightMm - margins[0] - margins[2]) * 1_000) / 1_000,
@@ -1281,7 +1289,7 @@ export function renderTemplateDocumentHtml(
       const watermark = master.watermark
         ? `.template-master-${name}{isolation:isolate;}.template-master-${name}::before{content:"${escapeCssString(master.watermark.text)}";position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);font-size:48pt;font-weight:700;white-space:nowrap;color:${watermarkTones[master.watermark.tone]};opacity:${watermarkOpacities[master.watermark.opacity]};z-index:-1;pointer-events:none;-webkit-print-color-adjust:exact;print-color-adjust:exact;}`
         : "";
-      return `@page ${name}{size:${input.style.page.size === "A4" ? "A4" : "letter"};margin:${margins.map((value) => `${value}mm`).join(" ")};${hiddenMarginBoxes}}${master.startOn === "recto" ? `.template-master-${name}{break-before:right;}` : master.startOn === "verso" ? `.template-master-${name}{break-before:left;}` : ""}.template-master-${name}{page:${name};width:${contentWidthMm}mm;min-height:${contentHeightMm}mm;background:${templateColor(master.background, input.style)};color:${templateColor(master.color, input.style)};}${edge}${watermark}`;
+      return `@page ${name}{size:${input.style.page.size === "A4" ? "A4" : "letter"}${landscape ? " landscape" : ""};margin:${margins.map((value) => `${value}mm`).join(" ")};${hiddenMarginBoxes}}${master.startOn === "recto" ? `.template-master-${name}{break-before:right;}` : master.startOn === "verso" ? `.template-master-${name}{break-before:left;}` : ""}.template-master-${name}{page:${name};width:${contentWidthMm}mm;min-height:${contentHeightMm}mm;background:${templateColor(master.background, input.style)};color:${templateColor(master.color, input.style)};}${edge}${watermark}`;
     })
     .join("\n");
   const templateCss = `${masterCss}

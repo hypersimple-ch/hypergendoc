@@ -603,6 +603,7 @@ export const WatermarkOpacitySchema = z.enum(["subtle", "normal", "strong"]);
 
 export const TemplatePageMasterSchema = z
   .object({
+    orientation: z.enum(["portrait", "landscape"]).optional(),
     background: ColorReferenceSchema.optional(),
     watermark: z
       .object({
