@@ -6,9 +6,24 @@ import {
 import { z } from "zod";
 import type { FastifyPluginAsync } from "fastify";
 import type { PreauthenticatedActor } from "../auth/request-actor.js";
+import { listStarterTemplates, starterTemplates } from "./starter-catalog.js";
 import type { createTemplateService } from "./service.js";
 
 const ActivateSchema = z.object({ versionId: z.string().uuid() }).strict();
+
+const FromStarterSchema = z
+  .object({
+    companyId: z.string().uuid(),
+    starterId: z.enum(
+      starterTemplates.map((starter) => starter.id) as [
+        string,
+        ...string[],
+      ],
+    ),
+    name: z.string().trim().min(1).max(120),
+    styleVersionId: z.string().uuid(),
+  })
+  .strict();
 
 export interface TemplateRouteDependencies {
   readonly actorFor: PreauthenticatedActor;
@@ -19,6 +34,20 @@ export function createTemplateRoutes(
   deps: TemplateRouteDependencies,
 ): FastifyPluginAsync {
   return (app) => {
+    // Static server-owned catalog; the actor check keeps the auth boundary
+    // consistent with every other protected API route.
+    app.get("/api/starter-templates", (request) => {
+      deps.actorFor(request);
+      return listStarterTemplates();
+    });
+
+    app.post("/api/templates/from-starter", async (request, reply) => {
+      const input = FromStarterSchema.parse(request.body);
+      return reply
+        .code(201)
+        .send(await deps.service.createFromStarter(deps.actorFor(request), input));
+    });
+
     app.get<{ Params: { companyId: string } }>(
       "/api/companies/:companyId/templates",
       async (request) =>
@@ -87,6 +116,19 @@ export function createTemplateRoutes(
           request.params.templateId,
           RenderTemplatePreviewInputSchema.parse(request.body),
         ),
+    );
+
+    app.post<{ Params: { templateId: string } }>(
+      "/api/templates/:templateId/duplicate",
+      async (request, reply) =>
+        reply
+          .code(201)
+          .send(
+            await deps.service.duplicate(
+              deps.actorFor(request),
+              request.params.templateId,
+            ),
+          ),
     );
 
     return Promise.resolve();

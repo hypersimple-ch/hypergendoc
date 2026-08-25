@@ -8,6 +8,7 @@ import type { AuditWriter } from "../../platform/audit.js";
 import { auditActor } from "../../platform/audit.js";
 import type { AgentActor, HumanActor } from "../auth/actors.js";
 import { AuthorizationError } from "../memberships/service.js";
+import { findStarterTemplate } from "./starter-catalog.js";
 
 export interface TemplatePreviewRenderer {
   renderPreview(
@@ -37,6 +38,11 @@ export interface TemplateRepository {
   ): Promise<boolean>;
   list(workspaceId: string, companyId: string): Promise<readonly Template[]>;
   find(workspaceId: string, templateId: string): Promise<Template | undefined>;
+  /** Like `find`, but skips archived templates. */
+  findActive(
+    workspaceId: string,
+    templateId: string,
+  ): Promise<Template | undefined>;
   listVersions(
     workspaceId: string,
     templateId: string,
@@ -68,6 +74,14 @@ export interface TemplateRepository {
 }
 
 export type TemplateOperations = Omit<TemplateRepository, "transaction">;
+
+const isUniqueTemplateNameViolation = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  "code" in error &&
+  error.code === "23505" &&
+  "constraint" in error &&
+  error.constraint === "template_company_name_unique";
 
 export function createTemplateService(deps: {
   repository: TemplateRepository;
@@ -201,14 +215,7 @@ export function createTemplateService(deps: {
           },
         );
       } catch (error) {
-        if (
-          typeof error === "object" &&
-          error !== null &&
-          "code" in error &&
-          error.code === "23505" &&
-          "constraint" in error &&
-          error.constraint === "template_company_name_unique"
-        )
+        if (isUniqueTemplateNameViolation(error))
           throw new AuthorizationError("conflict");
         throw error;
       }
@@ -251,6 +258,117 @@ export function createTemplateService(deps: {
         },
       );
       return version;
+    },
+
+    /**
+     * Creates a template owned by the active company from a curated starter.
+     * The initial version is left INACTIVE (no active-version pointer) until
+     * the caller activates it explicitly.
+     */
+    async createFromStarter(
+      actor: HumanActor,
+      input: Readonly<{
+        companyId: string;
+        starterId: string;
+        name: string;
+        styleVersionId: string;
+      }>,
+    ): Promise<{ template: Template; version: TemplateVersion }> {
+      const starter = findStarterTemplate(input.starterId);
+      if (!starter) throw new AuthorizationError("not_found");
+      const definition: TemplateDefinition = {
+        ...structuredClone(starter.definition),
+        styleVersionId: input.styleVersionId,
+      };
+      if (
+        !(await deps.repository.companyExists(
+          actor.workspaceId,
+          input.companyId,
+        ))
+      )
+        throw new AuthorizationError("not_found");
+      try {
+        return await deps.repository.transaction(
+          async (repository, writer) => {
+            await validateDefinition(
+              repository,
+              actor,
+              input.companyId,
+              definition,
+            );
+            const template = await repository.createTemplate({
+              workspaceId: actor.workspaceId,
+              companyId: input.companyId,
+              name: input.name,
+            });
+            // Deliberately no setActiveVersion: the first starter version is
+            // created INACTIVE so owners review it before activation.
+            const version = await repository.createNextVersion({
+              workspaceId: actor.workspaceId,
+              companyId: input.companyId,
+              templateId: template.id,
+              definition,
+              createdByUserId: actor.userId,
+            });
+            await emit(
+              writer,
+              actor,
+              "template.created_from_starter",
+              template.id,
+            );
+            return { template, version };
+          },
+        );
+      } catch (error) {
+        if (isUniqueTemplateNameViolation(error))
+          throw new AuthorizationError("conflict");
+        throw error;
+      }
+    },
+
+    /** Copies the source's latest version definition into a new template. */
+    async duplicate(
+      actor: HumanActor,
+      templateId: string,
+    ): Promise<{ template: Template; version: TemplateVersion }> {
+      const source = await deps.repository.findActive(
+        actor.workspaceId,
+        templateId,
+      );
+      if (!source) throw new AuthorizationError("not_found");
+      const versions = await deps.repository.listVersions(
+        actor.workspaceId,
+        templateId,
+      );
+      const latest = versions[versions.length - 1];
+      if (!latest) throw new AuthorizationError("not_found");
+      const name = `${source.name} (copy)`.slice(0, 120);
+      try {
+        return await deps.repository.transaction(
+          async (repository, writer) => {
+            const template = await repository.createTemplate({
+              workspaceId: actor.workspaceId,
+              companyId: source.companyId,
+              name,
+            });
+            // Re-pinned to the same styleVersionId inside the copied
+            // definition; the copy's first version stays INACTIVE.
+            const version = await repository.createNextVersion({
+              workspaceId: actor.workspaceId,
+              companyId: source.companyId,
+              templateId: template.id,
+              definition: latest.definition,
+              createdByUserId: actor.userId,
+            });
+            await emit(writer, actor, "template.duplicated", template.id);
+            return { template, version };
+          },
+        );
+      } catch (error) {
+        if (isUniqueTemplateNameViolation(error))
+          throw new AuthorizationError("conflict");
+        throw error;
+      }
     },
 
     async activate(

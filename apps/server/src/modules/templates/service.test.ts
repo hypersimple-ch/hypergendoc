@@ -8,6 +8,7 @@ import type {
 import type { AuditWriter } from "../../platform/audit.js";
 import type { HumanActor } from "../auth/actors.js";
 import { createTemplateService, type TemplateRepository } from "./service.js";
+import { starterTemplates } from "./starter-catalog.js";
 
 const actor: HumanActor = {
   userId: "user",
@@ -53,6 +54,10 @@ function repository(): TemplateRepository {
         ? templates.filter((item) => item.companyId === companyId)
         : [],
     find: async (workspaceId, templateId) =>
+      workspaceId === "workspace-a"
+        ? templates.find((item) => item.id === templateId)
+        : undefined,
+    findActive: async (workspaceId, templateId) =>
       workspaceId === "workspace-a"
         ? templates.find((item) => item.id === templateId)
         : undefined,
@@ -104,7 +109,12 @@ function repository(): TemplateRepository {
   return result;
 }
 
-const audit: AuditWriter = { write: async () => undefined };
+const auditEvents: string[] = [];
+const audit: AuditWriter = {
+  write: async (event) => {
+    auditEvents.push(event.event);
+  },
+};
 
 describe("template versions", () => {
   it("creates immutable versions and atomically activates the requested version", async () => {
@@ -158,6 +168,123 @@ describe("template versions", () => {
       data: { title: "Aperçu" },
     });
     expect(seen[0]?.locale).toBe("fr-FR");
+  });
+
+  it("creates an inactive template version from a starter with a pinned style", async () => {
+    const service = createTemplateService({
+      repository: repository(),
+      renderer: { renderPreview: async () => ({ url: "preview" }) },
+    });
+    auditEvents.length = 0;
+    const result = await service.createFromStarter(actor, {
+      companyId: "company-a",
+      starterId: "one-page-proposal",
+      name: "Client proposals",
+      styleVersionId,
+    });
+    expect(result.template.activeVersionId).toBeNull();
+    expect(result.version.version).toBe(1);
+    const starterDefinition = starterTemplates.find(
+      (starter) => starter.id === "one-page-proposal",
+    )!.definition;
+    expect(result.version.definition).toEqual({
+      ...starterDefinition,
+      styleVersionId,
+    });
+    expect(auditEvents).toEqual(["template.created_from_starter"]);
+    // The catalog stays untouched by instantiation.
+    expect(starterTemplates[0]!.definition.styleVersionId).toBe(
+      "00000000-0000-4000-8000-000000000000",
+    );
+    expect(starterTemplates[0]!.id).toBe("one-page-proposal");
+  });
+
+  it("rejects unknown starters and foreign style pins for from-starter creation", async () => {
+    const service = createTemplateService({
+      repository: repository(),
+      renderer: { renderPreview: async () => ({ url: "preview" }) },
+    });
+    await expect(
+      service.createFromStarter(actor, {
+        companyId: "company-a",
+        starterId: "does-not-exist",
+        name: "Nope",
+        styleVersionId,
+      }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    await expect(
+      service.createFromStarter(actor, {
+        companyId: "company-a",
+        starterId: "one-page-proposal",
+        name: "Foreign style",
+        styleVersionId: "00000000-0000-4000-8000-000000000002",
+      }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    await expect(
+      service.createFromStarter(actor, {
+        companyId: "company-b",
+        starterId: "one-page-proposal",
+        name: "Foreign company",
+        styleVersionId,
+      }),
+    ).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("duplicates the latest version into a new inactive template copy", async () => {
+    const service = createTemplateService({
+      repository: repository(),
+      renderer: { renderPreview: async () => ({ url: "preview" }) },
+    });
+    auditEvents.length = 0;
+    const created = await service.create(actor, {
+      companyId: "company-a",
+      name: "Reusable template",
+      definition,
+    });
+    const changed: TemplateDefinition = {
+      ...definition,
+      description: "Second version",
+    };
+    const second = await service.createVersion(actor, created.template.id, {
+      ...changed,
+    }, false);
+    const copy = await service.duplicate(actor, created.template.id);
+    expect(copy.template.name).toBe("Reusable template (copy)");
+    expect(copy.template.companyId).toBe("company-a");
+    expect(copy.template.activeVersionId).toBeNull();
+    expect(copy.version.definition.description).toBe("Second version");
+    expect(copy.version.definition.styleVersionId).toBe(styleVersionId);
+    // The source stays untouched; its first version remains the active one
+    // because the extra version was created without activation.
+    expect((await service.get(actor, created.template.id)).activeVersionId).toBe(
+      created.version.id,
+    );
+    const sourceVersions = await service.history(actor, created.template.id);
+    expect(sourceVersions.map((item) => item.version)).toEqual([1, 2]);
+    void second;
+    expect(auditEvents).toEqual([
+      "template.created",
+      "template.version_created",
+      "template.duplicated",
+    ]);
+  });
+
+  it("masks duplicates of missing or archived templates", async () => {
+    const repo = repository();
+    const service = createTemplateService({
+      repository: {
+        ...repo,
+        findActive: async (_workspaceId, templateId) =>
+          templateId === "archived" ? undefined : repo.findActive(_workspaceId, templateId),
+      },
+      renderer: { renderPreview: async () => ({ url: "preview" }) },
+    });
+    await expect(service.duplicate(actor, "missing")).rejects.toMatchObject({
+      code: "not_found",
+    });
+    await expect(service.duplicate(actor, "archived")).rejects.toMatchObject({
+      code: "not_found",
+    });
   });
 
   it("rejects definitions whose style version is outside the template company", async () => {
