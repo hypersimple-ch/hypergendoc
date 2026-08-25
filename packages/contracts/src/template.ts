@@ -401,6 +401,14 @@ export type TemplateNode = Readonly<{
   fit?: "contain" | "cover" | undefined;
   altPath?: string | undefined;
   caption?: readonly TemplateInline[] | undefined;
+  widthMm?: number | undefined;
+  cornerRadiusMm?: number | undefined;
+  frame?:
+    | Readonly<{
+        color: "text" | "heading" | "primary" | "accent" | "muted";
+        weight: "thin" | "normal" | "thick";
+      }>
+    | undefined;
   ordered?: boolean | undefined;
   itemsPath?: string | undefined;
   tableColumns?:
@@ -428,7 +436,17 @@ const nodeProperties: Readonly<
   heading: new Set(["type", "id", "level", "content"]),
   paragraph: new Set(["type", "content"]),
   richText: new Set(["type", "source"]),
-  image: new Set(["type", "source", "fit", "altPath", "caption", "heightMm"]),
+  image: new Set([
+    "type",
+    "source",
+    "fit",
+    "altPath",
+    "caption",
+    "heightMm",
+    "widthMm",
+    "cornerRadiusMm",
+    "frame",
+  ]),
   list: new Set(["type", "source", "itemsPath", "ordered"]),
   table: new Set(["type", "source", "tableColumns", "footerRow", "zebraRows"]),
   repeat: new Set(["type", "source", "as", "children"]),
@@ -481,6 +499,15 @@ export const TemplateNodeSchema: z.ZodType<TemplateNode> = z.lazy(() =>
       columns: z.number().int().min(1).max(12).optional(),
       gapMm: z.number().min(0).max(40).optional(),
       fit: z.enum(["contain", "cover"]).optional(),
+      widthMm: z.number().min(1).max(190).optional(),
+      cornerRadiusMm: z.number().min(0).max(20).optional(),
+      frame: z
+        .object({
+          color: z.enum(["text", "heading", "primary", "accent", "muted"]),
+          weight: z.enum(["thin", "normal", "thick"]),
+        })
+        .strict()
+        .optional(),
       altPath: TemplatePathSchema.optional(),
       caption: z.array(TemplateInlineSchema).max(100).optional(),
       ordered: z.boolean().optional(),

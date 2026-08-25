@@ -155,6 +155,82 @@ describe("template contracts", () => {
     ).toBe(false);
   });
 
+  it("accepts image frame controls only on image nodes within bounds", () => {
+    const framedImage = {
+      type: "image",
+      source: "00000000-0000-4000-8000-0000000000aa",
+      widthMm: 120,
+      cornerRadiusMm: 6,
+      frame: { color: "accent", weight: "thick" },
+    } as const;
+    expect(
+      TemplateDefinitionSchema.safeParse({ ...valid, document: [framedImage] })
+        .success,
+    ).toBe(true);
+    // Frame properties are invalid on non-image nodes.
+    expect(
+      TemplateDefinitionSchema.safeParse({
+        ...valid,
+        document: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", value: "x" }],
+            widthMm: 100,
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      TemplateDefinitionSchema.safeParse({
+        ...valid,
+        document: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", value: "x" }],
+            frame: { color: "primary", weight: "thin" },
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    // Bounds: widthMm <= 190, cornerRadiusMm <= 20, token colors only.
+    expect(
+      TemplateDefinitionSchema.safeParse({
+        ...valid,
+        document: [
+          {
+            type: "image",
+            source: "00000000-0000-4000-8000-0000000000aa",
+            widthMm: 191,
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      TemplateDefinitionSchema.safeParse({
+        ...valid,
+        document: [
+          {
+            type: "image",
+            source: "00000000-0000-4000-8000-0000000000aa",
+            cornerRadiusMm: 21,
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      TemplateDefinitionSchema.safeParse({
+        ...valid,
+        document: [
+          {
+            type: "image",
+            source: "00000000-0000-4000-8000-0000000000aa",
+            frame: { color: "#31a7c8", weight: "thin" },
+          },
+        ] as never,
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts portrait/landscape page-master orientation and rejects other values", () => {
     expect(
       TemplateDefinitionSchema.safeParse({

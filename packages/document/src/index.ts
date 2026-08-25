@@ -1139,7 +1139,24 @@ export function renderTemplateDocumentHtml(
               const caption = node.caption?.length
                 ? `<figcaption>${inlineText(node.caption, locals, true)}</figcaption>`
                 : "";
-              return `<figure class="template-image"><img src="data:${asset.contentType};base64,${asset.base64}" alt="${htmlEscape(alt)}" style="object-fit:${node.fit ?? "cover"}${node.heightMm === undefined ? "" : `;height:${node.heightMm}mm`}">${caption}</figure>`;
+              // Frame controls emit constrained CSS only: token colors from
+              // the style, fixed border widths per weight, and bounded
+              // radius/width numbers validated by the contract.
+              const frameWeights = {
+                thin: "0.4mm",
+                normal: "0.8mm",
+                thick: "1.6mm",
+              } as const;
+              let imageStyle = `object-fit:${node.fit ?? "cover"}`;
+              if (node.heightMm !== undefined)
+                imageStyle += `;height:${node.heightMm}mm`;
+              if (node.widthMm !== undefined)
+                imageStyle += `;width:${node.widthMm}mm`;
+              if (node.cornerRadiusMm !== undefined)
+                imageStyle += `;border-radius:${node.cornerRadiusMm}mm`;
+              if (node.frame)
+                imageStyle += `;border:${frameWeights[node.frame.weight]} solid ${templateColor(node.frame.color, input.style)}`;
+              return `<figure class="template-image"><img src="data:${asset.contentType};base64,${asset.base64}" alt="${htmlEscape(alt)}" style="${imageStyle}">${caption}</figure>`;
             }
             case "list": {
               const value = templatePath(

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type {
   StyleDefinition,
@@ -834,6 +835,64 @@ describe("template document renderer", () => {
     expect(letterHtml).toContain("@page landscape{size:letter landscape;");
     expect(letterHtml).toContain('data-page-content-mm="243.4"');
     expect(letterHtml).toContain('data-page-width-mm="179.9"');
+  });
+
+  it("emits constrained frame CSS for image width, radius, and token frames", () => {
+    const imageFields: TemplateDefinition = {
+      ...definition,
+      fields: {
+        ...definition.fields,
+        photo: {
+          type: "image",
+          label: "Photo",
+          required: true,
+        },
+      },
+      document: [
+        {
+          type: "page",
+          master: "standard",
+          children: [
+            {
+              type: "image",
+              source: "photo",
+              fit: "contain",
+              widthMm: 80,
+              cornerRadiusMm: 4,
+              frame: { color: "primary", weight: "normal" },
+            },
+            {
+              type: "image",
+              source: "photo",
+            },
+          ],
+        },
+      ],
+    };
+    const imageId = "99999999-9999-4999-8999-999999999999";
+    const html = renderTemplateDocumentHtml({
+      definition: imageFields,
+      data: { title: "Framed", items: [], photo: imageId },
+      style,
+      templateAssets: {
+        images: [
+          {
+            id: imageId,
+            contentType: "image/png",
+            byteSize: 9,
+            sha256: createHash("sha256")
+              .update("pngbytes!")
+              .digest("hex"),
+            base64: Buffer.from("pngbytes!").toString("base64"),
+          },
+        ],
+      },
+    });
+    expect(html).toContain(
+      'style="object-fit:contain;width:80mm;border-radius:4mm;border:0.8mm solid #3157c8"',
+    );
+    // Images without frame controls keep the unconstrained default markup.
+    expect(html).toContain('style="object-fit:cover"');
   });
 
   it("rejects undeclared values nested inside typed objects", () => {

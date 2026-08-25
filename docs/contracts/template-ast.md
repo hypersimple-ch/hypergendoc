@@ -46,7 +46,7 @@ Every node is strict: properties not listed for its node type are rejected.
 | `heading`              | non-empty inline `content`              | `id`, `level`                                              |
 | `paragraph`            | non-empty inline `content`              | —                                                          |
 | `richText`             | text/rich-text `source` path            | —                                                          |
-| `image`                | image `source` path or owned-image UUID | `fit`, `altPath`, inline `caption`, `heightMm`             |
+| `image`                | image `source` path or owned-image UUID | `fit`, `altPath`, inline `caption`, `heightMm`, `widthMm` (1–190), `cornerRadiusMm` (0–20), `frame` (`color`: one of the five style color tokens; `weight`: `"thin"` \| `"normal"` \| `"thick"`) |
 | `list`                 | list `source` or `itemsPath`            | `ordered`                                                  |
 | `table`                | list `source`, non-empty `tableColumns` | column format/currency/alignment, `footerRow`, `zebraRows` |
 | `repeat`               | list `source`, non-empty `children`     | `as` alias                                                 |
@@ -55,6 +55,8 @@ Every node is strict: properties not listed for its node type are rejected.
 | `toc`                  | —                                       | `tocDepth`                                                 |
 | `pageBreak`, `divider` | —                                       | —                                                          |
 | `spacer`               | —                                       | `heightMm`                                                 |
+
+Image frame controls emit constrained CSS only: fixed border widths per weight (`thin` 0.4 mm, `normal` 0.8 mm, `thick` 1.6 mm) with the named style token resolved to its color, plus bounded numeric width and radius values. Free-form colors, images, and remote URLs stay rejected.
 
 Inline content is either `{ "type": "text", "value": "..." }` or `{ "type": "binding", "path": "..." }`; bindings may specify display `format`, `currency`, emphasis, weight, and a style color token.
 
