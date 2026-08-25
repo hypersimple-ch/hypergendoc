@@ -42,7 +42,7 @@ describe("api client", () => {
     let calls = 0;
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockImplementation(async () => {
+      vi.fn().mockImplementation(() => {
         calls += 1;
         return new Response(JSON.stringify({ ok: true }), { status: 200 });
       }),
@@ -59,7 +59,7 @@ describe("api client", () => {
     let calls = 0;
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockImplementation(async () => {
+      vi.fn().mockImplementation(() => {
         calls += 1;
         return new Response(JSON.stringify({ n: calls }), { status: 200 });
       }),
@@ -74,7 +74,7 @@ describe("api client", () => {
     let calls = 0;
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockImplementation(async (_path: string, init?: RequestInit) => {
+      vi.fn().mockImplementation((_path: string, init?: RequestInit) => {
         calls += 1;
         return new Response(JSON.stringify({ method: init?.method ?? "GET" }), {
           status: 200,
@@ -92,7 +92,7 @@ describe("api client", () => {
     let calls = 0;
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockImplementation(async () => {
+      vi.fn().mockImplementation(() => {
         calls += 1;
         return new Response("nope", { status: 500 });
       }),

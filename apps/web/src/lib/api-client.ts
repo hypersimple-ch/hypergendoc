@@ -76,19 +76,16 @@ export async function api<T>(
   path: `/api/${string}`,
   options: ApiOptions = {},
 ): Promise<T> {
-  const { body, timeoutMs = 12_000, headers, ...init } = options;
-  if ((init.method ?? "GET").toUpperCase() !== "GET") {
+  if ((options.method ?? "GET").toUpperCase() !== "GET") {
     getCache.clear();
-    return performRequest<T>(path, { body, timeoutMs, headers, ...init });
+    return performRequest<T>(path, options);
   }
   const cached = getCache.get(path);
   if (cached && cached.expiresAt > Date.now())
     return cached.promise as Promise<T>;
   const promise = performRequest<T>(path, {
-    body,
-    timeoutMs,
-    headers,
-    ...init,
+    ...options,
+    method: "GET",
   }).catch((error: unknown) => {
     // Never serve a failed response from the cache.
     getCache.delete(path);
