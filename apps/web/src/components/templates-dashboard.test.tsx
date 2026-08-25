@@ -17,6 +17,7 @@ const {
   createTemplate,
   starterTemplates,
   createTemplateFromStarter,
+  previewStarter,
   duplicateTemplate,
   push,
 } = vi.hoisted(() => ({
@@ -26,6 +27,7 @@ const {
   createTemplate: vi.fn(),
   starterTemplates: vi.fn(),
   createTemplateFromStarter: vi.fn(),
+  previewStarter: vi.fn(),
   duplicateTemplate: vi.fn(),
   push: vi.fn(),
 }));
@@ -38,6 +40,7 @@ vi.mock("../lib/dashboard-api", () => ({
     createTemplate,
     starterTemplates,
     createTemplateFromStarter,
+    previewStarter,
     duplicateTemplate,
   },
 }));
@@ -177,6 +180,74 @@ describe("TemplatesDashboard", () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith("/workspace/templates/template-9"));
     expect(sessionStorage.getItem("hypergendoc:template-created-inactive:template-9")).toBe("1");
     sessionStorage.clear();
+  });
+
+  it("previews a starter with sample data and shows the returned PDF", async () => {
+    useCompany();
+    mockLoadedDashboard();
+    const dataUrl = "data:application/pdf;base64,AA==";
+    previewStarter.mockResolvedValue({ url: dataUrl });
+
+    render(<TemplatesDashboard />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Use starter" }));
+    const dialog = await screen.findByRole("dialog");
+    const previewButton = within(dialog).getByRole("button", {
+      name: "Preview sample",
+    });
+    expect(previewButton).toBeDisabled();
+    fireEvent.change(within(dialog).getByLabelText("Active style"), {
+      target: { value: "version-1" },
+    });
+    expect(previewButton).toBeEnabled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Preview sample" }));
+    await waitFor(() =>
+      expect(previewStarter).toHaveBeenCalledWith({
+        companyId: company.id,
+        starterId: "one-page-proposal",
+        styleVersionId: "version-1",
+      }),
+    );
+    const pdfButton = await within(dialog)
+      .findByRole("button", { name: "Preview PDF" })
+      .then((element) => {
+        expect(element).toBeVisible();
+        return element;
+      });
+    expect(pdfButton).toBeVisible();
+    expect(within(dialog).queryByText(/failed/i)).not.toBeInTheDocument();
+  });
+
+  it("shows an inline error when the starter preview fails", async () => {
+    useCompany();
+    mockLoadedDashboard();
+    previewStarter.mockRejectedValue(new Error("renderer offline"));
+
+    render(<TemplatesDashboard />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Use starter" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Active style"), {
+      target: { value: "version-1" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Preview sample" }),
+    );
+
+    // safeError masks non-API failures behind the shared inline Status copy.
+    expect(
+      await within(dialog).findByText(
+        "We could not load this page. Please try again.",
+      ),
+    ).toBeVisible();
+    expect(
+      within(dialog).queryByRole("button", { name: "Preview PDF" }),
+    ).not.toBeInTheDocument();
+    // The dialog stays usable for a retry or the actual creation.
+    expect(
+      within(dialog).getByRole("button", { name: "Create template" }),
+    ).toBeEnabled();
   });
 
   it("duplicates a template and confirms the inactive copy", async () => {

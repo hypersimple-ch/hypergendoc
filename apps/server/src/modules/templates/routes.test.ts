@@ -39,6 +39,7 @@ const createVersion = vi.fn();
 const activate = vi.fn();
 const preview = vi.fn();
 const createFromStarter = vi.fn();
+const previewStarter = vi.fn();
 const duplicate = vi.fn();
 
 function appFor() {
@@ -55,6 +56,7 @@ function appFor() {
         createVersion,
         activate,
         preview,
+        previewStarter,
         createFromStarter,
         duplicate,
       },
@@ -215,6 +217,59 @@ describe("template routes", () => {
       expect(response.statusCode).toBe(400);
     }
     expect(createFromStarter).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("previews a starter draft with a validated style pin", async () => {
+    previewStarter.mockResolvedValue({
+      url: "data:application/pdf;base64,AA==",
+    });
+    const app = appFor();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/starter-templates/preview",
+      payload: {
+        companyId: "55555555-5555-4555-8555-555555555555",
+        starterId: "one-page-proposal",
+        styleVersionId: "77777777-7777-4777-8777-777777777777",
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ url: "data:application/pdf;base64,AA==" });
+    expect(previewStarter).toHaveBeenCalledWith(actor, {
+      companyId: "55555555-5555-4555-8555-555555555555",
+      starterId: "one-page-proposal",
+      styleVersionId: "77777777-7777-4777-8777-777777777777",
+    });
+    await app.close();
+  });
+
+  it("rejects malformed starter previews before service access", async () => {
+    const app = appFor();
+    for (const payload of [
+      {
+        companyId: "not-a-uuid",
+        starterId: "one-page-proposal",
+        styleVersionId: "77777777-7777-4777-8777-777777777777",
+      },
+      {
+        companyId: "55555555-5555-4555-8555-555555555555",
+        starterId: "unknown-starter",
+        styleVersionId: "77777777-7777-4777-8777-777777777777",
+      },
+      {
+        companyId: "55555555-5555-4555-8555-555555555555",
+        starterId: "one-page-proposal",
+      },
+    ]) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/starter-templates/preview",
+        payload,
+      });
+      expect(response.statusCode).toBe(400);
+    }
+    expect(previewStarter).not.toHaveBeenCalled();
     await app.close();
   });
 

@@ -16,6 +16,7 @@ import {
 } from "../lib/dashboard-api";
 import { useActiveCompany } from "./active-company";
 import { Empty, LoadState, safeError, useLoaded } from "./dashboard-state";
+import { PdfPreview } from "./pdf-preview";
 import {
   Button,
   Dialog,
@@ -531,6 +532,9 @@ function StarterCreateDialog({
   const [styleVersionId, setStyleVersionId] = useState("");
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [previewBusy, setPreviewBusy] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string>();
+  const [previewError, setPreviewError] = useState<string>();
   const pending = useRef(false);
   const nameInput = useRef<HTMLInputElement>(null);
 
@@ -545,6 +549,27 @@ function StarterCreateDialog({
     () => (styles.value ?? []).filter((style) => style.activeVersionId),
     [styles.value],
   );
+
+  async function previewSample() {
+    if (pending.current || !companyId || !styleVersionId) return;
+    pending.current = true;
+    setPreviewBusy(true);
+    setPreviewError(undefined);
+    try {
+      const result = await dashboardApi.previewStarter({
+        companyId,
+        starterId: starter.id,
+        styleVersionId,
+      });
+      setPreviewUrl(result.url);
+    } catch (reason) {
+      setPreviewUrl(undefined);
+      setPreviewError(safeError(reason));
+    } finally {
+      pending.current = false;
+      setPreviewBusy(false);
+    }
+  }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -643,9 +668,27 @@ function StarterCreateDialog({
           </Status>
         )}
         {error && <Status kind="error">{error}</Status>}
+        {previewError && (
+          <div aria-live="polite" aria-atomic="true">
+            <Status kind="error">{previewError}</Status>
+          </div>
+        )}
+        {previewUrl && (
+          <PdfPreview
+            src={previewUrl}
+            title={`${starter.name} sample preview`}
+          />
+        )}
         <div className="dialog__actions">
           <Button tone="quiet" disabled={busy} onClick={onClose}>
             Cancel
+          </Button>
+          <Button
+            tone="quiet"
+            disabled={busy || previewBusy || !companyId || !styleVersionId}
+            onClick={() => void previewSample()}
+          >
+            {previewBusy ? "Previewing…" : "Preview sample"}
           </Button>
           <Button type="submit" disabled={busy || !activeStyles.length}>
             {busy ? "Creating…" : "Create template"}

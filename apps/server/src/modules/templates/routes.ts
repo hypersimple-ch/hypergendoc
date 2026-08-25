@@ -11,6 +11,19 @@ import type { createTemplateService } from "./service.js";
 
 const ActivateSchema = z.object({ versionId: z.string().uuid() }).strict();
 
+const PreviewStarterSchema = z
+  .object({
+    companyId: z.string().uuid(),
+    starterId: z.enum(
+      starterTemplates.map((starter) => starter.id) as [
+        string,
+        ...string[],
+      ],
+    ),
+    styleVersionId: z.string().uuid(),
+  })
+  .strict();
+
 const FromStarterSchema = z
   .object({
     companyId: z.string().uuid(),
@@ -39,6 +52,14 @@ export function createTemplateRoutes(
     app.get("/api/starter-templates", (request) => {
       deps.actorFor(request);
       return listStarterTemplates();
+    });
+
+    // Ad-hoc draft preview of an unpersisted starter definition for
+    // authenticated members; company-scoped validation happens in the service.
+    app.post("/api/starter-templates/preview", async (request) => {
+      const actor = deps.actorFor(request);
+      const input = PreviewStarterSchema.parse(request.body);
+      return deps.service.previewStarter(actor, input);
     });
 
     app.post("/api/templates/from-starter", async (request, reply) => {

@@ -287,6 +287,62 @@ describe("template versions", () => {
     });
   });
 
+  it("previews an ad-hoc starter draft with company-scoped validation", async () => {
+    const seen: {
+      workspaceId: string;
+      companyId: string;
+      templateVersionId: string;
+    }[] = [];
+    const service = createTemplateService({
+      repository: repository(),
+      renderer: {
+        renderPreview: async (input) => {
+          seen.push({
+            workspaceId: input.workspaceId,
+            companyId: input.companyId,
+            templateVersionId: input.templateVersionId,
+          });
+          return { url: "preview" };
+        },
+      },
+    });
+    const rendered = await service.previewStarter(actor, {
+      companyId: "company-a",
+      starterId: starterTemplates[0]!.id,
+      styleVersionId,
+    });
+    expect(rendered.url).toBe("preview");
+    expect(seen).toEqual([
+      {
+        workspaceId: "workspace-a",
+        companyId: "company-a",
+        templateVersionId: "starter-draft",
+      },
+    ]);
+    await expect(
+      service.previewStarter(actor, {
+        companyId: "company-a",
+        starterId: starterTemplates[0]!.id,
+        styleVersionId: "00000000-0000-4000-8000-000000000002",
+      }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    await expect(
+      service.previewStarter(actor, {
+        companyId: "company-b",
+        starterId: starterTemplates[0]!.id,
+        styleVersionId,
+      }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    await expect(
+      service.previewStarter(actor, {
+        companyId: "company-a",
+        starterId: "missing-starter",
+        styleVersionId,
+      }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    expect(seen).toHaveLength(1);
+  });
+
   it("rejects definitions whose style version is outside the template company", async () => {
     const service = createTemplateService({
       repository: repository(),

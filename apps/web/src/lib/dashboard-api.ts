@@ -201,6 +201,15 @@ export const dashboardApi = {
   },
   starterTemplates: () =>
     api<StarterTemplateSummary[]>("/api/starter-templates"),
+  previewStarter: (input: {
+    companyId: string;
+    starterId: string;
+    styleVersionId: string;
+  }) =>
+    api<{ url: string }>("/api/starter-templates/preview", {
+      method: "POST",
+      body: input,
+    }),
   createTemplateFromStarter: async (input: {
     companyId: string;
     starterId: string;

@@ -326,6 +326,47 @@ export function createTemplateService(deps: {
       }
     },
 
+    /**
+     * Renders an ad-hoc preview of an unpersisted starter definition with its
+     * curated sample data. The style pin and company are validated exactly
+     * like a persisted preview; nothing is written to the repository.
+     */
+    async previewStarter(
+      actor: HumanActor,
+      input: Readonly<{
+        companyId: string;
+        starterId: string;
+        styleVersionId: string;
+      }>,
+    ): Promise<Readonly<{ url: string }>> {
+      const starter = findStarterTemplate(input.starterId);
+      if (!starter) throw new AuthorizationError("not_found");
+      if (
+        !(await deps.repository.companyExists(
+          actor.workspaceId,
+          input.companyId,
+        ))
+      )
+        throw new AuthorizationError("not_found");
+      const definition: TemplateDefinition = {
+        ...structuredClone(starter.definition),
+        styleVersionId: input.styleVersionId,
+      };
+      await validateDefinition(
+        deps.repository,
+        actor,
+        input.companyId,
+        definition,
+      );
+      return deps.renderer.renderPreview({
+        workspaceId: actor.workspaceId,
+        companyId: input.companyId,
+        templateVersionId: "starter-draft",
+        definition,
+        data: structuredClone(starter.sampleData),
+      });
+    },
+
     /** Copies the source's latest version definition into a new template. */
     async duplicate(
       actor: HumanActor,
