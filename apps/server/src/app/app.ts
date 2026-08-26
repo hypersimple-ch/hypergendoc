@@ -398,7 +398,15 @@ export async function createApplication(
     }
   }
 
-  await reconcile();
+  // Startup reconciliation must not block liveness: when the database is not
+  // reachable yet (single-container smoke tests, ordered rollouts, database
+  // failovers), log and let the interval below retry until it succeeds.
+  await reconcile().catch(() => {
+    app.log.error(
+      { event: "mutation_reconcile.failed" },
+      "Mutation reconciliation failed at startup; retrying periodically",
+    );
+  });
   const reconcileTimer = setInterval(() => {
     void reconcile().catch(() => {
       app.log.error(
