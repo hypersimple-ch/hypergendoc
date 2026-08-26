@@ -53,6 +53,15 @@ import {
 } from "../modules/memberships/repository.js";
 import { createMembershipRoutes } from "../modules/memberships/routes.js";
 import {
+  createInviteService,
+  InviteError,
+} from "../modules/invites/service.js";
+import {
+  createPublicInviteRoutes,
+  createWorkspaceInviteRoutes,
+} from "../modules/invites/routes.js";
+import { createInviteRepository } from "../modules/invites/repository.js";
+import {
   AuthorizationError,
   createInitialWorkspace,
 } from "../modules/memberships/service.js";
@@ -103,6 +112,7 @@ import {
   createAwsS3ObjectClient,
 } from "../platform/object-store.js";
 import { createInMemoryRateLimiter } from "../platform/rate-limit.js";
+import { createServerMetrics } from "../platform/metrics.js";
 import { checkUnixSocket } from "./dependency-health.js";
 import { shouldRejectMutationOrigin } from "./origin-policy.js";
 import { page } from "./page.js";
@@ -123,6 +133,10 @@ export async function createApplication(
     connectionString: environment.databaseUrl,
   });
   const app = Fastify({
+    // Behind the production proxy (Dokploy/Traefik), client IPs come from
+    // X-Forwarded-For. Opt in explicitly with TRUST_PROXY=1; never trust
+    // forwarded headers from untrusted direct connections.
+    trustProxy: environment.trustProxy,
     logger: {
       level: environment.logLevel,
       redact: [
@@ -169,11 +183,20 @@ export async function createApplication(
     companyAssetRepository,
     objects,
   );
-  const renderer = createDocumentRenderer({
+  const baseRenderer = createDocumentRenderer({
     socketPath: environment.rendererSocket,
     // The worker owns the render deadline; the client allows bounded IPC cleanup.
     timeoutMs: environment.renderTimeoutMs + 5_000,
   });
+  const renderer = environment.metricsEnabled
+    ? {
+        render: async (request: Parameters<typeof baseRenderer.render>[0]) => {
+          const result = await baseRenderer.render(request);
+          metrics.recordRender(result.ok ? "ok" : "error");
+          return result;
+        },
+      }
+    : baseRenderer;
   const styles = createStyleService({
     repository: createStyleRepository(db),
     renderer: {
@@ -237,6 +260,9 @@ export async function createApplication(
           style: style.definition,
           assets,
           templateAssets,
+          ...(input.definition.locale
+            ? { locale: input.definition.locale }
+            : {}),
         });
         if (!result.ok || !result.pdf)
           throw new AppError(
@@ -249,9 +275,29 @@ export async function createApplication(
       },
     },
   });
-  const documentGit = new CompanyDocumentGitStore({
+  const documentGitBase = new CompanyDocumentGitStore({
     rootDir: environment.documentGitRoot,
   });
+  // Single cheap hook point: every durable mutation funnels through write or
+  // revert on this store instance.
+  const documentGit = environment.metricsEnabled
+    ? Object.assign(documentGitBase, {
+        write: async (
+          input: Parameters<typeof documentGitBase.write>[0],
+        ) => {
+          const revision = await documentGitBase.write(input);
+          metrics.recordGitMutation("write");
+          return revision;
+        },
+        revert: async (
+          input: Parameters<typeof documentGitBase.revert>[0],
+        ) => {
+          const revision = await documentGitBase.revert(input);
+          metrics.recordGitMutation("revert");
+          return revision;
+        },
+      })
+    : documentGitBase;
   const documents = createDocumentService({
     repository: documentRepository,
     git: documentGit,
@@ -352,7 +398,15 @@ export async function createApplication(
     }
   }
 
-  await reconcile();
+  // Startup reconciliation must not block liveness: when the database is not
+  // reachable yet (single-container smoke tests, ordered rollouts, database
+  // failovers), log and let the interval below retry until it succeeds.
+  await reconcile().catch(() => {
+    app.log.error(
+      { event: "mutation_reconcile.failed" },
+      "Mutation reconciliation failed at startup; retrying periodically",
+    );
+  });
   const reconcileTimer = setInterval(() => {
     void reconcile().catch(() => {
       app.log.error(
@@ -413,11 +467,15 @@ export async function createApplication(
               subject:
                 job.kind === "verification"
                   ? "Verify your email"
-                  : "Reset your password",
+                  : job.kind === "workspace_invite"
+                    ? "You are invited to join a HyperGenDoc workspace"
+                    : "Reset your password",
               text:
                 job.kind === "verification"
                   ? `Verify your email: ${job.url}`
-                  : `Reset your password: ${job.url}`,
+                  : job.kind === "workspace_invite"
+                    ? `You have been invited to join a HyperGenDoc workspace. Accept with this single-use link: ${job.url}`
+                    : `Reset your password: ${job.url}`,
             });
           },
         },
@@ -435,7 +493,20 @@ export async function createApplication(
     baseUrl: environment.appOrigin,
     secret: environment.betterAuthSecret,
     production: environment.nodeEnv === "production",
+    signupMode: environment.signupMode,
   });
+  if (environment.signupMode !== "open") {
+    // Defense in depth alongside emailAndPassword.disableSignUp: reject public
+    // registration before it reaches Better Auth, including implicit sign-ups.
+    app.addHook("onRequest", (request) => {
+      if (
+        request.method === "POST" &&
+        request.url.startsWith("/api/auth/sign-up")
+      )
+        throw new AppError("forbidden", 403);
+      return Promise.resolve();
+    });
+  }
 
   await app.register(cookie);
   await app.register(cors, {
@@ -446,6 +517,11 @@ export async function createApplication(
   await app.register(multipart, {
     limits: { fileSize: environment.limits.logoBytes, files: 1 },
   });
+  const metrics = createServerMetrics();
+  // Instrumentation must precede route registration so every route is counted;
+  // /metrics itself is registered only when METRICS_ENABLED=true and stays
+  // internal-only (never added to the Dokploy public ingress rules).
+  metrics.register(app, { enabled: environment.metricsEnabled });
   app.addHook("onRequest", (request) => {
     if (
       shouldRejectMutationOrigin({
@@ -469,6 +545,17 @@ export async function createApplication(
                 ? 409
                 : 404,
           )
+        : error instanceof InviteError
+          ? new AppError(
+              error.code,
+              error.code === "gone"
+                ? 410
+                : error.code === "conflict"
+                  ? 409
+                  : error.code === "forbidden"
+                    ? 403
+                    : 404,
+            )
         : error instanceof ZodError || error instanceof DocumentInputError
           ? new AppError("validation_failed", 400)
           : normalizeTransportError(error);
@@ -573,6 +660,24 @@ export async function createApplication(
       memberships: createMembershipRepository(db),
     }),
   );
+  const invites = createInviteService({
+    repository: createInviteRepository(db),
+    mailQueue: mailRepository,
+    appOrigin: environment.appOrigin,
+    signupMode: environment.signupMode,
+  });
+  await app.register(
+    createWorkspaceInviteRoutes({ actorFor: preauthenticatedActor, service: invites }),
+  );
+  await app.register(
+    createPublicInviteRoutes({
+      service: invites,
+      rateLimiter: createInMemoryRateLimiter(),
+    }),
+  );
+  // Minimal public deployment policy so the web register page can hint that
+  // registration happens by invitation without leaking anything else.
+  app.get("/api/signup-policy", () => ({ mode: environment.signupMode }));
   await app.register(
     createCompanyRoutes({
       actorFor: preauthenticatedActor,

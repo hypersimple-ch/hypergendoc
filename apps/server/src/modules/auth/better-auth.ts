@@ -13,7 +13,8 @@ export interface AuthMail {
   ): Promise<void>;
 }
 
-const argon2id: Options = {
+/** Shared Argon2id parameters; invitation acceptance hashes with the same profile. */
+export const argon2idOptions: Options = {
   algorithm: 2,
   memoryCost: 65_536,
   timeCost: 3,
@@ -33,6 +34,16 @@ export interface CreateAuthOptions {
   secret: string;
   /** Set by trusted deployment configuration; never infer this from a request. */
   production: boolean;
+  /**
+   * Deployment registration policy. Only "open" accepts public sign-ups;
+   * "invite" and "closed" reject them server-side.
+   */
+  signupMode: "open" | "invite" | "closed";
+}
+
+/** Public registration is accepted only when explicitly opened. */
+export function publicSignupEnabled(signupMode: "open" | "invite" | "closed") {
+  return signupMode === "open";
 }
 
 /**
@@ -82,15 +93,18 @@ export function createAuth(options: CreateAuthOptions) {
     trustedOrigins: [options.baseUrl],
     emailAndPassword: {
       enabled: true,
+      ...(publicSignupEnabled(options.signupMode)
+        ? {}
+        : { disableSignUp: true }),
       requireEmailVerification: true,
       minPasswordLength: 12,
       maxPasswordLength: 128,
       resetPasswordTokenExpiresIn: 60 * 60,
       revokeSessionsOnPasswordReset: true,
       password: {
-        hash: (password) => hash(password, argon2id),
+        hash: (password) => hash(password, argon2idOptions),
         verify: ({ hash: encoded, password }) =>
-          verify(encoded, password, argon2id),
+          verify(encoded, password, argon2idOptions),
       },
       sendResetPassword: mailCallbacks.sendResetPassword,
     },

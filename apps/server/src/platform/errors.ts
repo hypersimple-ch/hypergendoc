@@ -1,12 +1,22 @@
 import type { ErrorEnvelope } from "@hypergendoc/contracts";
 import type { FastifyInstance } from "fastify";
 import { ZodError } from "zod";
+import { InviteError } from "../modules/invites/invite-error.js";
+import { AuthorizationError } from "../modules/memberships/service.js";
+
+const inviteStatus = {
+  not_found: 404,
+  gone: 410,
+  conflict: 409,
+  forbidden: 403,
+} as const;
 
 export type AppErrorCode = ErrorEnvelope["error"]["code"];
 const messages: Record<AppErrorCode, string> = {
   unauthenticated: "Authentication required",
   forbidden: "Access denied",
   not_found: "Not found",
+  gone: "This link is no longer valid",
   conflict: "Conflict",
   validation_failed: "Invalid request",
   rate_limited: "Too many requests",
@@ -67,9 +77,20 @@ export function toSafeError(
   const appError =
     normalized instanceof AppError
       ? normalized
-      : normalized instanceof ZodError
-        ? new AppError("validation_failed", 400)
-        : new AppError("internal_error", 500);
+      : normalized instanceof InviteError
+        ? new AppError(normalized.code, inviteStatus[normalized.code])
+        : normalized instanceof AuthorizationError
+          ? new AppError(
+              normalized.code,
+              normalized.code === "forbidden"
+                ? 403
+                : normalized.code === "conflict"
+                  ? 409
+                  : 404,
+            )
+          : normalized instanceof ZodError
+            ? new AppError("validation_failed", 400)
+            : new AppError("internal_error", 500);
   return {
     statusCode: appError.statusCode,
     body: {

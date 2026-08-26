@@ -88,8 +88,8 @@ export function StylesDashboard() {
   return (
     <div className="styles-page">
       <PageHeader
-        eyebrow="Style library"
-        title="Structured brand systems."
+        eyebrow="Content"
+        title="Styles"
         description="Build an intentional visual language. Every save remains an immutable version for reliable document rendering."
         aside={
           <div className="hidden items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground sm:flex">

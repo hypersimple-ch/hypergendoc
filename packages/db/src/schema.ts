@@ -23,6 +23,7 @@ import {
   sessions,
   users,
   verifications,
+  workspaceRole,
   workspaces,
 } from "./core-schema.js";
 
@@ -495,6 +496,7 @@ export const auditEvents = pgTable(
 export const mailJobKind = pgEnum("mail_job_kind", [
   "verification",
   "password_reset",
+  "workspace_invite",
 ]);
 export const mailJobStatus = pgEnum("mail_job_status", [
   "pending",
@@ -537,6 +539,36 @@ export const mailJobs = pgTable(
       "mail_job_lease_lifecycle",
       sql`(${table.status} = 'leased' AND ${table.leaseExpiresAt} IS NOT NULL AND ${table.leaseToken} IS NOT NULL) OR (${table.status} <> 'leased' AND ${table.leaseExpiresAt} IS NULL AND ${table.leaseToken} IS NULL)`,
     ),
+  ],
+);
+
+export const workspaceInvites = pgTable(
+  "workspace_invites",
+  {
+    id: id(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    /** Stored lowercase; enforced by a check constraint. */
+    email: text("email").notNull(),
+    role: workspaceRole("role").notNull().default("member"),
+    /** sha256 hex of the raw invitation token; the raw value is never stored. */
+    tokenHash: text("token_hash").notNull(),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  },
+  (table) => [
+    // One pending invite per (workspace, email); accepted invites stop counting.
+    uniqueIndex("workspace_invite_pending_email_unique")
+      .on(table.workspaceId, table.email)
+      .where(sql`${table.acceptedAt} IS NULL`),
+    uniqueIndex("workspace_invite_token_hash_unique").on(table.tokenHash),
+    index("workspace_invite_workspace_idx").on(table.workspaceId),
+    check("workspace_invite_email_lowercase", sql`${table.email} = lower(${table.email})`),
   ],
 );
 

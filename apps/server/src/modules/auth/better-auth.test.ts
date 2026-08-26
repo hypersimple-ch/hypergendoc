@@ -1,5 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
-import { authRateLimitRules, createAuthMailCallbacks } from "./better-auth.js";
+import {
+  authRateLimitRules,
+  createAuthMailCallbacks,
+  publicSignupEnabled,
+} from "./better-auth.js";
+
+describe("Public registration policy", () => {
+  it("accepts public sign-ups only in open mode", () => {
+    expect(publicSignupEnabled("open")).toBe(true);
+    expect(publicSignupEnabled("invite")).toBe(false);
+    expect(publicSignupEnabled("closed")).toBe(false);
+  });
+});
 
 describe("Better Auth mail acceptance", () => {
   it("applies the stricter rule to the password-reset request endpoint", () => {

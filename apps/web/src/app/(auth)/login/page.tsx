@@ -5,6 +5,8 @@ import { Status } from "../../../components/primitives";
 
 export const metadata: Metadata = { title: "Sign in" };
 const verifiedMessage = "Email verified. You can now sign in.";
+const invitedMessage =
+  "Invitation accepted. Your account is ready - sign in to continue.";
 const invalidVerificationMessage =
   "This verification link is invalid or has expired. Request a new one.";
 
@@ -32,9 +34,11 @@ export default async function LoginPage({
   const status =
     params.error === "invalid_token"
       ? { kind: "error" as const, message: invalidVerificationMessage }
-      : params.verified === "true"
-        ? { kind: "success" as const, message: verifiedMessage }
-        : undefined;
+      : params.invited === "true"
+        ? { kind: "success" as const, message: invitedMessage }
+        : params.verified === "true"
+          ? { kind: "success" as const, message: verifiedMessage }
+          : undefined;
 
   return (
     <>

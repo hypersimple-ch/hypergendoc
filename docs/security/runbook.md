@@ -27,4 +27,4 @@ Confirm TLS, runtime secrets, private storage, encrypted off-VPS backup, and a r
 
 ## Known limits
 
-The renderer and sanitizer are defense in depth, not authorization substitutes. There is no client portal, e-signature, billing, legal/compliance certification, or self-service purge.
+The renderer and sanitizer are defense in depth, not authorization substitutes. There is no client portal, e-signature, billing, legal/compliance certification, or self-service purge. Production secrets are passed as plain environment variables rather than Compose secrets; this is an accepted risk for the single-host Dokploy deployment and should be revisited if the stack ever spans multiple hosts or a shared orchestrator.

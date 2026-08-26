@@ -167,7 +167,7 @@ describe("StylesDashboard", () => {
     renderWithActiveCompany();
 
     expect(
-      screen.getByRole("heading", { name: "Structured brand systems." }),
+      screen.getByRole("heading", { name: "Styles" }),
     ).toBeVisible();
     expect(await screen.findByLabelText("New style name")).toBeVisible();
     expect(screen.queryByLabelText("Company")).not.toBeInTheDocument();
@@ -313,7 +313,7 @@ describe("StylesDashboard", () => {
       screen.getByRole("button", { name: "Back to style library" }),
     ).toBeVisible();
     expect(
-      screen.queryByRole("heading", { name: "Structured brand systems." }),
+      screen.queryByRole("heading", { name: "Styles" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByLabelText("New style name")).not.toBeInTheDocument();
     expect(
@@ -324,7 +324,7 @@ describe("StylesDashboard", () => {
       screen.getByRole("button", { name: "Back to style library" }),
     );
     expect(
-      screen.getByRole("heading", { name: "Structured brand systems." }),
+      screen.getByRole("heading", { name: "Styles" }),
     ).toBeVisible();
     expect(await screen.findByLabelText("New style name")).toBeVisible();
     expect(screen.getByRole("button", { name: "Edit versions" })).toBeVisible();
@@ -350,7 +350,7 @@ describe("StylesDashboard", () => {
     view.rerender(<StylesDashboard />);
 
     expect(
-      screen.getByRole("heading", { name: "Structured brand systems." }),
+      screen.getByRole("heading", { name: "Styles" }),
     ).toBeVisible();
     expect(
       screen.queryByRole("button", { name: "Back to style library" }),
@@ -652,6 +652,15 @@ describe("StylesDashboard", () => {
     expect(
       header.getByRole("checkbox", { name: /Show page number/i }),
     ).toBeChecked();
+    fireEvent.click(
+      header.getByRole("checkbox", { name: /Show logo/i }),
+    );
+    expect(
+      header.getByRole("checkbox", { name: /Show logo/i }),
+    ).toBeChecked();
+    expect(
+      footer.getByRole("checkbox", { name: /Show logo/i }),
+    ).not.toBeChecked();
   });
 
   it("applies margin and print-standard page presets", async () => {
@@ -817,7 +826,7 @@ describe("StylesDashboard", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
     expect(
-      screen.getByRole("heading", { name: "Structured brand systems." }),
+      screen.getByRole("heading", { name: "Styles" }),
     ).toBeVisible();
   });
 

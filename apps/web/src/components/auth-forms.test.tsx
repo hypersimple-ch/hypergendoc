@@ -8,11 +8,14 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-const { forgotPassword, resetPassword, searchParam } = vi.hoisted(() => ({
-  forgotPassword: vi.fn(),
-  resetPassword: vi.fn(),
-  searchParam: vi.fn(),
-}));
+const { forgotPassword, resetPassword, searchParam, policyApi } = vi.hoisted(
+  () => ({
+    forgotPassword: vi.fn(),
+    resetPassword: vi.fn(),
+    searchParam: vi.fn(),
+    policyApi: vi.fn(),
+  }),
+);
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => ({ get: searchParam }),
@@ -20,8 +23,16 @@ vi.mock("next/navigation", () => ({
 vi.mock("../lib/auth-client", () => ({
   authClient: { forgotPassword, resetPassword },
 }));
+vi.mock("../lib/api-client", () => ({
+  api: policyApi,
+  ApiError: class ApiError extends Error {},
+}));
 
-import { EmailActionForm, ResetForm } from "./auth-forms";
+import {
+  EmailActionForm,
+  ResetForm,
+  SignupPolicyHint,
+} from "./auth-forms";
 
 afterEach(() => {
   cleanup();
@@ -98,5 +109,30 @@ describe("EmailActionForm", () => {
     expect(
       screen.getByRole("link", { name: "Request a new reset link" }),
     ).toHaveAttribute("href", "/forgot-password");
+  });
+});
+
+describe("SignupPolicyHint", () => {
+  it("stays hidden on open deployments", async () => {
+    policyApi.mockResolvedValue({ mode: "open" });
+    render(<SignupPolicyHint />);
+    await waitFor(() => expect(policyApi).toHaveBeenCalled());
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("explains invitation-only registration for invite deployments", async () => {
+    policyApi.mockResolvedValue({ mode: "invite" });
+    render(<SignupPolicyHint />);
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      /by invitation/i,
+    );
+  });
+
+  it("stays quiet when the policy cannot be fetched", async () => {
+    policyApi.mockRejectedValue(new Error("offline"));
+    render(<SignupPolicyHint />);
+    await waitFor(() => expect(policyApi).toHaveBeenCalled());
+    // No status appears; the form simply behaves as before.
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });

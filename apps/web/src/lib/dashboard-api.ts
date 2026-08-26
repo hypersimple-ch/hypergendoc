@@ -48,6 +48,14 @@ export type WorkspaceAuditPage = {
   nextOffset?: number;
 };
 export type CredentialCreation = { credential: McpCredential; token: string };
+export type WorkspaceInvite = {
+  id: string;
+  email: string;
+  role: WorkspaceRole;
+  createdAt: string;
+  expiresAt: string;
+};
+export type InviteCreation = { invite: WorkspaceInvite; link: string };
 export type StyleDetail = { style: Style; versions: StyleVersion[] };
 export type StyleCreation = { style: Style; version: StyleVersion };
 export type TemplateDetail = {
@@ -55,6 +63,15 @@ export type TemplateDetail = {
   versions: TemplateVersion[];
 };
 export type TemplateCreation = { template: Template; version: TemplateVersion };
+export type StarterTemplateSummary = {
+  id: string;
+  name: string;
+  description: string;
+  fieldCount: number;
+  fieldKinds: string[];
+  definition: TemplateDefinition;
+  sampleData: TemplateData;
+};
 export type DocumentDetail = ContractDocumentDetail;
 export type DocumentHistoryDetail = DocumentDetail;
 export type DocumentCommitSource = DocumentCurrentSource;
@@ -87,10 +104,20 @@ export const dashboardApi = {
     items<Member>(
       await api<Collection<Member>>("/api/workspaces/current/members"),
     ),
-  invite: (email: string, role: WorkspaceRole) =>
-    api<Member>("/api/workspaces/current/members", {
+  createInvite: (email: string, role: WorkspaceRole) =>
+    api<InviteCreation>("/api/workspaces/current/invites", {
       method: "POST",
       body: { email, role },
+    }),
+  invites: async () =>
+    items<WorkspaceInvite>(
+      await api<Collection<WorkspaceInvite>>(
+        "/api/workspaces/current/invites",
+      ),
+    ),
+  revokeInvite: (inviteId: string) =>
+    api<void>(`/api/workspaces/current/invites/${inviteId}`, {
+      method: "DELETE",
     }),
   changeMemberRole: (userId: string, role: WorkspaceRole) =>
     api<Member>(`/api/workspaces/current/members/${userId}`, {
@@ -190,6 +217,36 @@ export const dashboardApi = {
     );
     return result.template;
   },
+  starterTemplates: () =>
+    api<StarterTemplateSummary[]>("/api/starter-templates"),
+  previewStarter: (input: {
+    companyId: string;
+    starterId: string;
+    styleVersionId: string;
+  }) =>
+    api<{ url: string }>("/api/starter-templates/preview", {
+      method: "POST",
+      body: input,
+    }),
+  createTemplateFromStarter: async (input: {
+    companyId: string;
+    starterId: string;
+    name: string;
+    styleVersionId: string;
+  }) => {
+    const result = await api<TemplateCreation>("/api/templates/from-starter", {
+      method: "POST",
+      body: input,
+    });
+    return result.template;
+  },
+  duplicateTemplate: async (id: string) => {
+    const result = await api<TemplateCreation>(
+      `/api/templates/${id}/duplicate`,
+      { method: "POST", body: {} },
+    );
+    return result.template;
+  },
   template: async (id: string): Promise<TemplateDetail> => {
     const template = await api<Template>(`/api/templates/${id}`);
     const versions = await api<TemplateVersion[]>(
@@ -238,6 +295,11 @@ export const dashboardApi = {
     api<DocumentCurrentSource>(`/api/documents/${id}/data`, {
       method: "POST",
       body: input,
+    }),
+  restyleDocument: (id: string, styleVersionId: string) =>
+    api<DocumentCurrentSource>(`/api/documents/${id}/restyle`, {
+      method: "POST",
+      body: { styleVersionId },
     }),
   uploadImage: (id: string, file: File): Promise<CompanyImageAsset> => {
     const form = new FormData();
@@ -308,6 +370,13 @@ export const dashboardApi = {
     }),
   document: (id: string): Promise<DocumentDetail> =>
     api<DocumentDetail>(`/api/documents/${id}`),
+  duplicateDocument: async (id: string) => {
+    const result = await api<{
+      document: Document;
+      current: DocumentCurrentSource;
+    }>(`/api/documents/${id}/duplicate`, { method: "POST", body: {} });
+    return result.document;
+  },
   documentCommits: (id: string) =>
     api<DocumentCommit[]>(`/api/documents/${id}/commits`),
   documentCommit: (

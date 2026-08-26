@@ -23,6 +23,16 @@ describe("LoginPage", () => {
     );
   });
 
+  it("confirms a freshly accepted invitation before sign-in", async () => {
+    render(
+      await LoginPage({ searchParams: Promise.resolve({ invited: "true" }) }),
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Invitation accepted. Your account is ready - sign in to continue.",
+    );
+  });
+
   it("shows a fixed error only for Better Auth's invalid token value", async () => {
     render(
       await LoginPage({

@@ -176,6 +176,9 @@ function documentApp(actorFor: () => ActorContext) {
     findActiveStyleVersion: vi.fn(async () => undefined),
     findActiveTemplate: vi.fn(async () => undefined),
     findTemplateVersion: vi.fn(async () => undefined),
+    createTemplateVersion: vi.fn(async () => {
+      throw new Error("not implemented in test");
+    }),
     findDocument: vi.fn(async (workspaceId: string, id: string) =>
       workspaceId === "tenant-a" && id === documentId ? document : undefined,
     ),

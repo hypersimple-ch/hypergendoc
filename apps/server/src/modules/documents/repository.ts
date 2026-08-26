@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Database } from "@hypergendoc/db";
 import {
   companies,
@@ -12,6 +12,7 @@ import type {
   Document,
   StyleDefinition,
   TemplateDefinition,
+  TemplateVersion,
 } from "@hypergendoc/contracts";
 import type { DocumentRepository } from "./service-types.js";
 import {
@@ -67,6 +68,16 @@ export interface GitDocumentRepository {
     | { templateId: string; versionId: string; definition: TemplateDefinition }
     | undefined
   >;
+  /** Allocates the next immutable template version without activation. */
+  createTemplateVersion(
+    input: Readonly<{
+      workspaceId: string;
+      companyId: string;
+      templateId: string;
+      definition: TemplateDefinition;
+      createdByUserId?: string | undefined;
+    }>,
+  ): Promise<TemplateVersion>;
   findDocument(
     workspaceId: string,
     documentId: string,
@@ -94,6 +105,15 @@ export interface GitDocumentRepository {
     companyId: string,
   ): Promise<void>;
 }
+
+const version = (row: typeof templateVersions.$inferSelect): TemplateVersion => ({
+  id: row.id,
+  templateId: row.templateId,
+  version: row.version,
+  definition: row.definition as TemplateDefinition,
+  createdByUserId: row.createdByUserId ?? "",
+  createdAt: row.createdAt.toISOString(),
+});
 
 const document = (row: typeof documents.$inferSelect): Document => ({
   id: row.id,
@@ -285,6 +305,36 @@ function operations(db: Db): Omit<GitDocumentRepository, "transaction"> {
         )
         .returning();
       return row && document(row);
+    },
+    async createTemplateVersion(input) {
+      await db.execute(
+        sql`select pg_advisory_xact_lock(hashtext(${input.workspaceId} || ':' || ${input.templateId}))`,
+      );
+      const [last] = await db
+        .select({ version: templateVersions.version })
+        .from(templateVersions)
+        .where(
+          and(
+            eq(templateVersions.workspaceId, input.workspaceId),
+            eq(templateVersions.templateId, input.templateId),
+          ),
+        )
+        .orderBy(desc(templateVersions.version))
+        .limit(1);
+      const [row] = await db
+        .insert(templateVersions)
+        .values({
+          workspaceId: input.workspaceId,
+          companyId: input.companyId,
+          templateId: input.templateId,
+          definition: input.definition,
+          styleVersionId: input.definition.styleVersionId,
+          createdByUserId: input.createdByUserId ?? null,
+          version: (last?.version ?? 0) + 1,
+        })
+        .returning();
+      if (!row) throw new Error("template version insert did not return a row");
+      return version(row);
     },
     async lockCompanyForGitWrites(workspaceId, companyId) {
       await db.execute(

@@ -18,6 +18,7 @@ import {
 import { marked } from "marked";
 import sanitizeHtml from "sanitize-html";
 import { builtInFonts } from "./built-in-fonts.js";
+import { encodeQr } from "./vendor/qrcodegen.js";
 
 export const DOCUMENT_BODY_MAX_BYTES = 256 * 1024;
 export const DOCUMENT_MAX_PAGES = 100;
@@ -325,20 +326,123 @@ function resolveAssets(
 
 const textStyleRoles = ["h1", "h2", "h3", "h4", "h5", "h6", "caption"] as const;
 
+export interface HeaderFooterContext {
+  readonly title?: string;
+  readonly locale?: string;
+  readonly now?: Date;
+}
+
+/** Stable ISO-like render date for "en", medium Intl format otherwise. */
+const headerFooterDate = (locale: string | undefined, date: Date) => {
+  if (!locale || locale === "en") return date.toISOString().slice(0, 10);
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: "medium",
+      timeZone: "UTC",
+    }).format(date);
+  } catch {
+    return date.toISOString().slice(0, 10);
+  }
+};
+
+type MarginBoxPart = string | { readonly counter: "page" | "pages" };
+
+/**
+ * Expands {page}, {pages}, {title}, and {date} tokens into CSS content parts.
+ * Unknown braces stay literal text and are CSS-string-escaped later.
+ */
+const headerFooterTokens = (
+  text: string,
+  context: Readonly<{ title?: string; dateText: string }>,
+): readonly MarginBoxPart[] => {
+  const parts: MarginBoxPart[] = [];
+  let literal = "";
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === "{") {
+      const end = text.indexOf("}", index + 1);
+      const token = end === -1 ? "" : text.slice(index + 1, end);
+      if (
+        token === "page" ||
+        token === "pages" ||
+        token === "title" ||
+        token === "date"
+      ) {
+        if (literal) {
+          parts.push(literal);
+          literal = "";
+        }
+        if (token === "page" || token === "pages")
+          parts.push({ counter: token });
+        else if (token === "title") parts.push(context.title ?? "");
+        else parts.push(context.dateText);
+        index = end;
+        continue;
+      }
+    }
+    literal += text[index];
+  }
+  if (literal) parts.push(literal);
+  return parts;
+};
+
 const pageMarginBoxes = (
   position: "top" | "bottom",
   value: StyleDefinition["header"],
   mutedColor: string,
   fontFamily: string,
+  context: Readonly<{ title?: string; dateText: string }>,
+  logoOccupiesLeft = false,
 ) => {
   if (!value.enabled) return "";
   return (["left", "center", "right"] as const)
     .map((alignment) => {
+      if (alignment === "left" && logoOccupiesLeft) return "";
       const text = value[`${alignment}Text`];
       const pageNumber = alignment === "right" && value.showPageNumber;
-      return `@${position}-${alignment} { color: ${mutedColor}; content: "${escapeCssString(text)}"${pageNumber ? ' " " counter(page)' : ""}; font-family: ${fontFamily}; font-size: 8pt; }`;
+      const expanded = headerFooterTokens(text, context)
+        .map((part) =>
+          typeof part === "string"
+            ? `"${escapeCssString(part)}"`
+            : `counter(${part.counter})`,
+        )
+        .join(" ");
+      return `@${position}-${alignment} { color: ${mutedColor}; content: ${expanded || '""'}${pageNumber ? ' " " counter(page)' : ""}; font-family: ${fontFamily}; font-size: 8pt; }`;
     })
     .join("\n");
+};
+
+const runningLogoLayers = (
+  style: StyleDefinition,
+  logo: ResolvedStyleAssets["logo"] | null | undefined,
+): string => {
+  if (!logo) return "";
+  const uri = `url("data:${logo.contentType};base64,${logo.base64}")`;
+  const layers: string[] = [];
+  if (style.header.enabled && style.header.showLogo)
+    layers.push(`${uri} no-repeat ${style.page.marginLeftMm}mm 5mm / auto 9mm`);
+  if (style.footer.enabled && style.footer.showLogo)
+    layers.push(
+      `${uri} no-repeat left ${style.page.marginLeftMm}mm bottom 5mm / auto 9mm`,
+    );
+  return layers.join(", ");
+};
+
+const runningLogoCss = (
+  style: StyleDefinition,
+  logo: ResolvedStyleAssets["logo"] | null | undefined,
+) => {
+  const layers = runningLogoLayers(style, logo);
+  return layers
+    ? `.running-logos { position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; background: ${layers}; }\n`
+    : "";
+};
+
+const runningLogoMarkup = (
+  style: StyleDefinition,
+  logo: ResolvedStyleAssets["logo"] | null | undefined,
+) => {
+  const layers = runningLogoLayers(style, logo);
+  return layers ? '<div class="running-logos" aria-hidden="true"></div>' : "";
 };
 
 /** Builds deterministic, standalone, server-owned HTML without external assets. */
@@ -347,8 +451,16 @@ export function renderDocumentHtml(
   format: DocumentFormat,
   style: StyleDefinition,
   assets?: ResolvedStyleAssets,
+  headerFooter?: HeaderFooterContext,
 ): string {
   const exactBody = sanitizeDocumentInput(format, body);
+  const marginContext = {
+    ...(headerFooter?.title ? { title: headerFooter.title } : {}),
+    dateText: headerFooterDate(
+      headerFooter?.locale,
+      headerFooter?.now ?? new Date(),
+    ),
+  };
   const assetRendering =
     style.assetVersion === 1 ? resolveAssets(style, assets) : undefined;
   const rendered =
@@ -424,12 +536,12 @@ h1 { font-size: ${(style.bodySizePt * style.headingScale).toFixed(2)}pt; } h2 { 
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <style>
 ${fontFaceCss ? `${fontFaceCss}\n` : ""}@page { size: ${pageSize}; margin: ${style.page.marginTopMm}mm ${style.page.marginRightMm}mm ${style.page.marginBottomMm}mm ${style.page.marginLeftMm}mm;
-${pageMarginBoxes("top", style.header, style.colors.muted, bodyFont)}
-${pageMarginBoxes("bottom", style.footer, style.colors.muted, bodyFont)}
+${pageMarginBoxes("top", style.header, style.colors.muted, bodyFont, marginContext, Boolean(logo && style.header.enabled && style.header.showLogo))}
+${pageMarginBoxes("bottom", style.footer, style.colors.muted, bodyFont, marginContext, Boolean(logo && style.footer.enabled && style.footer.showLogo))}
 }
 * { box-sizing: border-box; }
 body { ${bodyCss} margin: 0; }
-${logo ? ".document-logo { display: block; max-height: 24mm; max-width: 100%; object-fit: contain; margin: 0 0 6mm; }\n" : ""}main { min-height: 100%; }
+${logo ? ".document-logo { display: block; max-height: 24mm; max-width: 100%; object-fit: contain; margin: 0 0 6mm; }\n" : ""}${runningLogoCss(style, logo)}main { min-height: 100%; }
 ${textStylesCss}
 em { font-style: ${emphasis}; } a { color: ${style.colors.primary}; } blockquote { border-left: 3px solid ${style.colors.accent}; color: ${style.colors.muted}; margin-left: 0; padding-left: 1em; }
 h1, h2, h3, h4, h5, h6, caption { break-after: avoid-page; } table, blockquote, pre { break-inside: avoid-page; } thead { display: table-header-group; } tr { break-inside: avoid-page; }
@@ -437,7 +549,7 @@ table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid ${s
 </style>
 </head>
 <body>
-<main>${logoMarkup}${fragment}</main>
+${runningLogoMarkup(style, logo)}<main>${logoMarkup}${fragment}</main>
 </body>
 </html>`;
 }
@@ -457,10 +569,16 @@ export interface RenderTemplateDocumentInput {
   readonly styleAssets?: ResolvedStyleAssets;
   readonly templateAssets?: ResolvedTemplateAssets;
   readonly locale?: string;
+  /** Optional document title for {title} header/footer tokens. */
+  readonly documentTitle?: string;
 }
 
 const TEMPLATE_MAX_DEPTH = 32;
 const TEMPLATE_MAX_EXPANDED_NODES = 5_000;
+/** Defensive render-time twin of the contract's 20-qr-node save cap. */
+const TEMPLATE_MAX_QR_NODES = 20;
+/** Defensive render-time twin of the contract's 10-chart-node save cap. */
+const TEMPLATE_MAX_CHART_NODES = 10;
 const TEMPLATE_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 const htmlEscape = (value: unknown) =>
@@ -631,9 +749,16 @@ export function templateImageIds(
   return [...ids].sort();
 }
 
+/** Rounds half away from zero for stable money-like semantics. */
+const roundHalfAwayFromZero = (value: number, decimals: number): number => {
+  const factor = 10 ** decimals;
+  return (Math.round(Math.abs(value) * factor) / factor) * Math.sign(value);
+};
+
 const evaluateTemplateExpression = (
   expression: TemplateExpression,
   root: Readonly<Record<string, TemplateValue>>,
+  locale: string,
 ): TemplateValue => {
   if (expression.op === "value") return expression.value;
   if (expression.op === "path")
@@ -660,20 +785,96 @@ const evaluateTemplateExpression = (
   }
   if (expression.op === "dateAdd") {
     const value = templatePath(root, {}, expression.path);
-    const days = evaluateTemplateExpression(expression.days, root);
+    const days = evaluateTemplateExpression(expression.days, root, locale);
     if (typeof value !== "string" || typeof days !== "number") return null;
     const date = new Date(`${value}T00:00:00.000Z`);
     if (Number.isNaN(date.valueOf())) return null;
     date.setUTCDate(date.getUTCDate() + days);
     return date.toISOString().slice(0, 10);
   }
-  const left = evaluateTemplateExpression(expression.left, root);
-  const right = evaluateTemplateExpression(expression.right, root);
+  switch (expression.op) {
+    case "min":
+    case "max": {
+      let candidates: readonly TemplateValue[];
+      if ("path" in expression) {
+        const values = templatePath(root, {}, expression.path);
+        candidates = Array.isArray(values)
+          ? (values as readonly TemplateValue[]).filter(
+              (entry) =>
+                typeof entry === "number" && Number.isFinite(entry),
+            )
+          : [];
+      } else {
+        candidates = expression.operands.map((operand) =>
+          evaluateTemplateExpression(operand, root, locale),
+        );
+      }
+      if (
+        !candidates.length ||
+        !candidates.every(
+          (entry) => typeof entry === "number" && Number.isFinite(entry),
+        )
+      )
+        return null;
+      const numbers = candidates as readonly number[];
+      const result =
+        expression.op === "min" ? Math.min(...numbers) : Math.max(...numbers);
+      return Number.isFinite(result) ? result : null;
+    }
+    case "abs": {
+      const value = evaluateTemplateExpression(expression.value, root, locale);
+      return typeof value === "number" && Number.isFinite(value)
+        ? Math.abs(value)
+        : null;
+    }
+    case "ceil": {
+      const value = evaluateTemplateExpression(expression.value, root, locale);
+      return typeof value === "number" && Number.isFinite(value)
+        ? Math.ceil(value)
+        : null;
+    }
+    case "floor": {
+      const value = evaluateTemplateExpression(expression.value, root, locale);
+      return typeof value === "number" && Number.isFinite(value)
+        ? Math.floor(value)
+        : null;
+    }
+    case "round": {
+      const value = evaluateTemplateExpression(expression.value, root, locale);
+      if (typeof value !== "number" || !Number.isFinite(value)) return null;
+      // Half-away-from-zero keeps money-like rounding symmetric (2.5 -> 3,
+      // -2.5 -> -3), unlike Math.round's half-up behavior.
+      return roundHalfAwayFromZero(value, expression.decimals ?? 0);
+    }
+    case "concat": {
+      return expression.parts
+        .map((part) => {
+          const value = evaluateTemplateExpression(part, root, locale);
+          if (typeof value === "number") {
+            if (!Number.isFinite(value)) return "";
+            return new Intl.NumberFormat(locale).format(value);
+          }
+          return typeof value === "string" ? value : "";
+        })
+        .join("");
+    }
+    case "if": {
+      const branch = templateConditionMatches(expression.condition, root, {})
+        ? expression.then
+        : expression.otherwise;
+      return evaluateTemplateExpression(branch, root, locale);
+    }
+  }
+  const left = evaluateTemplateExpression(expression.left, root, locale);
+  const right = evaluateTemplateExpression(expression.right, root, locale);
   if (typeof left !== "number" || typeof right !== "number") return null;
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return null;
   if (expression.op === "add") return left + right;
   if (expression.op === "subtract") return left - right;
   if (expression.op === "multiply") return left * right;
-  return right === 0 ? null : left / right;
+  if (right === 0) return null;
+  const quotient = left / right;
+  return Number.isFinite(quotient) ? quotient : null;
 };
 
 const templateConditionMatches = (
@@ -768,8 +969,10 @@ const templateColor = (
 export function renderTemplateDocumentHtml(
   input: RenderTemplateDocumentInput,
 ): string {
+  const renderDate = new Date();
   const baseData = validateTemplateData(input.definition, input.data);
   const root: Record<string, TemplateValue> = { ...baseData };
+  const locale = input.locale ?? input.definition.locale ?? "en";
   const computed = input.definition.computed ?? {};
   const computedDependencies = (expression: TemplateExpression): string[] => {
     switch (expression.op) {
@@ -792,6 +995,24 @@ export function renderTemplateDocumentHtml(
           ...computedDependencies(expression.left),
           ...computedDependencies(expression.right),
         ];
+      case "min":
+      case "max":
+        return "path" in expression
+          ? [expression.path.split(".")[0]!]
+          : expression.operands.flatMap(computedDependencies);
+      case "round":
+      case "abs":
+      case "ceil":
+      case "floor":
+        return computedDependencies(expression.value);
+      case "concat":
+        return expression.parts.flatMap(computedDependencies);
+      case "if":
+        return [
+          expression.condition.path.split(".")[0]!,
+          ...computedDependencies(expression.then),
+          ...computedDependencies(expression.otherwise),
+        ];
     }
   };
   const resolvedComputed = new Set<string>();
@@ -803,12 +1024,11 @@ export function renderTemplateDocumentHtml(
     resolvingComputed.add(key);
     for (const dependency of computedDependencies(expression))
       if (computed[dependency]) resolveComputed(dependency);
-    root[key] = evaluateTemplateExpression(expression, root);
+    root[key] = evaluateTemplateExpression(expression, root, locale);
     resolvingComputed.delete(key);
     resolvedComputed.add(key);
   };
   for (const key of Object.keys(computed)) resolveComputed(key);
-  const locale = input.locale ?? "en";
   const imageAssets = new Map<
     string,
     NonNullable<ResolvedTemplateAssets>["images"][number]
@@ -839,22 +1059,45 @@ export function renderTemplateDocumentHtml(
   let expandedNodes = 0;
   let generatedId = 0;
 
+  /** Active grouped-repeat scope used by groupSum bindings. */
+  type GroupScope = { readonly items: readonly TemplateValue[] } | undefined;
   const inlineText = (
     inline: readonly TemplateInline[] | undefined,
     locals: Readonly<Record<string, TemplateValue>>,
     markup: boolean,
+    group?: GroupScope,
   ) =>
     (inline ?? [])
       .map((part) => {
-        const raw =
-          part.type === "binding"
-            ? templateDisplayValue(
-                templatePath(root, locals, part.path ?? ""),
-                part.format,
-                part.currency,
-                locale,
-              )
-            : (part.value ?? "");
+        let raw: string;
+        if (part.type === "binding") {
+          if (part.groupSum) {
+            // Missing or non-numeric entries contribute 0, matching sum.
+            let total = 0;
+            for (const item of group?.items ?? []) {
+              const value = isTemplateRecord(item)
+                ? templatePath(item, {}, part.groupSum.path)
+                : undefined;
+              if (typeof value === "number" && Number.isFinite(value))
+                total += value;
+            }
+            raw = templateDisplayValue(
+              total,
+              part.format,
+              part.currency,
+              locale,
+            );
+          } else {
+            raw = templateDisplayValue(
+              templatePath(root, locals, part.path ?? ""),
+              part.format,
+              part.currency,
+              locale,
+            );
+          }
+        } else {
+          raw = part.value ?? "";
+        }
         let value = htmlEscape(raw);
         if (!markup) return raw;
         if (part.strong) value = `<strong>${value}</strong>`;
@@ -865,6 +1108,8 @@ export function renderTemplateDocumentHtml(
       })
       .join("");
 
+  let renderedQrCount = 0;
+  let renderedChartCount = 0;
   const renderPass = (
     nodes: readonly TemplateNode[],
     headings: readonly Heading[],
@@ -872,10 +1117,13 @@ export function renderTemplateDocumentHtml(
   ): string => {
     expandedNodes = 0;
     generatedId = 0;
+    renderedQrCount = 0;
+    renderedChartCount = 0;
     const renderNodes = (
       values: readonly TemplateNode[],
       locals: Readonly<Record<string, TemplateValue>>,
       depth: number,
+      group?: GroupScope,
     ): string => {
       if (depth > TEMPLATE_MAX_DEPTH) fail("invalid_body");
       return values
@@ -891,8 +1139,13 @@ export function renderTemplateDocumentHtml(
                 fail("invalid_body");
               const pageMaster =
                 input.definition.pageMasters[master] ?? fail("invalid_body");
-              const pageHeightMm = input.style.page.size === "A4" ? 297 : 279.4;
-              const pageWidthMm = input.style.page.size === "A4" ? 210 : 215.9;
+              const landscape = pageMaster.orientation === "landscape";
+              const longSideMm =
+                input.style.page.size === "A4" ? 297 : 279.4;
+              const shortSideMm =
+                input.style.page.size === "A4" ? 210 : 215.9;
+              const pageHeightMm = landscape ? shortSideMm : longSideMm;
+              const pageWidthMm = landscape ? longSideMm : shortSideMm;
               const contentHeightMm = Math.max(
                 1,
                 Math.round(
@@ -913,25 +1166,25 @@ export function renderTemplateDocumentHtml(
                     1_000,
                 ) / 1_000,
               );
-              return `<section class="template-page template-master-${htmlEscape(master)}" data-page-content-mm="${contentHeightMm}" data-page-width-mm="${contentWidthMm}" data-page-start="${pageMaster.startOn ?? "any"}">${renderNodes(node.children ?? [], locals, depth + 1)}</section>`;
+              return `<section class="template-page template-master-${htmlEscape(master)}" data-page-content-mm="${contentHeightMm}" data-page-width-mm="${contentWidthMm}" data-page-start="${pageMaster.startOn ?? "any"}">${renderNodes(node.children ?? [], locals, depth + 1, group)}</section>`;
             }
             case "section": {
               const id = node.id ?? `section-${++generatedId}`;
-              return `<section id="${htmlEscape(id)}" class="template-section">${renderNodes(node.children ?? [], locals, depth + 1)}</section>`;
+              return `<section id="${htmlEscape(id)}" class="template-section">${renderNodes(node.children ?? [], locals, depth + 1, group)}</section>`;
             }
             case "stack":
-              return `<div class="template-stack" style="--template-gap:${node.gapMm ?? 4}mm">${renderNodes(node.children ?? [], locals, depth + 1)}</div>`;
+              return `<div class="template-stack" style="--template-gap:${node.gapMm ?? 4}mm">${renderNodes(node.children ?? [], locals, depth + 1, group)}</div>`;
             case "grid":
-              return `<div class="template-grid" style="--template-columns:${node.columns ?? 2};--template-gap:${node.gapMm ?? 4}mm">${renderNodes(node.children ?? [], locals, depth + 1)}</div>`;
+              return `<div class="template-grid" style="--template-columns:${node.columns ?? 2};--template-gap:${node.gapMm ?? 4}mm">${renderNodes(node.children ?? [], locals, depth + 1, group)}</div>`;
             case "heading": {
               const level = node.level ?? 2;
-              const text = inlineText(node.content, locals, false);
+              const text = inlineText(node.content, locals, false, group);
               const id = node.id ?? `heading-${++generatedId}`;
               if (collecting) collectHeadings.push({ id, level, text });
-              return `<h${level} id="${htmlEscape(id)}">${inlineText(node.content, locals, true)}</h${level}>`;
+              return `<h${level} id="${htmlEscape(id)}">${inlineText(node.content, locals, true, group)}</h${level}>`;
             }
             case "paragraph":
-              return `<p>${inlineText(node.content, locals, true)}</p>`;
+              return `<p>${inlineText(node.content, locals, true, group)}</p>`;
             case "richText": {
               const value = templatePath(root, locals, node.source ?? "");
               return `<div class="template-rich-text">${typeof value === "string" ? sanitizeFragment(value) : ""}</div>`;
@@ -953,9 +1206,139 @@ export function renderTemplateDocumentHtml(
                   )
                 : "";
               const caption = node.caption?.length
-                ? `<figcaption>${inlineText(node.caption, locals, true)}</figcaption>`
+                ? `<figcaption>${inlineText(node.caption, locals, true, group)}</figcaption>`
                 : "";
-              return `<figure class="template-image"><img src="data:${asset.contentType};base64,${asset.base64}" alt="${htmlEscape(alt)}" style="object-fit:${node.fit ?? "cover"}${node.heightMm === undefined ? "" : `;height:${node.heightMm}mm`}">${caption}</figure>`;
+              // Frame controls emit constrained CSS only: token colors from
+              // the style, fixed border widths per weight, and bounded
+              // radius/width numbers validated by the contract.
+              const frameWeights = {
+                thin: "0.4mm",
+                normal: "0.8mm",
+                thick: "1.6mm",
+              } as const;
+              let imageStyle = `object-fit:${node.fit ?? "cover"}`;
+              if (node.heightMm !== undefined)
+                imageStyle += `;height:${node.heightMm}mm`;
+              if (node.widthMm !== undefined)
+                imageStyle += `;width:${node.widthMm}mm`;
+              if (node.cornerRadiusMm !== undefined)
+                imageStyle += `;border-radius:${node.cornerRadiusMm}mm`;
+              if (node.frame)
+                imageStyle += `;border:${frameWeights[node.frame.weight]} solid ${templateColor(node.frame.color, input.style)}`;
+              return `<figure class="template-image"><img src="data:${asset.contentType};base64,${asset.base64}" alt="${htmlEscape(alt)}" style="${imageStyle}">${caption}</figure>`;
+            }
+            case "qr": {
+              const resolved =
+                node.value ??
+                templateDisplayValue(
+                  templatePath(root, locals, node.source ?? ""),
+                  "text",
+                  undefined,
+                  locale,
+                );
+              if (typeof resolved !== "string" || !resolved.length) return "";
+              renderedQrCount += 1;
+              if (renderedQrCount > TEMPLATE_MAX_QR_NODES)
+                fail("body_too_large");
+              // Deterministic inline SVG: modules are built from booleans,
+              // so no escaping is involved in the symbol itself.
+              const code = encodeQr(resolved, node.errorCorrection ?? "medium");
+              const quietZone = 4;
+              const span = code.size + quietZone * 2;
+              let pathData = "";
+              for (let y = 0; y < code.size; y++)
+                for (let x = 0; x < code.size; x++)
+                  if (code.getModule(x, y))
+                    pathData += `M${x + quietZone} ${y + quietZone}h1v1h-1z`;
+              const captionText = node.caption?.length
+                ? inlineText(node.caption, locals, false, group)
+                : "";
+              const label = captionText.length ? captionText : "QR code";
+              const svg = `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${htmlEscape(label)}" width="${node.sizeMm ?? 25}mm" height="${node.sizeMm ?? 25}mm" viewBox="0 0 ${span} ${span}" shape-rendering="crispEdges"><title>${htmlEscape(label)}</title><rect width="${span}" height="${span}" fill="#ffffff"/><path fill="#000000" d="${pathData}"/></svg>`;
+              const caption = node.caption?.length
+                ? `<figcaption>${inlineText(node.caption, locals, true, group)}</figcaption>`
+                : "";
+              return `<figure class="template-qr">${svg}${caption}</figure>`;
+            }
+            case "chart": {
+              renderedChartCount += 1;
+              if (renderedChartCount > TEMPLATE_MAX_CHART_NODES)
+                fail("body_too_large");
+              const value = templatePath(root, locals, node.source ?? "");
+              const rows = Array.isArray(value) ? value : [];
+              const valueFormat = node.currency ? "money" : "number";
+              const barColor = templateColor(node.color ?? "primary", input.style);
+              const mutedColor = input.style.colors.muted;
+              const textColor = input.style.colors.text;
+              const maxItems = node.maxItems ?? 12;
+              const title = node.title;
+              const caption = node.caption?.length
+                ? `<figcaption>${inlineText(node.caption, locals, true, group)}</figcaption>`
+                : "";
+              const entries = rows
+                .slice(0, maxItems)
+                .map((item) => {
+                  if (!isTemplateRecord(item)) return undefined;
+                  const rawLabel = templatePath(item, {}, node.labelPath ?? "");
+                  const rawValue = templatePath(item, {}, node.valuePath ?? "");
+                  if (typeof rawValue !== "number" || !Number.isFinite(rawValue))
+                    return undefined;
+                  const label = htmlEscape(
+                    templateDisplayValue(rawLabel, "text", undefined, locale),
+                  );
+                  return { label, value: rawValue };
+                })
+                .filter((entry): entry is { label: string; value: number } =>
+                  Boolean(entry),
+                );
+              if (!entries.length)
+                return `<figure class="template-chart">${title ? `<p class="template-chart-title">${htmlEscape(title)}</p>` : ""}<p class="template-chart-empty">No data available.</p>${caption}</figure>`;
+              const maxValue = Math.max(...entries.map((e) => e.value), 0);
+              // All-zero data renders zero-length bars against a unit scale.
+              const scale = maxValue > 0 ? maxValue : 1;
+              const formatValue = (amount: number) =>
+                htmlEscape(
+                  templateDisplayValue(amount, valueFormat, node.currency, locale),
+                );
+              let svg: string;
+              if ((node.orientation ?? "horizontal") === "horizontal") {
+                const rowPitch = 9.5;
+                const height = entries.length * rowPitch + 4;
+                const barRows = entries
+                  .map((entry, index) => {
+                    const y = index * rowPitch + 4;
+                    const width = (Math.max(entry.value, 0) / scale) * 92;
+                    return (
+                      `<text x="38" y="${y + 4.6}" text-anchor="end" font-size="4.4" fill="${textColor}">${entry.label}</text>` +
+                      `<rect x="41" y="${y}" width="${width.toFixed(3)}" height="5.4" fill="${barColor}"/>` +
+                      `<text x="${(43 + width).toFixed(3)}" y="${y + 4.6}" font-size="4.4" fill="${mutedColor}">${formatValue(entry.value)}</text>`
+                    );
+                  })
+                  .join("");
+                svg = `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${htmlEscape(title ?? "Bar chart")}" viewBox="0 0 160 ${height}" width="100%"><title>${htmlEscape(title ?? "Bar chart")}</title><line x1="41" y1="2" x2="41" y2="${height - 2}" stroke="${mutedColor}" stroke-width="0.4"/>${barRows}</svg>`;
+              } else {
+                const columnPitch = 160 / entries.length;
+                const chartHeight = 62;
+                const baseline = chartHeight + 6;
+                const barColumns = entries
+                  .map((entry, index) => {
+                    const barWidth = Math.min(columnPitch * 0.55, 14);
+                    const x = index * columnPitch + (columnPitch - barWidth) / 2;
+                    const height = (Math.max(entry.value, 0) / scale) * chartHeight;
+                    const shortLabel =
+                      entry.label.length > 10
+                        ? `${entry.label.slice(0, 9)}…`
+                        : entry.label;
+                    return (
+                      `<text x="${(x + barWidth / 2).toFixed(3)}" y="${(chartHeight - height - 1.6).toFixed(3)}" text-anchor="middle" font-size="4" fill="${mutedColor}">${formatValue(entry.value)}</text>` +
+                      `<rect x="${x.toFixed(3)}" y="${(chartHeight - height).toFixed(3)}" width="${barWidth.toFixed(3)}" height="${height.toFixed(3)}" fill="${barColor}"/>` +
+                      `<text x="${(x + barWidth / 2).toFixed(3)}" y="${baseline + 5}" text-anchor="middle" font-size="4" fill="${textColor}">${shortLabel}</text>`
+                    );
+                  })
+                  .join("");
+                svg = `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${htmlEscape(title ?? "Bar chart")}" viewBox="0 0 160 ${baseline + 7}" width="100%"><title>${htmlEscape(title ?? "Bar chart")}</title><line x1="2" y1="${baseline}" x2="158" y2="${baseline}" stroke="${mutedColor}" stroke-width="0.4"/>${barColumns}</svg>`;
+              }
+              return `<figure class="template-chart">${title ? `<p class="template-chart-title">${htmlEscape(title)}</p>` : ""}${svg}${caption}</figure>`;
             }
             case "list": {
               const value = templatePath(
@@ -973,26 +1356,102 @@ export function renderTemplateDocumentHtml(
               const value = templatePath(root, locals, node.source ?? "");
               const rows = Array.isArray(value) ? value : [];
               const columns = node.tableColumns ?? [];
-              return `<table><thead><tr>${columns.map((column) => `<th style="text-align:${column.align ?? "left"}">${htmlEscape(column.header)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${columns.map((column) => `<td style="text-align:${column.align ?? "left"}">${htmlEscape(templateDisplayValue(isTemplateRecord(row) ? templatePath(row, {}, column.path) : undefined, column.format, column.currency, locale))}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+              const bodyCells = rows
+                .map(
+                  (row) =>
+                    `<tr>${columns
+                      .map(
+                        (column) =>
+                          `<td style="text-align:${column.align ?? "left"}">${htmlEscape(templateDisplayValue(isTemplateRecord(row) ? templatePath(row, {}, column.path) : undefined, column.format, column.currency, locale))}</td>`,
+                      )
+                      .join("")}</tr>`,
+                )
+                .join("");
+              // Footer cells resolve against the enclosing scope and reuse
+              // the aligned column's format/currency/alignment.
+              const footerRow = node.footerRow?.length
+                ? `<tfoot><tr>${node.footerRow
+                    .map((cell, index) => {
+                      const column = columns[index];
+                      const resolved =
+                        cell.path === undefined
+                          ? undefined
+                          : templatePath(root, locals, cell.path);
+                      return `<td style="text-align:${column?.align ?? "left"}">${htmlEscape(templateDisplayValue(resolved, column?.format, column?.currency, locale))}</td>`;
+                    })
+                    .join("")}</tr></tfoot>`
+                : "";
+              return `<table${node.zebraRows ? ' class="template-table-zebra"' : ""}><thead><tr>${columns.map((column) => `<th style="text-align:${column.align ?? "left"}">${htmlEscape(column.header)}</th>`).join("")}</tr></thead><tbody>${bodyCells}</tbody>${footerRow}</table>`;
             }
             case "repeat": {
               const value = templatePath(root, locals, node.source ?? "");
               if (!Array.isArray(value)) return "";
+              const items = value as readonly TemplateValue[];
               const alias = node.as ?? "item";
-              return (value as readonly TemplateValue[])
-                .map((item, index) =>
-                  renderNodes(
-                    node.children ?? [],
-                    { ...locals, [alias]: item, index },
-                    depth + 1,
-                  ),
-                )
+              if (!node.groupBy)
+                return items
+                  .map((item, index) =>
+                    renderNodes(
+                      node.children ?? [],
+                      { ...locals, [alias]: item, index },
+                      depth + 1,
+                      group,
+                    ),
+                  )
+                  .join("");
+              // Group by the item's groupBy value in first-appearance order.
+              type GroupBucket = {
+                key: TemplateValue | undefined;
+                entries: { item: TemplateValue; index: number }[];
+              };
+              const buckets: GroupBucket[] = [];
+              const byToken = new Map<string, GroupBucket>();
+              for (const [index, item] of items.entries()) {
+                const key = isTemplateRecord(item)
+                  ? templatePath(item, {}, node.groupBy)
+                  : undefined;
+                const token =
+                  key === undefined
+                    ? "\u0000undefined"
+                    : JSON.stringify(key);
+                let bucket = byToken.get(token);
+                if (!bucket) {
+                  bucket = { key, entries: [] };
+                  byToken.set(token, bucket);
+                  buckets.push(bucket);
+                }
+                bucket.entries.push({ item, index });
+              }
+              return buckets
+                .map((bucket) => {
+                  const groupScope: GroupScope = {
+                    items: bucket.entries.map((entry) => entry.item),
+                  };
+                  const groupBinding = {
+                    key: bucket.key === undefined ? null : bucket.key,
+                    count: bucket.entries.length,
+                  };
+                  const header = node.groupHeader?.length
+                    ? `<div class="template-group-header">${inlineText(node.groupHeader, { ...locals, group: groupBinding }, true, groupScope)}</div>`
+                    : "";
+                  const body = bucket.entries
+                    .map(({ item, index }) =>
+                      renderNodes(
+                        node.children ?? [],
+                        { ...locals, [alias]: item, index, group: groupBinding },
+                        depth + 1,
+                        groupScope,
+                      ),
+                    )
+                    .join("");
+                  return `${header}${body}`;
+                })
                 .join("");
             }
             case "condition":
               return node.condition &&
                 templateConditionMatches(node.condition, root, locals)
-                ? renderNodes(node.children ?? [], locals, depth + 1)
+                ? renderNodes(node.children ?? [], locals, depth + 1, group)
                 : "";
             case "component": {
               const component =
@@ -1002,6 +1461,7 @@ export function renderTemplateDocumentHtml(
                 component,
                 { ...locals, props: node.props ?? {} },
                 depth + 1,
+                group,
               );
             }
             case "toc":
@@ -1040,8 +1500,11 @@ export function renderTemplateDocumentHtml(
         master.marginBottomMm ?? input.style.page.marginBottomMm,
         master.marginLeftMm ?? input.style.page.marginLeftMm,
       ];
-      const pageHeightMm = input.style.page.size === "A4" ? 297 : 279.4;
-      const pageWidthMm = input.style.page.size === "A4" ? 210 : 215.9;
+      const landscape = master.orientation === "landscape";
+      const longSideMm = input.style.page.size === "A4" ? 297 : 279.4;
+      const shortSideMm = input.style.page.size === "A4" ? 210 : 215.9;
+      const pageHeightMm = landscape ? shortSideMm : longSideMm;
+      const pageWidthMm = landscape ? longSideMm : shortSideMm;
       const contentHeightMm = Math.max(
         1,
         Math.round((pageHeightMm - margins[0] - margins[2]) * 1_000) / 1_000,
@@ -1061,7 +1524,47 @@ export function renderTemplateDocumentHtml(
       const edge = master.edgeBar
         ? `.template-master-${name}::after{content:"";position:absolute;top:0;bottom:0;width:${master.edgeBar.widthMm}mm;background:${templateColor(master.edgeBar.color, input.style)};${master.edgeBar.side === "left" ? "left:0" : "right:0"};}${master.edgeBar.side === "outside" ? `.template-page:nth-of-type(even).template-master-${name}::after{left:0;right:auto;}` : ""}`
         : "";
-      return `@page ${name}{size:${input.style.page.size === "A4" ? "A4" : "letter"};margin:${margins.map((value) => `${value}mm`).join(" ")};${hiddenMarginBoxes}}${master.startOn === "recto" ? `.template-master-${name}{break-before:right;}` : master.startOn === "verso" ? `.template-master-${name}{break-before:left;}` : ""}.template-master-${name}{page:${name};width:${contentWidthMm}mm;min-height:${contentHeightMm}mm;background:${templateColor(master.background, input.style)};color:${templateColor(master.color, input.style)};}${edge}`;
+      const watermarkTones = {
+        neutral: "#6b7280",
+        warning: "#b45309",
+        danger: "#dc2626",
+      } as const;
+      const watermarkOpacities = {
+        subtle: 0.08,
+        normal: 0.16,
+        strong: 0.28,
+      } as const;
+      // Fixed-position so the mark repeats behind content on every physical
+      // page flowed from pages using this master. Renderer-owned tone colors
+      // and opacity presets only: no free-form colors, no images.
+      const logoAsset = input.styleAssets?.logo ?? null;
+      const runningLogoLayers: string[] = [];
+      if (logoAsset) {
+        const logoUri = `url("data:${logoAsset.contentType};base64,${logoAsset.base64}")`;
+        if (
+          input.style.header.enabled &&
+          input.style.header.showLogo &&
+          !master.hideHeader
+        )
+          runningLogoLayers.push(
+            `${logoUri} no-repeat left ${margins[3]}mm top 5mm / auto 9mm`,
+          );
+        if (
+          input.style.footer.enabled &&
+          input.style.footer.showLogo &&
+          !master.hideFooter
+        )
+          runningLogoLayers.push(
+            `${logoUri} no-repeat left ${margins[3]}mm bottom 5mm / auto 9mm`,
+          );
+      }
+      const runningLogo = runningLogoLayers.length
+        ? `.template-master-${name}{position:relative;}.template-master-${name}::after{content:"";position:fixed;top:0;left:0;right:0;bottom:0;pointer-events:none;background:${runningLogoLayers.join(", ")};}`
+        : "";
+      const watermark = master.watermark
+        ? `.template-master-${name}{isolation:isolate;}.template-master-${name}::before{content:"${escapeCssString(master.watermark.text)}";position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-30deg);font-size:48pt;font-weight:700;white-space:nowrap;color:${watermarkTones[master.watermark.tone]};opacity:${watermarkOpacities[master.watermark.opacity]};z-index:-1;pointer-events:none;-webkit-print-color-adjust:exact;print-color-adjust:exact;}`
+        : "";
+      return `@page ${name}{size:${input.style.page.size === "A4" ? "A4" : "letter"}${landscape ? " landscape" : ""};margin:${margins.map((value) => `${value}mm`).join(" ")};${hiddenMarginBoxes}}${master.startOn === "recto" ? `.template-master-${name}{break-before:right;}` : master.startOn === "verso" ? `.template-master-${name}{break-before:left;}` : ""}.template-master-${name}{page:${name};width:${contentWidthMm}mm;min-height:${contentHeightMm}mm;background:${templateColor(master.background, input.style)};color:${templateColor(master.color, input.style)};}${edge}${watermark}${runningLogo}`;
     })
     .join("\n");
   const templateCss = `${masterCss}
@@ -1070,8 +1573,13 @@ export function renderTemplateDocumentHtml(
 .template-stack{display:flex;flex-direction:column;gap:var(--template-gap);}
 .template-grid{display:grid;grid-template-columns:repeat(var(--template-columns),minmax(0,1fr));gap:var(--template-gap);}
 .template-image{margin:0;break-inside:avoid-page;}.template-image img{display:block;width:100%;max-height:220mm;}.template-image figcaption{margin-top:2mm;font-size:8pt;color:${input.style.colors.muted};}
+.template-chart{margin:2mm 0;break-inside:avoid-page;}.template-chart svg{display:block;width:100%;height:auto;}.template-chart-title{margin:0 0 1.5mm;font-size:9pt;font-weight:600;color:${input.style.colors.heading};}.template-chart figcaption{margin-top:1.5mm;font-size:8pt;color:${input.style.colors.muted};}.template-chart-empty{margin:0;font-size:8pt;color:${input.style.colors.muted};}
 .template-page-break{break-after:page;}.template-rich-text>:first-child{margin-top:0;}.template-rich-text>:last-child{margin-bottom:0;}
+.template-page tfoot td{border-top:2px solid ${input.style.colors.heading};font-weight:600;}
+.template-table-zebra tbody tr:nth-child(even) td{background:${input.style.colors.muted};}
+.template-group-header{font-size:8pt;font-weight:700;color:${input.style.colors.heading};break-after:avoid-page;}
 .template-toc ol{list-style:none;padding:0;}.template-toc li{margin:.35em 0;}.template-toc a{display:flex;color:inherit;text-decoration:none;gap:.5em;}.template-toc-leader{flex:1;border-bottom:1px dotted currentColor;transform:translateY(-.25em);}.template-toc-page{min-width:2ch;text-align:right;}
+.template-qr{margin:0;break-inside:avoid-page;}.template-qr svg{display:block;}
 .template-color-text{color:${input.style.colors.text}}.template-color-heading{color:${input.style.colors.heading}}.template-color-primary{color:${input.style.colors.primary}}.template-color-accent{color:${input.style.colors.accent}}.template-color-muted{color:${input.style.colors.muted}}
 `;
   const placeholder = "HYPERGENDOC_TEMPLATE_PLACEHOLDER_7D38";
@@ -1080,8 +1588,14 @@ export function renderTemplateDocumentHtml(
     "html",
     input.style,
     input.styleAssets,
+    {
+      ...(input.documentTitle ? { title: input.documentTitle } : {}),
+      locale,
+      now: renderDate,
+    },
   );
   shell = shell.replace(/<img class="document-logo"[^>]*>/, "");
+  shell = shell.replace(/<div class="running-logos"[^>]*><\/div>/, "");
   shell = shell.replace(`<p>${placeholder}</p>`, body);
   shell = shell.replace("</style>", `${templateCss}</style>`);
   shell = shell.replace(

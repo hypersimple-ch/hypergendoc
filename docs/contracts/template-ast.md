@@ -23,7 +23,13 @@ All fields require `label`. `required`, `description`, and a type-correct `defau
 
 ## Expressions and conditions
 
-Computed expressions support literal `value`, `path`, numeric `add`/`subtract`/`multiply`/`divide`, list `sum`, list `count`, and `dateAdd`. Arithmetic operands must be numeric, `sum` must target numeric list values, `count` must target a list, and `dateAdd` must target a date with numeric days. Expression dependencies must be acyclic.
+Computed expressions support literal `value`, `path`, numeric `add`/`subtract`/`multiply`/`divide`, list `sum`, list `count`, `dateAdd`, numeric `min`/`max` (over a numeric list path, or over two to eight numeric operand expressions), `round` (value plus optional `decimals` 0–6), `abs`, `ceil`, `floor`, string `concat` (two to eight parts, each a literal value or path of text, number, money, or date type), and `if` (`{condition, then, otherwise}` where both branches must infer the same scalar type). Arithmetic and numeric-helper operands must be numeric, `sum`/`min`/`max` must target numeric list values, `count` must target a list, and `dateAdd` must target a date with numeric days. Expression dependencies — including paths inside `if` conditions — must be acyclic. A group-scoped `groupSum` binding form exists only inside grouped repeats (see Grouping); computed expressions cannot contain it, so cycle detection is unaffected.
+
+At render time `sum` contributes `0` for missing or non-numeric list values and arithmetic on non-numeric operands yields an empty value rather than failing the render; non-finite intermediate or final arithmetic results also yield an empty value. `min`/`max` ignore non-numeric entries of their list form and return an empty value when no numeric entry remains, or when any operand-form expression resolves to a non-numeric value. `round` uses half-away-from-zero rounding (`2.5 -> 3`, `-2.5 -> -3`) so money-like rounding stays symmetric around zero; this differs from JavaScript's half-up `Math.round`. `concat` renders numbers with the active definition locale's `Intl.NumberFormat`; dates stay ISO strings unless wrapped in `dateAdd`-derived computed values. `if` evaluates its condition against the current scope and only the taken branch. `count` returns the number of entries of its target list at runtime; if the resolved value is not a list it renders as `0` (the schema still requires the path to declare a list at save time). `dateAdd` returns an ISO `YYYY-MM-DD` date, or an empty value for unparseable inputs.
+
+### Component properties
+
+Inside a component body, bindings and conditions may reference `props.<identifier>`. Props are literal typed values only — they accept no expressions or nested paths beyond the property name. Validation deliberately does not restrict which property names may be referenced; a missing prop simply renders as an empty value, so components degrade gracefully instead of failing the document. Bindings to anything other than declared fields, computed values, active repeater aliases, `index`, or `props.*` are rejected.
 
 A condition contains `path`, an operator (`truthy`, `falsy`, `equals`, `notEquals`, `contains`, `gt`, `gte`, `lt`, or `lte`), and an optional comparison `value`.
 
@@ -31,30 +37,68 @@ A condition contains `path`, an operator (`truthy`, `falsy`, `equals`, `notEqual
 
 Every node is strict: properties not listed for its node type are rejected.
 
-| Node                   | Required                                | Optional                                |
-| ---------------------- | --------------------------------------- | --------------------------------------- |
-| `page`                 | non-empty `children`                    | `master` (defaults to the first master) |
-| `section`              | non-empty `children`                    | `id`                                    |
-| `stack`                | non-empty `children`                    | `gapMm`                                 |
-| `grid`                 | non-empty `children`                    | `columns`, `gapMm`                      |
-| `heading`              | non-empty inline `content`              | `id`, `level`                           |
-| `paragraph`            | non-empty inline `content`              | —                                       |
-| `richText`             | text/rich-text `source` path            | —                                       |
-| `image`                | image `source` path or owned-image UUID | `fit`, `altPath`, inline `caption`      |
-| `list`                 | list `source` or `itemsPath`            | `ordered`                               |
-| `table`                | list `source`, non-empty `tableColumns` | column format/currency/alignment        |
-| `repeat`               | list `source`, non-empty `children`     | `as` alias                              |
-| `condition`            | `condition`, non-empty `children`       | —                                       |
-| `component`            | declared `component` name               | literal `props`                         |
-| `toc`                  | —                                       | `tocDepth`                              |
-| `pageBreak`, `divider` | —                                       | —                                       |
-| `spacer`               | —                                       | `heightMm`                              |
+| Node                   | Required                                | Optional                                                   |
+| ---------------------- | --------------------------------------- | ---------------------------------------------------------- |
+| `page`                 | non-empty `children`                    | `master` (defaults to the first master)                    |
+| `section`              | non-empty `children`                    | `id`                                                       |
+| `stack`                | non-empty `children`                    | `gapMm`                                                    |
+| `grid`                 | non-empty `children`                    | `columns`, `gapMm`                                         |
+| `heading`              | non-empty inline `content`              | `id`, `level`                                              |
+| `paragraph`            | non-empty inline `content`              | —                                                          |
+| `richText`             | text/rich-text `source` path            | —                                                          |
+| `image`                | image `source` path or owned-image UUID | `fit`, `altPath`, inline `caption`, `heightMm`, `widthMm` (1–190), `cornerRadiusMm` (0–20), `frame` (`color`: one of the five style color tokens; `weight`: `"thin"` \| `"normal"` \| `"thick"`) |
+| `qr`                   | literal `value` or text `source` path (exactly one)        | `sizeMm` (10–80), `errorCorrection` (`"low"` \| `"medium"` \| `"quartile"` \| `"high"`), inline `caption` |
+| `chart`                | list `source`, item `labelPath` (text/number), item `valuePath` (number/money) | `title`, `orientation` (`"vertical"` \| `"horizontal"`), `color` (style token), `currency`, `maxItems` (2–30), inline `caption` |
+| `list`                 | list `source` or `itemsPath`            | `ordered`                                                  |
+| `table`                | list `source`, non-empty `tableColumns` | column format/currency/alignment, `footerRow`, `zebraRows` |
+| `repeat`               | list `source`, non-empty `children`     | `as` alias, `groupBy` (item scalar path), `groupHeader`    |
+| `condition`            | `condition`, non-empty `children`       | —                                                          |
+| `component`            | declared `component` name               | literal `props`                                            |
+| `toc`                  | —                                       | `tocDepth`                                                 |
+| `pageBreak`, `divider` | —                                       | —                                                          |
+| `spacer`               | —                                       | `heightMm`                                                 |
+
+Image frame controls emit constrained CSS only: fixed border widths per weight (`thin` 0.4 mm, `normal` 0.8 mm, `thick` 1.6 mm) with the named style token resolved to its color, plus bounded numeric width and radius values. Free-form colors, images, and remote URLs stay rejected.
+
+QR nodes render data text only: a fixed literal value or a bound text field is encoded into a renderer-owned inline SVG symbol (default size 25 mm, medium error correction, at most 20 QR nodes per template). No URLs are fetched, no images are embedded, and captions come from the same restricted inline content as every other node.
 
 Inline content is either `{ "type": "text", "value": "..." }` or `{ "type": "binding", "path": "..." }`; bindings may specify display `format`, `currency`, emphasis, weight, and a style color token.
 
+### Grouping
+
+A `repeat` may declare an optional `groupBy`: a path resolving to a text or number field of the repeated items (money counts as numeric). When set, items are grouped by that value in first-appearance order, and each group renders an optional `groupHeader` inline-content block (same shape as paragraph content) styled as a small bold label row before its items. Inside a grouped repeat's children and header, bindings may reference `group.key` (the group's value) and `group.count` (the number of items in the group); these participate in save-time known-path validation exactly like repeater aliases. Bindings may also use the group-scoped expression form `{ "type": "binding", "groupSum": { "path": ... } }`, where the path is relative to the repeated item and must resolve to a numeric field at save time; it evaluates to the sum of that path over the current group's items (missing or non-numeric entries contribute 0) and supports the same display `format`/`currency` options as any binding. `groupSum` is rejected outside grouped repeats; it cannot appear inside computed expressions, so it never enters the computed-dependency cycle check. Non-grouped repeats are unchanged.
+
+### Headings
+
+Optional heading `id` values must be lowercase identifiers (`^[a-z][a-z0-9-]{0,63}$`), must be unique across the whole definition, and are forbidden inside components; component headings always use renderer-generated instance-safe IDs so repeated components cannot collide. Omitted IDs are generated as stable `heading-N` references used by the TOC.
+
+### Tables
+
+Table columns bind to fields of the list item and may declare display `format`, `currency`, and `align`. An optional `footerRow` is an array of cells aligned to `tableColumns`; each cell is either empty (`{}`) or a single `{ "path": ... }` binding resolved against the enclosing template scope (declared fields, computed values, active repeater aliases — never the row scope), such as a computed sum. Footer cells reuse the aligned column's `format`, `currency`, and alignment, and render as a visually distinct footer row. The optional boolean `zebraRows` stripes even body rows with the style's muted color token.
+
+### Page-master watermarks
+
+A page master may declare an optional `watermark`: `{ text (1–64 characters), tone ("neutral" | "warning" | "danger"), opacity ("subtle" | "normal" | "strong") }`. Tones map to fixed renderer-owned colors and opacity presets to fixed values; free-form colors and images are not accepted. The watermark renders centered at a fixed −30° rotation behind content on every physical page flowed from pages using that master.
+
+### Charts
+
+The `chart` node renders a deterministic inline SVG bar chart over a list field: `labelPath` (item text/number) names each bar, `valuePath` (item number/money) sizes it. Values scale to the largest entry; all-zero data renders zero-length bars against a unit scale. Entries beyond `maxItems` (default 12) are dropped, value labels use locale-aware number/money formatting, and a document may contain at most 10 chart nodes.
+
+## Starter templates
+
+The server ships a small, server-owned starter catalog (`GET /api/starter-templates`) of complete, valid definitions with sample data. `POST /api/templates/from-starter` instantiates one for a company by pinning a caller-chosen `styleVersionId` into the copied definition and saving it as an INACTIVE first version; nothing is activated automatically. Duplicating a template (`POST /api/templates/:templateId/duplicate`) copies the latest version definition under a `(copy)` name, also as an inactive first version. In both cases every saved version remains immutable: adjusting a starter or a copy means creating and activating a new version in the studio.
+
+## Locale-aware formatting
+
+Template definitions may declare an optional root-level BCP-47 `locale` tag (validated with `Intl.Locale`; invalid tags are rejected). When absent, `"en"` is used. The stored locale drives all rendered number, money, and date formatting for bindings, list items, and table cells, and also sets the HTML `lang` attribute and the header/footer `{date}` token format. Rendering stays deterministic for a given definition, data, and locale.
+
+## Headers, footers, and page numbers
+
+When a style header or footer is enabled and `showPageNumber` is set, the page counter is appended in the **right box of both the header and the footer** (as CSS `counter(page)`); no other margin box receives a page number. Header/footer text additionally supports the tokens `{page}` and `{pages}`, which expand to `counter(page)` and `counter(pages)`; `{title}`, which resolves to the document title; and `{date}`, which renders the render date formatted with the active locale (a stable ISO-like `YYYY-MM-DD` format when the locale is `"en"`). Unknown braces stay literal text. All expanded text is CSS-string-escaped before emission, so tokens cannot inject CSS. A style header or footer may also set `showLogo`, which repeats the workspace style's verified logo in the top-left (header) or bottom-left (footer) margin zone of every rendered page; while active it takes over that box's left text slot. Template page masters suppress the running logo wherever they hide the corresponding header or footer.
+
 ## Page masters and pagination
 
-At least one page master is required. A master may override style margins, background/text color, running-header/footer visibility, recto/verso start behavior, and an inside/outside edge bar. Named `@page` rules remain renderer-owned; identifier restrictions prevent CSS injection. Logical page nodes establish page boundaries, content flows onto additional physical pages, explicit `pageBreak` nodes are honored, and the renderer fills TOC page numbers from measured physical flow. PDF output uses tagged-PDF and outline generation.
+At least one page master is required. A master may override style margins, background/text color, running-header/footer visibility, recto/verso start behavior, an inside/outside edge bar, a watermark, and page `orientation` (`"portrait"` by default; `"landscape"` swaps the style's long and short page sides in both the emitted `@page` rule and the measured pagination math). Named `@page` rules remain renderer-owned; identifier restrictions prevent CSS injection. Logical page nodes establish page boundaries, content flows onto additional physical pages, explicit `pageBreak` nodes are honored, and the renderer fills TOC page numbers from measured physical flow. PDF output uses tagged-PDF and outline generation.
 
 ## Minimal example
 

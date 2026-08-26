@@ -213,6 +213,38 @@ describe("platform", () => {
     ).toThrow("DOCUMENT_GIT_ROOT must be an absolute path");
   });
 
+  it("defaults registration to open and rejects unknown signup modes", () => {
+    const values = {
+      APP_ORIGIN: "https://docs.example.test",
+      BETTER_AUTH_SECRET: "auth-secret",
+      CREDENTIAL_PEPPER: "credential-pepper",
+      DATABASE_URL: "postgresql://database",
+      DOCUMENT_GIT_ROOT: "/var/lib/hypergendoc/git",
+      S3_REGION: "us-east-1",
+      S3_BUCKET: "private",
+      S3_ACCESS_KEY: "access",
+      S3_SECRET_KEY: "secret",
+    };
+    const open = loadServerEnvironment(values);
+    expect(open.signupMode).toBe("open");
+    expect(open.trustProxy).toBe(false);
+    expect(
+      loadServerEnvironment({ ...values, SIGNUP_MODE: "closed" }).signupMode,
+    ).toBe("closed");
+    expect(
+      loadServerEnvironment({ ...values, SIGNUP_MODE: "invite" }).signupMode,
+    ).toBe("invite");
+    expect(() =>
+      loadServerEnvironment({ ...values, SIGNUP_MODE: "public" }),
+    ).toThrow("SIGNUP_MODE must be open, invite, or closed");
+    expect(
+      loadServerEnvironment({ ...values, TRUST_PROXY: "1" }).trustProxy,
+    ).toBe(true);
+    expect(() =>
+      loadServerEnvironment({ ...values, TRUST_PROXY: "maybe" }),
+    ).toThrow("TRUST_PROXY");
+  });
+
   it("reports failed dependencies and enforces windows", async () => {
     const health = createHealthChecker([
       { name: "database", check: () => Promise.resolve() },

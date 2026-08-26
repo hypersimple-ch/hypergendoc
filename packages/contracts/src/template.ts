@@ -38,6 +38,23 @@ export const TemplateDataSchema = z
     message: "Template data exceeds 256 KiB UTF-8",
   });
 
+/** A BCP-47 language tag understood by Intl.Locale. */
+export const TemplateLocaleSchema = z
+  .string()
+  .max(35)
+  .regex(/^[a-zA-Z]{2,8}(?:-[a-zA-Z0-9]{1,8})*$/, "Invalid BCP-47 locale tag")
+  .refine(
+    (value) => {
+      try {
+        new Intl.Locale(value);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { message: "Unsupported locale tag" },
+  );
+
 export type TemplateFieldDefinition = Readonly<{
   type:
     | "text"
@@ -182,6 +199,27 @@ export const TemplateFieldDefinitionSchema: z.ZodType<TemplateFieldDefinition> =
       }),
   );
 
+export const TemplateConditionSchema = z
+  .object({
+    path: TemplatePathSchema,
+    operator: z
+      .enum([
+        "truthy",
+        "falsy",
+        "equals",
+        "notEquals",
+        "contains",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+      ])
+      .default("truthy"),
+    value: TemplateValueSchema.optional(),
+  })
+  .strict();
+export type TemplateCondition = z.infer<typeof TemplateConditionSchema>;
+
 export type TemplateExpression =
   | { readonly op: "value"; readonly value: TemplateValue }
   | { readonly op: "path"; readonly path: string }
@@ -203,7 +241,30 @@ export type TemplateExpression =
       readonly op: "dateAdd";
       readonly path: string;
       readonly days: TemplateExpression;
+    }
+  | { readonly op: "min" | "max"; readonly path: string }
+  | {
+      readonly op: "min" | "max";
+      readonly operands: readonly TemplateExpression[];
+    }
+  | {
+      readonly op: "round";
+      readonly value: TemplateExpression;
+      readonly decimals?: number | undefined;
+    }
+  | { readonly op: "abs" | "ceil" | "floor"; readonly value: TemplateExpression }
+  | { readonly op: "concat"; readonly parts: readonly TemplateExpression[] }
+  | {
+      readonly op: "if";
+      readonly condition: TemplateCondition;
+      readonly then: TemplateExpression;
+      readonly otherwise: TemplateExpression;
     };
+
+const ExpressionOperandsSchema = z
+  .array(z.lazy(() => TemplateExpressionSchema))
+  .min(2)
+  .max(8);
 
 export const TemplateExpressionSchema: z.ZodType<TemplateExpression> = z.lazy(
   () =>
@@ -232,35 +293,43 @@ export const TemplateExpressionSchema: z.ZodType<TemplateExpression> = z.lazy(
           days: TemplateExpressionSchema,
         })
         .strict(),
+      z
+        .object({ op: z.enum(["min", "max"]), path: TemplatePathSchema })
+        .strict(),
+      z
+        .object({ op: z.enum(["min", "max"]), operands: ExpressionOperandsSchema })
+        .strict(),
+      z
+        .object({
+          op: z.literal("round"),
+          value: TemplateExpressionSchema,
+          decimals: z.number().int().min(0).max(6).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          op: z.enum(["abs", "ceil", "floor"]),
+          value: TemplateExpressionSchema,
+        })
+        .strict(),
+      z.object({ op: z.literal("concat"), parts: ExpressionOperandsSchema }).strict(),
+      z
+        .object({
+          op: z.literal("if"),
+          condition: TemplateConditionSchema,
+          then: TemplateExpressionSchema,
+          otherwise: TemplateExpressionSchema,
+        })
+        .strict(),
     ]),
 );
-
-export const TemplateConditionSchema = z
-  .object({
-    path: TemplatePathSchema,
-    operator: z
-      .enum([
-        "truthy",
-        "falsy",
-        "equals",
-        "notEquals",
-        "contains",
-        "gt",
-        "gte",
-        "lt",
-        "lte",
-      ])
-      .default("truthy"),
-    value: TemplateValueSchema.optional(),
-  })
-  .strict();
-export type TemplateCondition = z.infer<typeof TemplateConditionSchema>;
 
 export const TemplateInlineSchema = z
   .object({
     type: z.enum(["text", "binding"]),
     value: z.string().max(20_000).optional(),
     path: TemplatePathSchema.optional(),
+    groupSum: z.object({ path: TemplatePathSchema }).strict().optional(),
     format: z.enum(["text", "date", "number", "money"]).optional(),
     currency: z
       .string()
@@ -277,6 +346,7 @@ export const TemplateInlineSchema = z
     if (
       inline.type === "text" &&
       (inline.path !== undefined ||
+        inline.groupSum !== undefined ||
         inline.format !== undefined ||
         inline.currency !== undefined)
     )
@@ -284,8 +354,17 @@ export const TemplateInlineSchema = z
         code: "custom",
         message: "Text inlines cannot define binding properties",
       });
-    if (inline.type === "binding" && !inline.path)
+    if (inline.type === "binding" && !inline.path && !inline.groupSum)
       context.addIssue({ code: "custom", message: "Binding path is required" });
+    if (
+      inline.type === "binding" &&
+      inline.groupSum !== undefined &&
+      inline.path !== undefined
+    )
+      context.addIssue({
+        code: "custom",
+        message: "Binding cannot define both path and groupSum",
+      });
     if (inline.type === "binding" && inline.value !== undefined)
       context.addIssue({
         code: "custom",
@@ -309,6 +388,8 @@ export type TemplateNode = Readonly<{
     | "paragraph"
     | "richText"
     | "image"
+    | "qr"
+    | "chart"
     | "list"
     | "table"
     | "repeat"
@@ -325,6 +406,8 @@ export type TemplateNode = Readonly<{
   children?: readonly TemplateNode[] | undefined;
   source?: string | undefined;
   as?: string | undefined;
+  groupBy?: string | undefined;
+  groupHeader?: readonly TemplateInline[] | undefined;
   component?: string | undefined;
   props?: Readonly<Record<string, TemplateValue>> | undefined;
   condition?: TemplateCondition | undefined;
@@ -333,6 +416,24 @@ export type TemplateNode = Readonly<{
   fit?: "contain" | "cover" | undefined;
   altPath?: string | undefined;
   caption?: readonly TemplateInline[] | undefined;
+  value?: string | undefined;
+  sizeMm?: number | undefined;
+  errorCorrection?: "low" | "medium" | "quartile" | "high" | undefined;
+  labelPath?: string | undefined;
+  valuePath?: string | undefined;
+  currency?: string | undefined;
+  title?: string | undefined;
+  orientation?: "vertical" | "horizontal" | undefined;
+  color?: "text" | "heading" | "primary" | "accent" | "muted" | undefined;
+  maxItems?: number | undefined;
+  widthMm?: number | undefined;
+  cornerRadiusMm?: number | undefined;
+  frame?:
+    | Readonly<{
+        color: "text" | "heading" | "primary" | "accent" | "muted";
+        weight: "thin" | "normal" | "thick";
+      }>
+    | undefined;
   ordered?: boolean | undefined;
   itemsPath?: string | undefined;
   tableColumns?:
@@ -344,6 +445,8 @@ export type TemplateNode = Readonly<{
         align?: "left" | "center" | "right" | undefined;
       }>[]
     | undefined;
+  footerRow?: readonly Readonly<{ path?: string | undefined }>[] | undefined;
+  zebraRows?: boolean | undefined;
   tocDepth?: number | undefined;
   heightMm?: number | undefined;
 }>;
@@ -358,10 +461,33 @@ const nodeProperties: Readonly<
   heading: new Set(["type", "id", "level", "content"]),
   paragraph: new Set(["type", "content"]),
   richText: new Set(["type", "source"]),
-  image: new Set(["type", "source", "fit", "altPath", "caption", "heightMm"]),
+  image: new Set([
+    "type",
+    "source",
+    "fit",
+    "altPath",
+    "caption",
+    "heightMm",
+    "widthMm",
+    "cornerRadiusMm",
+    "frame",
+  ]),
+  qr: new Set(["type", "value", "source", "sizeMm", "errorCorrection", "caption"]),
+  chart: new Set([
+    "type",
+    "source",
+    "labelPath",
+    "valuePath",
+    "title",
+    "orientation",
+    "color",
+    "currency",
+    "maxItems",
+    "caption",
+  ]),
   list: new Set(["type", "source", "itemsPath", "ordered"]),
-  table: new Set(["type", "source", "tableColumns"]),
-  repeat: new Set(["type", "source", "as", "children"]),
+  table: new Set(["type", "source", "tableColumns", "footerRow", "zebraRows"]),
+  repeat: new Set(["type", "source", "as", "groupBy", "groupHeader", "children"]),
   condition: new Set(["type", "condition", "children"]),
   component: new Set(["type", "component", "props"]),
   toc: new Set(["type", "tocDepth"]),
@@ -382,6 +508,8 @@ export const TemplateNodeSchema: z.ZodType<TemplateNode> = z.lazy(() =>
         "paragraph",
         "richText",
         "image",
+        "qr",
+        "chart",
         "list",
         "table",
         "repeat",
@@ -403,16 +531,42 @@ export const TemplateNodeSchema: z.ZodType<TemplateNode> = z.lazy(() =>
       source: z.string().min(1).max(256).optional(),
       as: z
         .string()
-        .regex(/^[a-zA-Z][a-zA-Z0-9_]{0,63}$/)
+        .regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/)
         .optional(),
+      groupBy: TemplatePathSchema.optional(),
+      groupHeader: z.array(TemplateInlineSchema).max(100).optional(),
       component: TemplateIdentifierSchema.optional(),
       props: z.record(TemplateIdentifierSchema, TemplateValueSchema).optional(),
       condition: TemplateConditionSchema.optional(),
       columns: z.number().int().min(1).max(12).optional(),
       gapMm: z.number().min(0).max(40).optional(),
       fit: z.enum(["contain", "cover"]).optional(),
+      widthMm: z.number().min(1).max(190).optional(),
+      cornerRadiusMm: z.number().min(0).max(20).optional(),
+      frame: z
+        .object({
+          color: z.enum(["text", "heading", "primary", "accent", "muted"]),
+          weight: z.enum(["thin", "normal", "thick"]),
+        })
+        .strict()
+        .optional(),
       altPath: TemplatePathSchema.optional(),
       caption: z.array(TemplateInlineSchema).max(100).optional(),
+      value: z.string().min(1).max(2953).optional(),
+      sizeMm: z.number().min(10).max(80).optional(),
+      errorCorrection: z
+        .enum(["low", "medium", "quartile", "high"])
+        .optional(),
+      labelPath: TemplatePathSchema.optional(),
+      valuePath: TemplatePathSchema.optional(),
+      currency: z
+        .string()
+        .regex(/^[A-Z]{3}$/)
+        .optional(),
+      title: z.string().min(1).max(120).optional(),
+      orientation: z.enum(["vertical", "horizontal"]).optional(),
+      color: z.enum(["text", "heading", "primary", "accent", "muted"]).optional(),
+      maxItems: z.number().int().min(2).max(30).optional(),
       ordered: z.boolean().optional(),
       itemsPath: TemplatePathSchema.optional(),
       tableColumns: z
@@ -432,6 +586,11 @@ export const TemplateNodeSchema: z.ZodType<TemplateNode> = z.lazy(() =>
         )
         .max(30)
         .optional(),
+      footerRow: z
+        .array(z.object({ path: TemplatePathSchema.optional() }).strict())
+        .max(30)
+        .optional(),
+      zebraRows: z.boolean().optional(),
       tocDepth: z.number().int().min(1).max(6).optional(),
       heightMm: z.number().min(0).max(297).optional(),
     })
@@ -468,13 +627,25 @@ export const TemplateNodeSchema: z.ZodType<TemplateNode> = z.lazy(() =>
           message: `${node.type} nodes require content`,
         });
       if (
-        ["richText", "image", "table", "repeat"].includes(node.type) &&
+        ["richText", "image", "table", "repeat", "chart"].includes(node.type) &&
         !node.source
       )
         context.addIssue({
           code: "custom",
           path: ["source"],
           message: `${node.type} nodes require a source`,
+        });
+      if (node.type === "chart" && !node.labelPath)
+        context.addIssue({
+          code: "custom",
+          path: ["labelPath"],
+          message: "chart nodes require a labelPath",
+        });
+      if (node.type === "chart" && !node.valuePath)
+        context.addIssue({
+          code: "custom",
+          path: ["valuePath"],
+          message: "chart nodes require a valuePath",
         });
       if (
         node.source &&
@@ -497,6 +668,28 @@ export const TemplateNodeSchema: z.ZodType<TemplateNode> = z.lazy(() =>
           code: "custom",
           path: ["itemsPath"],
           message: "list nodes cannot define both source and itemsPath",
+        });
+      if (node.type === "qr" && !node.value && !node.source)
+        context.addIssue({
+          code: "custom",
+          path: ["value"],
+          message: "qr nodes require a literal value or a source",
+        });
+      if (node.type === "qr" && node.value && node.source)
+        context.addIssue({
+          code: "custom",
+          path: ["value"],
+          message: "qr nodes cannot define both value and source",
+        });
+      if (
+        node.type === "qr" &&
+        node.value !== undefined &&
+        new TextEncoder().encode(node.value).byteLength > 2953
+      )
+        context.addIssue({
+          code: "custom",
+          path: ["value"],
+          message: "qr values cannot exceed the 2953-byte QR capacity",
         });
       if (node.type === "table" && !node.tableColumns?.length)
         context.addIssue({
@@ -523,9 +716,21 @@ const ColorReferenceSchema = z.union([
   z.enum(["text", "heading", "primary", "accent", "muted"]),
   z.string().regex(/^#[0-9a-fA-F]{6}$/),
 ]);
+export const WatermarkToneSchema = z.enum(["neutral", "warning", "danger"]);
+export const WatermarkOpacitySchema = z.enum(["subtle", "normal", "strong"]);
+
 export const TemplatePageMasterSchema = z
   .object({
+    orientation: z.enum(["portrait", "landscape"]).optional(),
     background: ColorReferenceSchema.optional(),
+    watermark: z
+      .object({
+        text: z.string().trim().min(1).max(64),
+        tone: WatermarkToneSchema.default("neutral"),
+        opacity: WatermarkOpacitySchema.default("normal"),
+      })
+      .strict()
+      .optional(),
     color: ColorReferenceSchema.optional(),
     marginTopMm: z.number().min(0).max(80).optional(),
     marginRightMm: z.number().min(0).max(80).optional(),
@@ -551,6 +756,7 @@ const TemplateDefinitionShapeSchema = z
     schemaVersion: z.literal(1),
     styleVersionId: UuidSchema,
     description: z.string().max(1_000).optional(),
+    locale: TemplateLocaleSchema.optional(),
     fields: z.record(TemplateIdentifierSchema, TemplateFieldDefinitionSchema),
     computed: z
       .record(TemplateIdentifierSchema, TemplateExpressionSchema)
@@ -659,11 +865,35 @@ const validatedTemplateDefinitionSchema =
         case "divide":
         case "sum":
         case "count":
+        case "min":
+        case "max":
+        case "round":
+        case "abs":
+        case "ceil":
+        case "floor":
           field = { type: "number", label: name };
           break;
         case "dateAdd":
           field = { type: "date", label: name };
           break;
+        case "concat":
+          field = { type: "text", label: name };
+          break;
+        case "if": {
+          const thenType = inferExpressionType(
+            expression.then,
+            new Set([...seen, name]),
+          );
+          const otherwiseType = inferExpressionType(
+            expression.otherwise,
+            new Set([...seen, name]),
+          );
+          field =
+            thenType !== undefined && thenType === otherwiseType
+              ? { type: thenType, label: name }
+              : undefined;
+          break;
+        }
         case "value":
           field =
             typeof expression.value === "number"
@@ -712,45 +942,140 @@ const validatedTemplateDefinitionSchema =
             ...expressionPaths(expression.left),
             ...expressionPaths(expression.right),
           ];
+        case "min":
+        case "max":
+          return "path" in expression
+            ? [expression.path]
+            : (expression.operands ?? []).flatMap(expressionPaths);
+        case "round":
+        case "abs":
+        case "ceil":
+        case "floor":
+          return expressionPaths(expression.value);
+        case "concat":
+          return expression.parts.flatMap(expressionPaths);
+        case "if":
+          return [
+            expression.condition.path,
+            ...expressionPaths(expression.then),
+            ...expressionPaths(expression.otherwise),
+          ];
+      }
+    };
+    /** Resolves a path against declared fields, then computed values. */
+    const pathType = (
+      path: string,
+      stack: ReadonlySet<string>,
+    ): "number" | "text" | "date" | "boolean" | undefined => {
+      const field = fieldAt(path);
+      if (field) {
+        switch (field.type) {
+          case "number":
+          case "money":
+            return "number";
+          case "text":
+          case "richText":
+            return "text";
+          case "date":
+            return "date";
+          case "boolean":
+            return "boolean";
+          default:
+            return undefined;
+        }
+      }
+      const root = path.split(".")[0]!;
+      const dependency = computed[root];
+      if (!dependency || stack.has(root)) return undefined;
+      return inferExpressionType(dependency, new Set([...stack, root]));
+    };
+    /** Inferred scalar type of an expression; `undefined` means unknown. */
+    const inferExpressionType = (
+      expression: TemplateExpression,
+      stack: ReadonlySet<string> = new Set(),
+    ): "number" | "text" | "date" | "boolean" | undefined => {
+      switch (expression.op) {
+        case "value":
+          return typeof expression.value === "number"
+            ? "number"
+            : typeof expression.value === "string"
+              ? "text"
+              : typeof expression.value === "boolean"
+                ? "boolean"
+                : undefined;
+        case "path":
+          return pathType(expression.path, stack);
+        case "add":
+        case "subtract":
+        case "multiply":
+        case "divide":
+          return inferExpressionType(expression.left, stack) === "number" &&
+            inferExpressionType(expression.right, stack) === "number"
+            ? "number"
+            : undefined;
+        case "sum": {
+          const source = fieldAt(expression.path);
+          if (source?.type !== "list" || !source.item) return undefined;
+          const item = expression.valuePath
+            ? fieldWithin(source.item, expression.valuePath)
+            : source.item;
+          return item && ["number", "money"].includes(item.type)
+            ? "number"
+            : undefined;
+        }
+        case "count":
+          return fieldAt(expression.path)?.type === "list" ? "number" : undefined;
+        case "dateAdd":
+          return pathType(expression.path, stack) === "date" &&
+            inferExpressionType(expression.days, stack) === "number"
+            ? "date"
+            : undefined;
+        case "min":
+        case "max": {
+          if ("path" in expression) {
+            const source = fieldAt(expression.path);
+            return source?.type === "list" &&
+              source.item &&
+              ["number", "money"].includes(source.item.type)
+              ? "number"
+              : undefined;
+          }
+          return (expression.operands ?? []).every(
+            (operand) => inferExpressionType(operand, stack) === "number",
+          )
+            ? "number"
+            : undefined;
+        }
+        case "round":
+        case "abs":
+        case "ceil":
+        case "floor":
+          return inferExpressionType(expression.value, stack) === "number"
+            ? "number"
+            : undefined;
+        case "concat":
+          return expression.parts.every((part) => {
+            const type = inferExpressionType(part, stack);
+            return type === "text" || type === "number" || type === "date";
+          })
+            ? "text"
+            : undefined;
+        case "if": {
+          const thenType = inferExpressionType(expression.then, stack);
+          const otherwiseType = inferExpressionType(
+            expression.otherwise,
+            stack,
+          );
+          return thenType !== undefined && thenType === otherwiseType
+            ? thenType
+            : undefined;
+        }
       }
     };
     const numericExpression = (
       expression: TemplateExpression,
       stack = new Set<string>(),
-    ): boolean => {
-      switch (expression.op) {
-        case "value":
-          return typeof expression.value === "number";
-        case "path": {
-          const root = expression.path.split(".")[0]!;
-          const field = fieldAt(expression.path);
-          if (field) return ["number", "money"].includes(field.type);
-          const dependency = computed[root];
-          if (!dependency || stack.has(root)) return false;
-          return numericExpression(dependency, new Set([...stack, root]));
-        }
-        case "add":
-        case "subtract":
-        case "multiply":
-        case "divide":
-          return (
-            numericExpression(expression.left, stack) &&
-            numericExpression(expression.right, stack)
-          );
-        case "sum": {
-          const source = fieldAt(expression.path);
-          if (source?.type !== "list" || !source.item) return false;
-          const item = expression.valuePath
-            ? fieldWithin(source.item, expression.valuePath)
-            : source.item;
-          return Boolean(item && ["number", "money"].includes(item.type));
-        }
-        case "count":
-          return fieldAt(expression.path)?.type === "list";
-        case "dateAdd":
-          return false;
-      }
-    };
+    ): boolean => inferExpressionType(expression, stack) === "number";
     const computedGraph = new Map<string, string[]>();
     for (const [name, expression] of Object.entries(computed)) {
       const paths = expressionPaths(expression);
@@ -801,6 +1126,64 @@ const validatedTemplateDefinitionSchema =
         if (source && source.type !== "date")
           issue(["computed", name], "dateAdd requires a date path");
       }
+      if (
+        (expression.op === "min" || expression.op === "max") &&
+        "path" in expression
+      ) {
+        const source = fieldAt(expression.path);
+        if (
+          source &&
+          (source.type !== "list" ||
+            !source.item ||
+            !["number", "money"].includes(source.item.type))
+        )
+          issue(
+            ["computed", name],
+            `${expression.op} requires a numeric list path`,
+          );
+      }
+      if (
+        (expression.op === "min" || expression.op === "max") &&
+        "operands" in expression
+      )
+        for (const [index, operand] of expression.operands.entries())
+          if (!numericExpression(operand, new Set([name])))
+            issue(
+              ["computed", name, "operands", index],
+              `${expression.op} operands must be numeric`,
+            );
+      if (
+        (expression.op === "round" ||
+          expression.op === "abs" ||
+          expression.op === "ceil" ||
+          expression.op === "floor") &&
+        !numericExpression(expression.value, new Set([name]))
+      )
+        issue(
+          ["computed", name],
+          `${expression.op} requires a numeric value`,
+        );
+      if (expression.op === "concat")
+        for (const [index, part] of expression.parts.entries()) {
+          const type = inferExpressionType(part, new Set([name]));
+          if (type !== "text" && type !== "number" && type !== "date")
+            issue(
+              ["computed", name, "parts", index],
+              "concat parts must be text, number, money, or date values",
+            );
+        }
+      if (expression.op === "if") {
+        const thenType = inferExpressionType(expression.then, new Set([name]));
+        const otherwiseType = inferExpressionType(
+          expression.otherwise,
+          new Set([name]),
+        );
+        if (!thenType || thenType !== otherwiseType)
+          issue(
+            ["computed", name],
+            "if branches must agree on a single value type",
+          );
+      }
     }
     const visiting = new Set<string>();
     const visited = new Set<string>();
@@ -830,9 +1213,24 @@ const validatedTemplateDefinitionSchema =
       path: PropertyKey[],
       locals: Readonly<Record<string, TemplateFieldDefinition | undefined>>,
       allowProps: boolean,
+      groupedItem?: TemplateFieldDefinition,
     ) => {
       for (const [index, inline] of (values ?? []).entries()) {
-        if (inline.type !== "binding" || !inline.path) continue;
+        if (inline.type !== "binding") continue;
+        if (inline.groupSum) {
+          if (!groupedItem)
+            issue([...path, index], "groupSum requires a grouped repeat");
+          else {
+            const target = fieldWithin(groupedItem, inline.groupSum.path);
+            if (!target || !["number", "money"].includes(target.type))
+              issue(
+                [...path, index, "groupSum", "path"],
+                "groupSum requires a numeric repeated-item field",
+              );
+          }
+          continue;
+        }
+        if (!inline.path) continue;
         if (!knownPath(inline.path, locals, allowProps)) {
           issue(
             [...path, index, "path"],
@@ -856,15 +1254,20 @@ const validatedTemplateDefinitionSchema =
       }
     };
 
+    let qrNodeCount = 0;
+    let chartNodeCount = 0;
     const inspectNodes = (
       nodes: readonly TemplateNode[],
       path: PropertyKey[],
       locals: Readonly<Record<string, TemplateFieldDefinition | undefined>>,
       componentOwner?: string,
+      groupedItem?: TemplateFieldDefinition,
     ) => {
       const allowProps = componentOwner !== undefined;
       for (const [index, node] of nodes.entries()) {
         const nodePath = [...path, index];
+        if (node.type === "qr") qrNodeCount += 1;
+        if (node.type === "chart") chartNodeCount += 1;
         if (node.type === "page") {
           const master = node.master ?? Object.keys(masters)[0];
           if (!master || !(master in masters))
@@ -891,12 +1294,14 @@ const validatedTemplateDefinitionSchema =
           [...nodePath, "content"],
           locals,
           allowProps,
+          groupedItem,
         );
         inspectInlines(
           node.caption,
           [...nodePath, "caption"],
           locals,
           allowProps,
+          groupedItem,
         );
         const source = node.itemsPath ?? node.source;
         if (
@@ -971,6 +1376,12 @@ const validatedTemplateDefinitionSchema =
         )
           issue([...nodePath, "source"], "image requires an image field");
         if (
+          node.type === "qr" &&
+          sourceField &&
+          sourceField.type !== "text"
+        )
+          issue([...nodePath, "source"], "qr requires a text field");
+        if (
           node.type === "table" &&
           sourceField?.type === "list" &&
           sourceField.item
@@ -983,16 +1394,104 @@ const validatedTemplateDefinitionSchema =
                 [...nodePath, "tableColumns", columnIndex, "path"],
                 `Unknown table column path: ${column.path}`,
               );
-        const childLocals =
-          node.type === "repeat" && node.as
-            ? { ...locals, [node.as]: sourceField?.item }
-            : locals;
+        if (
+          node.type === "chart" &&
+          sourceField?.type === "list" &&
+          sourceField.item
+        ) {
+          const labelField = fieldWithin(sourceField.item, node.labelPath ?? "");
+          if (!labelField)
+            issue(
+              [...nodePath, "labelPath"],
+              `Unknown chart label path: ${node.labelPath}`,
+            );
+          else if (!["text", "number"].includes(labelField.type))
+            issue(
+              [...nodePath, "labelPath"],
+              "chart labelPath must resolve to a text or number field",
+            );
+          const valueField = fieldWithin(sourceField.item, node.valuePath ?? "");
+          if (!valueField)
+            issue(
+              [...nodePath, "valuePath"],
+              `Unknown chart value path: ${node.valuePath}`,
+            );
+          else if (!["number", "money"].includes(valueField.type))
+            issue(
+              [...nodePath, "valuePath"],
+              "chart valuePath must resolve to a number or money field",
+            );
+        }
+        if (node.type === "table" && node.footerRow) {
+          if (node.footerRow.length > (node.tableColumns?.length ?? 0))
+            issue(
+              [...nodePath, "footerRow"],
+              "table footerRow cannot have more cells than tableColumns",
+            );
+          for (const [cellIndex, cell] of node.footerRow.entries())
+            if (cell.path && !knownPath(cell.path, locals, allowProps))
+              issue(
+                [...nodePath, "footerRow", cellIndex, "path"],
+                `Unknown table footer path: ${cell.path}`,
+              );
+        }
+        let childLocals = locals;
+        let childGroupedItem: TemplateFieldDefinition | undefined;
+        if (node.type === "repeat") {
+          if (node.as) childLocals = { ...locals, [node.as]: sourceField?.item };
+          if (node.groupBy) {
+            const item = sourceField?.item;
+            if (sourceField?.type !== "list" || !item) {
+              issue(
+                [...nodePath, "groupBy"],
+                "groupBy requires a list source with typed items",
+              );
+            } else {
+              const keyField = fieldWithin(item, node.groupBy);
+              if (!keyField)
+                issue(
+                  [...nodePath, "groupBy"],
+                  `Unknown groupBy path: ${node.groupBy}`,
+                );
+              else if (!["text", "number", "money"].includes(keyField.type))
+                issue(
+                  [...nodePath, "groupBy"],
+                  "groupBy must resolve to a text or number field",
+                );
+              if (node.as === "group")
+                issue(
+                  [...nodePath, "as"],
+                  "group is a reserved alias on grouped repeats",
+                );
+              childLocals = {
+                ...childLocals,
+                group: {
+                  type: "object",
+                  label: "Group",
+                  fields: {
+                    key: { ...(keyField ?? { type: "text" }), label: "Key" },
+                    count: { type: "number", label: "Count" },
+                  },
+                },
+              };
+              childGroupedItem = item;
+            }
+            inspectInlines(
+              node.groupHeader,
+              [...nodePath, "groupHeader"],
+              childLocals,
+              allowProps,
+              childGroupedItem,
+            );
+          }
+        }
         if (node.children)
           inspectNodes(
             node.children,
             [...nodePath, "children"],
             childLocals,
             componentOwner,
+            childGroupedItem,
           );
       }
     };
@@ -1000,6 +1499,16 @@ const validatedTemplateDefinitionSchema =
     inspectNodes(definition.document, ["document"], {});
     for (const [name, nodes] of Object.entries(components))
       inspectNodes(nodes, ["components", name], {}, name);
+    if (qrNodeCount > 20)
+      issue(
+        ["document"],
+        "Templates cannot contain more than 20 qr nodes",
+      );
+    if (chartNodeCount > 10)
+      issue(
+        ["document"],
+        "Templates cannot contain more than 10 chart nodes",
+      );
 
     const componentVisiting = new Set<string>();
     const componentVisited = new Set<string>();

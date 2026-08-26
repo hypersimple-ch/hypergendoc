@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActorContext } from "../../platform/context.js";
-import { registerSafeErrorHandler } from "../../platform/errors.js";
+import { AppError, registerSafeErrorHandler } from "../../platform/errors.js";
 import type { DocumentService } from "./service.js";
 import { registerDocumentRoutes } from "./routes.js";
 
@@ -21,6 +21,8 @@ const update = vi.fn();
 const createFromTemplate = vi.fn();
 const updateFromTemplate = vi.fn();
 const revert = vi.fn();
+const restyle = vi.fn();
+const duplicate = vi.fn();
 
 function appFor() {
   const app = Fastify();
@@ -34,6 +36,8 @@ function appFor() {
       createFromTemplate,
       updateFromTemplate,
       revert,
+      restyle,
+      duplicate,
     } as unknown as DocumentService,
     actorFor: () => actor,
   });
@@ -41,6 +45,79 @@ function appFor() {
 }
 
 afterEach(() => vi.clearAllMocks());
+
+describe("document duplication routes", () => {
+  it("creates a copy and returns the new document with its current source", async () => {
+    duplicate.mockResolvedValue({
+      document: { id: "copy", title: "Proposal (copy)" },
+      current: { commit: { commitSha: sha }, snapshot: { format: "markdown" } },
+    });
+    const app = appFor();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/documents/document/duplicate",
+    });
+    expect(response.statusCode).toBe(201);
+    expect(duplicate).toHaveBeenCalledWith(actor, "document");
+    expect(response.json<{ document: { title: string } }>().document.title).toBe(
+      "Proposal (copy)",
+    );
+    await app.close();
+  });
+
+  it("surfaces typed service errors for missing documents", async () => {
+    duplicate.mockRejectedValue(new AppError("not_found", 404));
+    const app = appFor();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/documents/missing/duplicate",
+    });
+    expect(response.statusCode).toBe(404);
+    expect(response.json<{ error: { code: string } }>().error.code).toBe(
+      "not_found",
+    );
+    await app.close();
+  });
+});
+
+describe("document restyle route", () => {
+  it("forwards the style version pin to the service", async () => {
+    restyle.mockResolvedValue({
+      commit: { commitSha: sha },
+      snapshot: { format: "template" },
+    });
+    const app = appFor();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/documents/document/restyle",
+      body: { styleVersionId: "00000000-0000-4000-8000-000000000009" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(restyle).toHaveBeenCalledWith(actor, "document", {
+      styleVersionId: "00000000-0000-4000-8000-000000000009",
+    });
+    await app.close();
+  });
+
+  it("surfaces typed errors for markdown documents and missing styles", async () => {
+    const app = appFor();
+    restyle.mockRejectedValue(new AppError("validation_failed", 400));
+    const invalid = await app.inject({
+      method: "POST",
+      url: "/api/documents/document/restyle",
+      body: { styleVersionId: "00000000-0000-4000-8000-000000000009" },
+    });
+    expect(invalid.statusCode).toBe(400);
+    restyle.mockRejectedValue(new AppError("not_found", 404));
+    const missing = await app.inject({
+      method: "POST",
+      url: "/api/documents/document/restyle",
+      body: { styleVersionId: "00000000-0000-4000-8000-000000000009" },
+    });
+    expect(missing.statusCode).toBe(404);
+    await app.close();
+  });
+});
 
 describe("Git-backed document routes", () => {
   it("streams the current PDF inline only from the current endpoint", async () => {

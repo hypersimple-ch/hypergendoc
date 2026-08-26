@@ -117,7 +117,7 @@ export function TypographyControls({
             Set the type scale and voice for every document role.
           </p>
         </div>
-        <span className="rounded bg-muted px-2 py-1 font-mono text-[10px] uppercase text-muted-foreground">
+        <span className="rounded bg-muted px-2 py-1 font-mono text-[11px] uppercase text-muted-foreground">
           Type
         </span>
       </div>
@@ -317,7 +317,7 @@ export function BrandControls({
               Use an uploaded logo in generated documents.
             </p>
           </div>
-          <span className="rounded bg-muted px-2 py-1 font-mono text-[10px] uppercase text-muted-foreground">
+          <span className="rounded bg-muted px-2 py-1 font-mono text-[11px] uppercase text-muted-foreground">
             Assets
           </span>
         </div>
@@ -451,7 +451,7 @@ export function HeaderFooterControls({
         >
           {label}
         </h3>
-        <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
           Running content
         </span>
       </div>
@@ -488,6 +488,16 @@ export function HeaderFooterControls({
           }
         />
         Show page number
+      </label>
+      <label className="toggle-row">
+        <input
+          type="checkbox"
+          checked={value.showLogo === true}
+          onChange={(event) =>
+            onChange({ ...value, showLogo: event.target.checked })
+          }
+        />
+        Show logo (uses the company logo; replaces the left text)
       </label>
     </section>
   );

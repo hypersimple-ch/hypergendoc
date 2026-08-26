@@ -7,6 +7,8 @@ import type {
   Document,
   ResolvedStyleAssets,
   StyleDefinition,
+  TemplateData,
+  TemplateDefinition,
 } from "@hypergendoc/contracts";
 import type { ActorContext } from "../../platform/context.js";
 import { AppError } from "../../platform/errors.js";
@@ -62,6 +64,12 @@ afterEach(async () => {
   );
 });
 
+interface FixtureTemplateVersion {
+  readonly templateId: string;
+  readonly versionId: string;
+  readonly definition: TemplateDefinition;
+}
+
 async function fixture(
   options: {
     failWrite?: boolean;
@@ -69,6 +77,9 @@ async function fixture(
     failAudit?: boolean;
     failRestore?: boolean;
     styleAssetResolver?: StyleAssetResolver;
+    templateVersion?: FixtureTemplateVersion;
+    hideStyleVersion?: boolean;
+    styleDefinition?: StyleDefinition;
   } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), "hypergendoc-service-"));
@@ -80,6 +91,7 @@ async function fixture(
       : Promise.resolve(),
   );
   const lockCompanyForGitWrites = vi.fn(() => Promise.resolve());
+  let templateVersionCounter = 0;
   const touchDocument = vi.fn((_workspaceId: string, documentId: string) =>
     options.failTouch
       ? Promise.reject(new Error("database"))
@@ -118,22 +130,42 @@ async function fixture(
       ),
     findStyleVersion: (_workspaceId, companyId, styleVersionId) =>
       Promise.resolve(
-        companyId !== ids.company
+        options.hideStyleVersion || companyId !== ids.company
           ? undefined
           : styleVersionId === ids.activeStyleVersion
-            ? { id: styleVersionId, definition }
+            ? { id: styleVersionId, definition: options.styleDefinition ?? definition }
             : styleVersionId === ids.oldStyleVersion
-              ? { id: styleVersionId, definition: oldDefinition }
+              ? { id: styleVersionId, definition: options.styleDefinition ?? oldDefinition }
               : undefined,
       ),
     findActiveStyleVersion: (_workspaceId, companyId, styleVersionId) =>
       Promise.resolve(
         companyId === ids.company && styleVersionId === ids.activeStyleVersion
-          ? { id: styleVersionId, definition }
+          ? { id: styleVersionId, definition: options.styleDefinition ?? definition }
           : undefined,
       ),
-    findActiveTemplate: () => Promise.resolve(undefined),
-    findTemplateVersion: () => Promise.resolve(undefined),
+    findActiveTemplate: (_workspaceId, companyId, templateId) =>
+      Promise.resolve(
+        companyId === ids.company &&
+          templateId === options.templateVersion?.templateId
+          ? {
+              templateId,
+              versionId: options.templateVersion.versionId,
+              definition: options.templateVersion.definition,
+            }
+          : undefined,
+      ),
+    findTemplateVersion: (_workspaceId, companyId, versionId) =>
+      Promise.resolve(
+        companyId === ids.company &&
+          versionId === options.templateVersion?.versionId
+          ? {
+              templateId: options.templateVersion.templateId,
+              versionId,
+              definition: options.templateVersion.definition,
+            }
+          : undefined,
+      ),
     findDocument: (workspaceId, documentId) =>
       Promise.resolve(
         workspaceId === ids.workspace
@@ -151,8 +183,12 @@ async function fixture(
     lockDocument: (workspaceId, documentId) =>
       repository.findDocument(workspaceId, documentId),
     insertDocument: (input) => {
+      const nextId =
+        documents.length === 0
+          ? ids.document
+          : `00000000-0000-4000-8000-${String(documents.length + 1).padStart(12, "0")}`;
       const document: Document = {
-        id: ids.document,
+        id: nextId,
         companyId: input.companyId,
         templateId: input.templateId ?? null,
         title: input.title,
@@ -162,6 +198,18 @@ async function fixture(
       };
       documents.push(document);
       return Promise.resolve(document);
+    },
+    createTemplateVersion: (input) => {
+      const versionNumber = (templateVersionCounter =
+        templateVersionCounter + 1);
+      return Promise.resolve({
+        id: `00000000-0000-4000-8000-${String(versionNumber).padStart(12, "0")}`,
+        templateId: input.templateId,
+        version: 99 + versionNumber,
+        definition: input.definition,
+        createdByUserId: input.createdByUserId ?? "",
+        createdAt: new Date(0).toISOString(),
+      });
     },
     touchDocument,
     lockCompanyForGitWrites,
@@ -261,6 +309,217 @@ async function created() {
   const result = await state.service.create(human, createInput);
   return { ...state, result };
 }
+
+const templateStyle: StyleDefinition = {
+  assetVersion: 1,
+  logoObjectId: null,
+  bodyFont: "Inter",
+  headingFont: "Playfair Display",
+  bodySizePt: 10,
+  headingScale: 1.8,
+  italicStyle: "italic",
+  colors: {
+    text: "#202020",
+    heading: "#111111",
+    primary: "#3157c8",
+    accent: "#80a3ed",
+    muted: "#6b7280",
+  },
+  page: {
+    size: "A4",
+    marginTopMm: 18,
+    marginRightMm: 18,
+    marginBottomMm: 18,
+    marginLeftMm: 18,
+  },
+  header: {
+    enabled: true,
+    leftText: "Example",
+    centerText: "",
+    rightText: "",
+    showPageNumber: false,
+  },
+  footer: {
+    enabled: false,
+    leftText: "",
+    centerText: "",
+    rightText: "",
+    showPageNumber: false,
+  },
+} as unknown as StyleDefinition;
+
+const templateDefinition: TemplateDefinition = {
+  schemaVersion: 1,
+  styleVersionId: ids.activeStyleVersion,
+  fields: {
+    title: { type: "text", label: "Title", required: true },
+  },
+  pageMasters: { standard: {} },
+  document: [
+    {
+      type: "page",
+      master: "standard",
+      children: [
+        {
+          type: "heading",
+          content: [{ type: "binding", path: "title" }],
+        },
+      ],
+    },
+  ],
+};
+
+describe("DocumentService duplication", () => {
+  it("duplicates a markdown document with a fresh initial commit", async () => {
+    const { service } = await created();
+    const copy = await service.duplicate(human, ids.document);
+    expect(copy.document.id).not.toBe(ids.document);
+    expect(copy.document.title).toBe("Proposal (copy)");
+    expect(copy.document.companyId).toBe(ids.company);
+    expect(copy.current.snapshot).toMatchObject({
+      format: "markdown",
+      body: "# Exact\n",
+      styleVersionId: ids.activeStyleVersion,
+    });
+    // The copy owns exactly one commit of its own.
+    expect(await service.history(human, copy.document.id)).toHaveLength(1);
+    expect(await service.history(human, ids.document)).toHaveLength(1);
+    // The source is untouched.
+    const source = await service.detail(human, ids.document);
+    expect(source.document.title).toBe("Proposal");
+  });
+
+  it("copies pinned template version and data for template documents", async () => {
+    const templateIds = {
+      templateId: ids.credential,
+      versionId: ids.user,
+    };
+    const data: TemplateData = { title: "Quarterly review" };
+    const { service } = await fixture({
+      templateVersion: {
+        ...templateIds,
+        definition: templateDefinition,
+      },
+      styleDefinition: templateStyle,
+    });
+    const source = await service.createFromTemplate(human, {
+      companyId: ids.company,
+      templateId: templateIds.templateId,
+      title: "Q1 report",
+      data,
+    });
+    expect(source.current.snapshot.format).toBe("template");
+    const copy = await service.duplicate(human, ids.document);
+    expect(copy.document.templateId).toBe(templateIds.templateId);
+    expect(copy.document.title).toBe("Q1 report (copy)");
+    expect(copy.current.snapshot.format).toBe("template");
+    expect(copy.current.snapshot.templateVersionId).toBe(
+      templateIds.versionId,
+    );
+    expect(JSON.parse(copy.current.snapshot.body)).toEqual({
+      schemaVersion: 1,
+      templateVersionId: templateIds.versionId,
+      data,
+    });
+  });
+
+  it("rejects duplicates of missing documents or dangling style pins", async () => {
+    const { service } = await created();
+    await expect(service.duplicate(human, "missing")).rejects.toMatchObject({
+      code: "not_found",
+    });
+    const state = await fixture({ hideStyleVersion: true });
+    await state.service.create(human, createInput);
+    await expect(
+      state.service.duplicate(human, ids.document),
+    ).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("requires the documents:write action for agent duplicates", async () => {
+    const { service } = await created();
+    await expect(
+      service.duplicate(agent(["documents:read"]), ids.document),
+    ).rejects.toMatchObject({ code: "not_found" });
+    const ok = await service.duplicate(agent(), ids.document);
+    expect(ok.document.title).toBe("Proposal (copy)");
+  });
+});
+
+describe("DocumentService restyle", () => {
+  const templateIds = {
+    templateId: ids.credential,
+    versionId: ids.user,
+  };
+  const data: TemplateData = { title: "Quarterly review" };
+
+  async function templated() {
+    const state = await fixture({
+      templateVersion: { ...templateIds, definition: templateDefinition },
+      styleDefinition: templateStyle,
+    });
+    await state.service.createFromTemplate(human, {
+      companyId: ids.company,
+      templateId: templateIds.templateId,
+      title: "Q1 report",
+      data,
+    });
+    return state;
+  }
+
+  it("creates a new template version pin and a new commit with unchanged data", async () => {
+    const { service } = await templated();
+    const result = await service.restyle(human, ids.document, {
+      styleVersionId: ids.oldStyleVersion,
+    });
+    expect(result.snapshot.format).toBe("template");
+    expect(result.snapshot.styleVersionId).toBe(ids.oldStyleVersion);
+    expect(result.snapshot.templateVersionId).not.toBe(templateIds.versionId);
+    expect(JSON.parse(result.snapshot.body)).toEqual({
+      schemaVersion: 1,
+      templateVersionId: result.snapshot.templateVersionId,
+      data,
+    });
+    // Exactly one new commit; prior history remains immutable.
+    const commits = await service.history(human, ids.document);
+    expect(commits).toHaveLength(2);
+    expect(commits[1]?.commitSha).toBe(commits[0]?.parentCommitSha);
+  });
+
+  it("rejects markdown documents, unknown styles, and no-op pins", async () => {
+    const { service } = await created();
+    await expect(
+      service.restyle(human, ids.document, {
+        styleVersionId: ids.oldStyleVersion,
+      }),
+    ).rejects.toMatchObject({ code: "validation_failed" });
+
+    const state = await templated();
+    await expect(
+      state.service.restyle(human, ids.document, {
+        styleVersionId: "00000000-0000-4000-8000-0000000000ff",
+      }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    // Restyling to the currently pinned style is a rejected no-op.
+    await expect(
+      state.service.restyle(human, ids.document, {
+        styleVersionId: templateDefinition.styleVersionId,
+      }),
+    ).rejects.toMatchObject({ code: "validation_failed" });
+  });
+
+  it("requires the documents:write action for agent restyles", async () => {
+    const { service } = await templated();
+    await expect(
+      service.restyle(agent(["documents:read"]), ids.document, {
+        styleVersionId: ids.oldStyleVersion,
+      }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    const ok = await service.restyle(agent(), ids.document, {
+      styleVersionId: ids.oldStyleVersion,
+    });
+    expect(ok.snapshot.styleVersionId).toBe(ids.oldStyleVersion);
+  });
+});
 
 describe("DocumentService Git history", () => {
   it("creates one exact source commit without rendering or artifacts", async () => {

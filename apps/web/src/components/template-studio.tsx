@@ -13,13 +13,44 @@ import type {
 import { dashboardApi } from "../lib/dashboard-api";
 import { openTemporaryPdf } from "../lib/pdf-object-url";
 import { LoadState, safeError, useLoaded } from "./dashboard-state";
-import { Button, ConfirmDialog, PageHeader, Status } from "./primitives";
+import {
+  TemplateFieldsEditor,
+  type Fields,
+} from "./template-fields-editor";
+import {
+  Button,
+  ConfirmDialog,
+  FormField,
+  Input,
+  PageHeader,
+  Status,
+} from "./primitives";
 import { useUnsavedChanges } from "./unsaved-changes";
 import {
   initialTemplateData,
   requiredTemplateFieldError,
   TemplateDataForm,
 } from "./template-data-form";
+
+/** Session flag set after creating a template whose first version is inactive. */
+export const createdInactiveVersionFlag = (templateId: string) =>
+  `hypergendoc:template-created-inactive:${templateId}`;
+
+const localeTagPattern = /^[a-zA-Z]{2,8}(?:-[a-zA-Z0-9]{1,8})*$/;
+
+/** Mirrors the server contract for the optional root-level BCP-47 locale. */
+export function localeTagError(value: string): string | undefined {
+  const tag = value.trim();
+  if (!tag) return undefined;
+  if (tag.length > 35 || !localeTagPattern.test(tag))
+    return "Use a BCP-47 tag such as en-US or fr-FR (letters, then optional hyphenated segments).";
+  try {
+    new Intl.Locale(tag);
+  } catch {
+    return "This locale tag is not supported.";
+  }
+  return undefined;
+}
 
 type TemplateDetail = { template: Template; versions: TemplateVersion[] };
 type TemplateApi = typeof dashboardApi & {
@@ -54,6 +85,32 @@ function isTemplateDefinitionShape(
   );
 }
 
+type ParsedSource =
+  | { ok: true; value: TemplateDefinition }
+  | { ok: false; reason: string };
+
+/** Live, message-free parse of the JSON editor content for the fields panel. */
+function parseSource(source: string): ParsedSource {
+  try {
+    const parsed: unknown = JSON.parse(source);
+    if (!isTemplateDefinitionShape(parsed)) {
+      return {
+        ok: false,
+        reason:
+          "Fields editing is unavailable: the definition must use schemaVersion 1 and include styleVersionId, fields, pageMasters, and document.",
+      };
+    }
+    return { ok: true, value: parsed };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: `Fields editing is unavailable: the definition is not valid JSON (${
+        error instanceof Error ? error.message : "parse error"
+      }).`,
+    };
+  }
+}
+
 export function TemplateStudio({ templateId }: { templateId: string }) {
   const router = useRouter();
   const detail = useLoaded(
@@ -68,6 +125,9 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
   const [message, setMessage] = useState<{ text: string; error: boolean }>();
   const [busy, setBusy] = useState(false);
   const [confirmation, setConfirmation] = useState<"activate" | "leave">();
+  const [localeInput, setLocaleInput] = useState("");
+  const [localeError, setLocaleError] = useState<string>();
+  const [createdInactiveNotice, setCreatedInactiveNotice] = useState(false);
   const actionPending = useRef(false);
 
   useEffect(() => {
@@ -77,17 +137,43 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
     setDefinition(latest);
     setSavedDefinition(latest);
     setSource(JSON.stringify(latest, null, 2));
+    setLocaleInput(latest.locale ?? "");
     setSampleData(initialTemplateData(latest.fields));
   }, [detail.value]);
 
+  useEffect(() => {
+    if (sessionStorage.getItem(createdInactiveVersionFlag(templateId))) {
+      sessionStorage.removeItem(createdInactiveVersionFlag(templateId));
+      setCreatedInactiveNotice(true);
+    }
+  }, [templateId]);
+
   const isDirty = useMemo(() => {
     if (!savedDefinition) return false;
-    return source.trim() !== JSON.stringify(savedDefinition, null, 2).trim();
-  }, [savedDefinition, source]);
+    return (
+      source.trim() !== JSON.stringify(savedDefinition, null, 2).trim() ||
+      (savedDefinition.locale ?? "") !== localeInput.trim()
+    );
+  }, [savedDefinition, source, localeInput]);
   const requestNavigation = useUnsavedChanges(
     `template-studio:${templateId}`,
     isDirty,
   );
+  const parsedSource = useMemo(() => parseSource(source), [source]);
+
+  /** Writes structured field changes into the definition state and the JSON
+   * source so the save flow keeps validating the full contract. */
+  function applyFieldsChange(nextFields: Fields) {
+    if (!parsedSource.ok) return;
+    const base = parsedSource.value;
+    const effectiveLocale = localeInput.trim() || base.locale || "";
+    const next: TemplateDefinition = { ...base, fields: nextFields };
+    delete next.locale;
+    if (effectiveLocale) next.locale = effectiveLocale;
+    setDefinition(next);
+    setSource(JSON.stringify(next, null, 2));
+    setSampleData((current) => dataForFields(next, current));
+  }
 
   function parseDefinition(): TemplateDefinition | undefined {
     try {
@@ -99,7 +185,20 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
         });
         return undefined;
       }
-      const next = parsed;
+      // The Content locale input is authoritative; fall back to a locale
+      // already present in the edited JSON when the input is empty.
+      const effectiveLocale = localeInput.trim() || parsed.locale || "";
+      const localeProblem = localeTagError(effectiveLocale);
+      if (localeProblem) {
+        setMessage({ text: localeProblem, error: true });
+        return undefined;
+      }
+      const next: TemplateDefinition = { ...parsed };
+      delete next.locale;
+      if (effectiveLocale) next.locale = effectiveLocale;
+      if (localeInput.trim() !== effectiveLocale)
+        setLocaleInput(effectiveLocale);
+      setLocaleError(undefined);
       setDefinition(next);
       setSampleData((current) => dataForFields(next, current));
       setMessage({
@@ -209,7 +308,7 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
   return (
     <div className="space-y-5 text-foreground">
       <PageHeader
-        eyebrow="Template studio"
+        eyebrow="Content"
         title={detail.value?.template.name ?? "Template"}
         description="Edit the typed definition, test it with representative data, and save immutable versions."
         aside={
@@ -227,6 +326,33 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
         }
       />
       <LoadState {...detail} />
+      {createdInactiveNotice && (
+        <section
+          className="rounded-lg border border-border bg-card p-4 shadow-sm"
+          role="status"
+          aria-labelledby="created-inactive-title"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="eyebrow">Saved as inactive version</p>
+              <h2
+                id="created-inactive-title"
+                className="mt-1 text-base font-semibold"
+              >
+                Review this template, then activate it
+              </h2>
+              <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                This template was created with an inactive version. Check the
+                definition and sample data below, then use Review &amp;
+                activate to make it available for documents.
+              </p>
+            </div>
+            <Button tone="quiet" onClick={() => setCreatedInactiveNotice(false)}>
+              Dismiss
+            </Button>
+          </div>
+        </section>
+      )}
       {detail.value && definition && (
         <>
           <section
@@ -268,7 +394,7 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
                   disabled={busy}
                   onClick={() => void save(false)}
                 >
-                  Save inactive
+                  Save inactive version
                 </Button>
                 <Button
                   disabled={busy}
@@ -304,9 +430,36 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
                 </button>
               </div>
             </div>
+            <div className="border-b border-border p-4">
+              <FormField
+                label="Content locale"
+                hint="BCP-47 tag used to format numbers, money, and dates. Empty uses the workspace default (English)."
+                {...(localeError ? { error: localeError } : {})}
+              >
+                <Input
+                  value={localeInput}
+                  placeholder="e.g. en-US"
+                  disabled={busy}
+                  maxLength={35}
+                  aria-invalid={localeError ? true : undefined}
+                  onChange={(event) => {
+                    setLocaleInput(event.target.value);
+                    setLocaleError(localeTagError(event.target.value));
+                  }}
+                />
+              </FormField>
+            </div>
             <div className="p-5">
               {mode === "definition" ? (
                 <div className="grid gap-3">
+                  <TemplateFieldsEditor
+                    fields={
+                      parsedSource.ok ? parsedSource.value.fields : definition.fields
+                    }
+                    disabled={!parsedSource.ok || busy}
+                    {...(parsedSource.ok ? {} : { disabledReason: parsedSource.reason })}
+                    onChange={applyFieldsChange}
+                  />
                   <div>
                     <label
                       className="text-sm font-medium"

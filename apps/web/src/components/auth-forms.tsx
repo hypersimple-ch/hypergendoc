@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { authClient } from "../lib/auth-client";
-import { ApiError } from "../lib/api-client";
+import { api, ApiError } from "../lib/api-client";
 import { Button, FormField, Input, Status } from "./primitives";
 
 function useSubmit(
@@ -254,5 +254,35 @@ export function WorkspaceForm() {
         {state.pending ? "Creating workspace…" : "Create workspace"}
       </Button>
     </form>
+  );
+}
+
+type SignupMode = "open" | "invite" | "closed";
+
+/**
+ * Deployment registration policy hint. Fetches the minimal public policy so
+ * invite/closed deployments can explain that accounts come from invitations.
+ */
+export function SignupPolicyHint() {
+  const [mode, setMode] = useState<SignupMode>("open");
+  useEffect(() => {
+    let active = true;
+    api<{ mode: SignupMode }>("/api/signup-policy")
+      .then((policy) => {
+        if (active) setMode(policy.mode);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+  if (mode === "open") return null;
+  return (
+    <div className="mb-5">
+      <Status kind="warning">
+        Registration on this deployment is by invitation. Ask a workspace owner
+        to send you an email invitation.
+      </Status>
+    </div>
   );
 }

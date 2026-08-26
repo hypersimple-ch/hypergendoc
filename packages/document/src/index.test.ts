@@ -365,6 +365,77 @@ describe("document content foundation", () => {
     expect(output).not.toContain('<footer class="running">');
   });
 
+  it("expands header/footer tokens with page counters, title, and date", () => {
+    const output = renderDocumentHtml(
+      "Text",
+      "markdown",
+      {
+        ...style,
+        header: {
+          enabled: true,
+          leftText: "{title}",
+          centerText: "{date}",
+          rightText: "Page {page} of {pages}",
+          showPageNumber: false,
+        },
+        footer: {
+          enabled: true,
+          leftText: "Unknown {token} stays {literal}",
+          centerText: "",
+          rightText: "",
+          showPageNumber: true,
+        },
+      },
+      undefined,
+      {
+        title: 'Quarterly "Review" <2026>',
+        locale: "en",
+        now: new Date("2026-07-21T00:00:00.000Z"),
+      },
+    );
+    expect(output).toContain(
+      '@top-left { color: #767b76; content: "Quarterly \\22 Review\\22  \\3c 2026\\3e ";',
+    );
+    expect(output).toContain(
+      '@top-center { color: #767b76; content: "2026-07-21";',
+    );
+    expect(output).toContain(
+      '@top-right { color: #767b76; content: "Page " counter(page) " of " counter(pages);',
+    );
+    expect(output).toContain(
+      '@bottom-left { color: #767b76; content: "Unknown \\7b token\\7d  stays \\7b literal\\7d ";',
+    );
+    expect(output).toContain(
+      '@bottom-right { color: #767b76; content: "" " " counter(page);',
+    );
+  });
+
+  it("formats header/footer dates with the given locale", () => {
+    const render = (locale?: string) =>
+      renderDocumentHtml(
+        "Text",
+        "markdown",
+        {
+          ...style,
+          header: {
+            enabled: true,
+            leftText: "{date}",
+            centerText: "",
+            rightText: "",
+            showPageNumber: false,
+          },
+          footer: style.footer,
+        },
+        undefined,
+        {
+          ...(locale ? { locale } : {}),
+          now: new Date("2026-07-21T00:00:00.000Z"),
+        },
+      );
+    expect(render()).toContain('content: "2026-07-21"');
+    expect(render("fr-FR")).toContain('"21 juil. 2026"');
+  });
+
   it("keeps headings and bounded content blocks together across pages", () => {
     const output = renderDocumentHtml(
       "<h2>Section</h2><p>Introduction</p><table><caption>Results</caption><thead><tr><th>Measure</th></tr></thead><tbody><tr><td>Value</td></tr></tbody></table><blockquote>Note</blockquote><pre>code</pre>",
@@ -388,6 +459,32 @@ describe("document content foundation", () => {
     });
     expect(output).not.toContain("@top-left");
     expect(output).not.toContain("@bottom-left");
+  });
+
+  it("renders a running logo overlay only when the style asks for it", () => {
+    const assets = { logo: asset(logoId, "image/png", "logo"), fonts: [] };
+    const logoStyle = {
+      ...style,
+      assetVersion: 1 as const,
+      logoObjectId: logoId,
+      header: { ...style.header, enabled: true, showLogo: true },
+    };
+    const withLogo = renderDocumentHtml("# Heading", "markdown", logoStyle, assets);
+    expect(withLogo).toContain('<div class="running-logos" aria-hidden="true"></div>');
+    expect(withLogo).toContain(
+      'background: url("data:image/png;base64,bG9nbw==") no-repeat 18mm 5mm / auto 9mm',
+    );
+    // The logo occupies the header's left box: the left text is suppressed.
+    expect(withLogo).not.toContain('@top-left { color:');
+    // Without the style opt-in nothing changes.
+    const without = renderDocumentHtml("# Heading", "markdown", style, assets);
+    expect(without).not.toContain("running-logos");
+    // No logo asset, no overlay even when enabled.
+    const noAsset = renderDocumentHtml("# Heading", "markdown", {
+      ...logoStyle,
+      logoObjectId: null,
+    });
+    expect(noAsset).not.toContain("running-logos");
   });
 
   it("renders verified v1 logo and custom fonts with deterministic data URLs", () => {

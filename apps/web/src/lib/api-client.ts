@@ -5,6 +5,7 @@ const errorCodes = new Set<ContractErrorCode>([
   "unauthenticated",
   "forbidden",
   "not_found",
+  "gone",
   "conflict",
   "validation_failed",
   "rate_limited",
@@ -55,12 +56,50 @@ type ApiOptions = Omit<RequestInit, "body"> & {
   timeoutMs?: number;
 };
 
+/**
+ * Small request-level cache for GETs: identical in-flight requests share one
+ * promise and settled responses are reused briefly, so a single page mount
+ * does not refetch the same resource several times. Any non-GET request
+ * clears the cache so mutations are never served stale data.
+ */
+const GET_CACHE_TTL_MS = 10_000;
+const getCache = new Map<
+  string,
+  { promise: Promise<unknown>; expiresAt: number }
+>();
+
+export function clearApiCache() {
+  getCache.clear();
+}
+
 /** Cookie-session API client. Never accepts a workspace id: the server resolves it. */
 export async function api<T>(
   path: `/api/${string}`,
   options: ApiOptions = {},
 ): Promise<T> {
-  const { body, timeoutMs = 12_000, headers, ...init } = options;
+  if ((options.method ?? "GET").toUpperCase() !== "GET") {
+    getCache.clear();
+    return performRequest<T>(path, options);
+  }
+  const cached = getCache.get(path);
+  if (cached && cached.expiresAt > Date.now())
+    return cached.promise as Promise<T>;
+  const promise = performRequest<T>(path, {
+    ...options,
+    method: "GET",
+  }).catch((error: unknown) => {
+    // Never serve a failed response from the cache.
+    getCache.delete(path);
+    throw error;
+  });
+  getCache.set(path, { promise, expiresAt: Date.now() + GET_CACHE_TTL_MS });
+  return promise;
+}
+
+async function performRequest<T>(
+  path: `/api/${string}`,
+  { body, timeoutMs = 12_000, headers, ...init }: ApiOptions,
+): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {

@@ -53,11 +53,21 @@ describe("CredentialsDashboard", () => {
 
     expect(screen.getByLabelText("Acme")).not.toBeChecked();
     expect(screen.getByLabelText("Globex")).not.toBeChecked();
+    for (const action of [
+      "companies:read",
+      "styles:read",
+      "templates:read",
+      "documents:read",
+      "documents:write",
+    ]) {
+      expect(screen.getByLabelText(action)).not.toBeChecked();
+    }
     fireEvent.click(screen.getByLabelText("Acme"));
     fireEvent.click(screen.getByLabelText("Globex"));
     fireEvent.change(screen.getByLabelText("Credential name"), {
       target: { value: "Agent" },
     });
+    fireEvent.click(screen.getByLabelText("documents:read"));
     fireEvent.click(screen.getByRole("button", { name: "Create credential" }));
 
     await waitFor(() =>
@@ -79,6 +89,7 @@ describe("CredentialsDashboard", () => {
     fireEvent.change(screen.getByLabelText("Credential name"), {
       target: { value: "Agent" },
     });
+    fireEvent.click(screen.getByLabelText("documents:read"));
     fireEvent.click(screen.getByRole("button", { name: "Create credential" }));
 
     expect(await screen.findByText("one-time-secret")).toBeVisible();
@@ -113,6 +124,7 @@ describe("CredentialsDashboard", () => {
     fireEvent.change(screen.getByLabelText("Credential name"), {
       target: { value: "Agent" },
     });
+    fireEvent.click(screen.getByLabelText("documents:read"));
     fireEvent.click(screen.getByRole("button", { name: "Create credential" }));
     fireEvent.click(await screen.findByRole("button", { name: "Copy token" }));
 
@@ -187,6 +199,7 @@ describe("CredentialsDashboard", () => {
     fireEvent.change(screen.getByLabelText("Credential name"), {
       target: { value: "Timed agent" },
     });
+    fireEvent.click(screen.getByLabelText("documents:read"));
     fireEvent.change(screen.getByLabelText("Expires (optional)"), {
       target: { value: "2030-01-02T03:04" },
     });

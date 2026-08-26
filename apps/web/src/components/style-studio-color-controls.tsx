@@ -32,7 +32,7 @@ export function ColorControls({
             Document colors remain independent from the application interface.
           </p>
         </div>
-        <span className="rounded bg-muted px-2 py-1 font-mono text-[10px] uppercase text-muted-foreground">
+        <span className="rounded bg-muted px-2 py-1 font-mono text-[11px] uppercase text-muted-foreground">
           Color
         </span>
       </div>

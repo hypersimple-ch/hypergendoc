@@ -73,7 +73,7 @@ export function WorkspaceOverview() {
   return (
     <div className="space-y-5 text-foreground">
       <PageHeader
-        eyebrow="Operations console"
+        eyebrow="Workspace"
         title={workspace.activeCompany?.name ?? "Workspace overview"}
         description="Scope, readiness, and document activity for the active company."
         aside={
@@ -149,7 +149,7 @@ export function WorkspaceOverview() {
               Workspace readiness
             </p>
             <h2 id="readiness-heading" className="mt-1 text-base font-semibold">
-              Governance queue
+              Administration
             </h2>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">

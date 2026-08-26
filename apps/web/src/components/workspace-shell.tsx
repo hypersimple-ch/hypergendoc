@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Users,
   X,
+  Settings,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "./ui/button";
@@ -56,6 +57,7 @@ const navigationGroups = [
         icon: KeyRound,
       },
       { href: "/workspace/audit", label: "Audit log", icon: ScrollText },
+      { href: "/workspace/settings", label: "Settings", icon: Settings },
     ],
   },
 ] as const;

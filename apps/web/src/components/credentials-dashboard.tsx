@@ -41,9 +41,8 @@ export function CredentialsDashboard() {
   );
   const [name, setName] = useState("");
   const [companyIds, setCompanyIds] = useState<string[]>([]);
-  const [selectedActions, setActions] = useState<McpAction[]>([
-    "documents:read",
-  ]);
+  // Least privilege by default: the agent gets only the actions you tick.
+  const [selectedActions, setActions] = useState<McpAction[]>([]);
   const [expiresAt, setExpiresAt] = useState("");
   const [token, setToken] = useState<string>();
   const [ack, setAck] = useState(false);
@@ -131,7 +130,7 @@ export function CredentialsDashboard() {
             aria-hidden="true"
           />
           <div>
-            <p className="eyebrow">Governance / MCP credentials</p>
+            <p className="eyebrow">Administration</p>
             <h1 className="mt-1">Owner access required.</h1>
             <Status kind="warning">
               Only workspace owners can view or manage MCP credentials.
@@ -144,8 +143,8 @@ export function CredentialsDashboard() {
   return (
     <>
       <PageHeader
-        eyebrow="Governance / MCP credentials"
-        title="Scoped agent access"
+        eyebrow="Administration"
+        title="MCP credentials"
         description="Issue narrowly scoped credentials for MCP agents. Secrets are shown once and cannot be retrieved later."
         aside={
           <div className="flex items-center gap-2 text-sm text-muted-foreground">

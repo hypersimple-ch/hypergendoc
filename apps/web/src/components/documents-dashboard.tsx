@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { FileText, History } from "lucide-react";
+import { Copy, FileText, History } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Document, DocumentCommit } from "@hypergendoc/contracts";
 import { dashboardApi } from "../lib/dashboard-api";
@@ -14,6 +14,7 @@ import {
   FormField,
   Input,
   PageHeader,
+  Select,
   Status,
   Table,
 } from "./primitives";
@@ -42,6 +43,8 @@ export function DocumentsDashboard() {
   );
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Document>();
+  const [notice, setNotice] = useState<{ text: string; error: boolean }>();
+  const [duplicatingId, setDuplicatingId] = useState<string>();
   const historyTrigger = useRef<HTMLButtonElement | null>(null);
   const visible = useMemo(
     () =>
@@ -67,10 +70,25 @@ export function DocumentsDashboard() {
     setSelected(document);
   }
 
+  async function duplicateDocument(document: Document) {
+    if (duplicatingId) return;
+    setDuplicatingId(document.id);
+    setNotice(undefined);
+    try {
+      await dashboardApi.duplicateDocument(document.id);
+      data.reload();
+      setNotice({ text: "Document duplicated as an independent copy", error: false });
+    } catch (reason) {
+      setNotice({ text: safeError(reason), error: true });
+    } finally {
+      setDuplicatingId(undefined);
+    }
+  }
+
   return (
     <div className="space-y-5 text-foreground">
       <PageHeader
-        eyebrow="Operations console"
+        eyebrow="Content"
         title="Documents"
         description={
           <>
@@ -90,7 +108,7 @@ export function DocumentsDashboard() {
               className="button inline-flex items-center"
               href="/workspace/documents/new"
             >
-              Set up document creation
+              New document
             </Link>
           </div>
         }
@@ -147,17 +165,26 @@ export function DocumentsDashboard() {
           ) : activeCompany ? (
             <>
               <LoadState {...data} />
+              {notice && !selected && (
+                <div className="mb-4" aria-live="polite" aria-atomic="true">
+                  <Status kind={notice.error ? "error" : "success"}>
+                    {notice.text}
+                  </Status>
+                </div>
+              )}
               {data.value &&
                 (visible.length ? (
                   <Table
                     caption={`Documents for ${activeCompany.name}`}
-                    columns={["Document", "Updated", "History"]}
+                    columns={["Document", "Updated", "Actions"]}
                   >
                     {visible.map((document) => (
                       <DocumentRow
                         key={document.id}
                         document={document}
+                        duplicating={duplicatingId === document.id}
                         onOpen={openHistory}
+                        onDuplicate={() => void duplicateDocument(document)}
                       />
                     ))}
                   </Table>
@@ -176,6 +203,107 @@ export function DocumentsDashboard() {
           onClose={() => setSelected(undefined)}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * One-click restyle for template-format documents: pick a target style
+ * version, confirm current vs. target, and create a new immutable commit.
+ */
+function RestyleControl({
+  document,
+  currentStyleVersionId,
+  onDone,
+}: {
+  document: Document;
+  currentStyleVersionId: string | undefined;
+  onDone: (message: { text: string; error: boolean }) => void;
+}) {
+  const options = useLoaded(async () => {
+    const styles = await dashboardApi.styles(document.companyId);
+    return (
+      await Promise.all(
+        styles.map((style) => dashboardApi.style(style.id)),
+      )
+    ).flatMap((detail) =>
+      detail.versions.map((version) => ({
+        versionId: version.id,
+        label: `${detail.style.name} · v${version.version}`,
+      })),
+    );
+  }, [document.companyId]);
+  const [targetId, setTargetId] = useState("");
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const choices = (options.value ?? []).map((option) => ({
+    value: option.versionId,
+    label: option.label,
+    ...(option.versionId === currentStyleVersionId ? { disabled: true } : {}),
+  }));
+  const currentLabel =
+    options.value?.find((option) => option.versionId === currentStyleVersionId)
+      ?.label ?? currentStyleVersionId;
+  const targetLabel = options.value?.find(
+    (option) => option.versionId === targetId,
+  )?.label;
+
+  async function restyle() {
+    if (!targetId || pending) return;
+    setPending(true);
+    try {
+      await dashboardApi.restyleDocument(document.id, targetId);
+      setOpen(false);
+      setTargetId("");
+      onDone({ text: `Document restyled to ${targetLabel}.`, error: false });
+    } catch (reason) {
+      onDone({ text: safeError(reason), error: true });
+    } finally {
+      setPending(false);
+    }
+  }
+
+  if (!options.value && !options.error) return null;
+  if (!choices.length) return null;
+  return (
+    <div className="flex flex-wrap items-end gap-3">
+      <FormField label="Restyle with a style version">
+        <Select
+          value={targetId}
+          onValueChange={setTargetId}
+          options={choices}
+          placeholder="Choose a style"
+          aria-label="Target style version"
+        />
+      </FormField>
+      <Button
+        tone="quiet"
+        disabled={!targetId || pending}
+        onClick={() => setOpen(true)}
+      >
+        Restyle
+      </Button>
+      <ConfirmDialog
+        open={open}
+        title="Restyle this document?"
+        description={
+          <>
+            Current style: <strong>{currentLabel}</strong>
+            <br />
+            New style: <strong>{targetLabel}</strong>
+            <br />
+            Restyling creates a new immutable commit and a new template version
+            pinned to that style; existing history is unchanged.
+          </>
+        }
+        confirmLabel="Restyle document"
+        tone="primary"
+        pending={pending}
+        onConfirm={() => void restyle()}
+        onClose={() => {
+          if (!pending) setOpen(false);
+        }}
+      />
     </div>
   );
 }
@@ -231,10 +359,14 @@ function NoMatchingDocuments({ onClear }: { onClear: () => void }) {
 }
 function DocumentRow({
   document,
+  duplicating,
   onOpen,
+  onDuplicate,
 }: {
   document: Document;
+  duplicating: boolean;
   onOpen: (document: Document, trigger: HTMLButtonElement) => void;
+  onDuplicate: () => void;
 }) {
   return (
     <tr className="hover:bg-muted/50">
@@ -247,14 +379,20 @@ function DocumentRow({
       <td data-label="Updated" className="text-sm text-muted-foreground">
         {new Date(document.updatedAt).toLocaleDateString()}
       </td>
-      <td data-label="History">
-        <Button
-          tone="quiet"
-          onClick={(event) => onOpen(document, event.currentTarget)}
-        >
-          <History className="size-3.5" aria-hidden="true" />
-          View history
-        </Button>
+      <td data-label="Actions">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            tone="quiet"
+            onClick={(event) => onOpen(document, event.currentTarget)}
+          >
+            <History className="size-3.5" aria-hidden="true" />
+            View history
+          </Button>
+          <Button tone="quiet" disabled={duplicating} onClick={onDuplicate}>
+            <Copy className="size-3.5" aria-hidden="true" />
+            {duplicating ? "Duplicating…" : "Duplicate"}
+          </Button>
+        </div>
       </td>
     </tr>
   );
@@ -426,6 +564,18 @@ function DocumentDetail({
                   </div>
                 </>
               )}
+              {isCurrent &&
+                activeSource?.snapshot.format === "template" &&
+                document.templateId && (
+                  <RestyleControl
+                    document={document}
+                    currentStyleVersionId={active.styleVersionId}
+                    onDone={(restyleMessage) => {
+                      setMessage(restyleMessage);
+                      if (!restyleMessage.error) detail.reload();
+                    }}
+                  />
+                )}
               {message && (
                 <div
                   aria-live="polite"

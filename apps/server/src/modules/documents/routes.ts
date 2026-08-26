@@ -59,6 +59,18 @@ export function registerDocumentRoutes(
     deps.service.createFromTemplate(actor(request), request.body),
   );
 
+  app.post(
+    "/api/documents/:documentId/duplicate",
+    mutationOptions,
+    async (request, reply) => {
+      const result = await deps.service.duplicate(
+        actor(request),
+        (request.params as { documentId: string }).documentId,
+      );
+      return reply.code(201).send(result);
+    },
+  );
+
   app.get("/api/documents/:documentId", async (request) =>
     deps.service.detail(
       actor(request),
@@ -151,6 +163,17 @@ export function registerDocumentRoutes(
     mutationOptions,
     async (request) =>
       deps.service.revert(
+        actor(request),
+        (request.params as { documentId: string }).documentId,
+        request.body,
+      ),
+  );
+
+  app.post(
+    "/api/documents/:documentId/restyle",
+    mutationOptions,
+    async (request) =>
+      deps.service.restyle(
         actor(request),
         (request.params as { documentId: string }).documentId,
         request.body,

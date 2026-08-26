@@ -64,6 +64,7 @@ const RendererRequestSchema = z.discriminatedUnion("format", [
       images: [],
     }),
     locale: z.string().min(2).max(35).optional(),
+    documentTitle: z.string().min(1).max(200).optional(),
   }).strict(),
 ]);
 export type RendererRequest = z.input<typeof RendererRequestSchema>;
@@ -338,6 +339,9 @@ export async function render(
             styleAssets: parsed.data.assets,
             templateAssets: parsed.data.templateAssets,
             ...(parsed.data.locale ? { locale: parsed.data.locale } : {}),
+            ...(parsed.data.documentTitle
+              ? { documentTitle: parsed.data.documentTitle }
+              : {}),
           })
         : renderDocumentHtml(
             parsed.data.body,

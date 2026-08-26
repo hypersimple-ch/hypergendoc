@@ -44,7 +44,7 @@
   width: 2rem;
   height: 2rem;
   place-items: center;
-  border-radius: 0.5rem;
+  border-radius: var(--radius-md);
   background: var(--primary);
   color: var(--primary-foreground);
   font-size: 0.78rem;
@@ -60,7 +60,8 @@
   gap: 1rem;
 }
 .workspace-context__identity {
-  display: flex;
+  /* Block display keeps text-overflow: ellipsis effective on the label. */
+  display: block;
   min-width: 0;
   min-height: 1.5rem;
   max-width: 12rem;
@@ -125,7 +126,7 @@
 }
 .workspace-navigation__heading {
   margin: 0 0 0.4rem 0.65rem;
-  font-size: 0.64rem;
+  font-size: 0.6875rem;
   letter-spacing: 0.09em;
 }
 .sidebar ul {
@@ -167,7 +168,7 @@
 }
 .sidebar-note p {
   margin: 0;
-  font-size: 0.68rem;
+  font-size: 0.6875rem;
   line-height: 1.5;
 }
 .workspace-main {
@@ -217,7 +218,7 @@
 .metric-grid article,
 .panel {
   border-color: var(--border);
-  border-radius: calc(var(--radius) + 0.125rem);
+  border-radius: var(--radius-lg);
   background: var(--card);
   box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent);
 }
@@ -253,20 +254,38 @@ tbody tr:hover {
   background: var(--muted);
 }
 
-@media (max-width: 980px) and (min-width: 701px) {
+@media (max-width: 980px) and (min-width: 48.0625rem) {
   .workspace-shell {
     grid-template-columns: 13.25rem minmax(0, 1fr);
   }
   .workspace-brand__name {
     font-size: 1rem;
   }
+  /* Keep the block display from the base rule so text-overflow: ellipsis
+   * keeps working; flex containers silently drop the ellipsis. */
   .workspace-context__identity {
-    display: flex;
     max-width: 7rem;
   }
 }
 
-@media (max-width: 700px) {
+/* Stack the page header cleanly once it gets tight (md breakpoint and below). */
+@media (max-width: 48rem) {
+  .page-heading {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1rem;
+  }
+  .page-heading__aside {
+    width: 100%;
+  }
+  .page-heading__aside:has(> .status) {
+    width: fit-content;
+  }
+}
+
+/* Collapse the sidebar into the disclosure pattern at <= 48rem (768px):
+ * content gets the full width and navigation moves into the sheet. */
+@media (max-width: 48rem) {
   .workspace-shell {
     display: block;
     min-height: 100vh;
@@ -295,7 +314,8 @@ tbody tr:hover {
     display: block;
   }
   .workspace-context__identity {
-    display: none;
+    margin-left: 0.75rem;
+    max-width: none;
   }
   .workspace-context__company {
     grid-template-columns: minmax(0, 1fr);
@@ -339,17 +359,6 @@ tbody tr:hover {
   .workspace-main {
     padding: 1.25rem 1rem 2.5rem;
   }
-  .page-heading {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 1rem;
-  }
-  .page-heading__aside {
-    width: 100%;
-  }
-  .page-heading__aside:has(> .status) {
-    width: fit-content;
-  }
   .page-heading .button {
     width: 100%;
   }
@@ -358,5 +367,13 @@ tbody tr:hover {
   }
   .panel-heading {
     align-items: flex-start;
+  }
+}
+
+/* Below 24rem the top bar cannot fit the identity label next to the
+ * wordmark without crowding the controls; hide it there only. */
+@media (max-width: 24rem) {
+  .workspace-context__identity {
+    display: none;
   }
 }

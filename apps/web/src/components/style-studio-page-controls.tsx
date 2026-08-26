@@ -64,7 +64,7 @@ export function PageControls({
             Choose the format and print-safe margins.
           </p>
         </div>
-        <span className="rounded bg-muted px-2 py-1 font-mono text-[10px] uppercase text-muted-foreground">
+        <span className="rounded bg-muted px-2 py-1 font-mono text-[11px] uppercase text-muted-foreground">
           Layout
         </span>
       </div>

@@ -1,21 +1,48 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { activeCompany, styles, templates, createTemplate, push } = vi.hoisted(
-  () => ({
-    activeCompany: vi.fn(),
-    styles: vi.fn(),
-    templates: vi.fn(),
-    createTemplate: vi.fn(),
-    push: vi.fn(),
-  }),
-);
+const {
+  activeCompany,
+  styles,
+  templates,
+  createTemplate,
+  starterTemplates,
+  createTemplateFromStarter,
+  previewStarter,
+  duplicateTemplate,
+  push,
+} = vi.hoisted(() => ({
+  activeCompany: vi.fn(),
+  styles: vi.fn(),
+  templates: vi.fn(),
+  createTemplate: vi.fn(),
+  starterTemplates: vi.fn(),
+  createTemplateFromStarter: vi.fn(),
+  previewStarter: vi.fn(),
+  duplicateTemplate: vi.fn(),
+  push: vi.fn(),
+}));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("../lib/dashboard-api", () => ({
-  dashboardApi: { styles, templates, createTemplate },
+  dashboardApi: {
+    styles,
+    templates,
+    createTemplate,
+    starterTemplates,
+    createTemplateFromStarter,
+    previewStarter,
+    duplicateTemplate,
+  },
 }));
 vi.mock("./active-company", () => ({ useActiveCompany: activeCompany }));
 
@@ -33,6 +60,7 @@ const company = {
 function useCompany() {
   activeCompany.mockReturnValue({
     activeCompany: company,
+    companies: [company],
     loading: false,
     error: undefined,
     noActiveCompany: false,
@@ -45,11 +73,39 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+const style = {
+  id: "style-1",
+  companyId: company.id,
+  name: "Primary",
+  activeVersionId: "version-1",
+  archivedAt: null,
+  createdAt: company.createdAt,
+  updatedAt: company.updatedAt,
+};
+const starterCatalog = [
+  {
+    id: "one-page-proposal",
+    name: "One-page proposal",
+    description: "A single-page client proposal.",
+    fieldCount: 7,
+    fieldKinds: ["date", "list", "money", "object", "richText", "text"],
+    definition: {},
+    sampleData: {},
+  },
+];
+
+function mockLoadedDashboard() {
+  templates.mockResolvedValue([]);
+  styles.mockResolvedValue([style]);
+  starterTemplates.mockResolvedValue(starterCatalog);
+}
+
 describe("TemplatesDashboard", () => {
   it("explains the style prerequisite instead of pointing to a hidden form", async () => {
     useCompany();
     templates.mockResolvedValue([]);
     styles.mockResolvedValue([]);
+    starterTemplates.mockResolvedValue([]);
 
     render(<TemplatesDashboard />);
 
@@ -66,18 +122,7 @@ describe("TemplatesDashboard", () => {
 
   it("shows the creation instruction when an active style exists", async () => {
     useCompany();
-    templates.mockResolvedValue([]);
-    styles.mockResolvedValue([
-      {
-        id: "style-1",
-        companyId: company.id,
-        name: "Primary",
-        activeVersionId: "version-1",
-        archivedAt: null,
-        createdAt: company.createdAt,
-        updatedAt: company.updatedAt,
-      },
-    ]);
+    mockLoadedDashboard();
 
     render(<TemplatesDashboard />);
 
@@ -89,6 +134,7 @@ describe("TemplatesDashboard", () => {
     useCompany();
     templates.mockRejectedValue(new Error("offline"));
     styles.mockResolvedValue([]);
+    starterTemplates.mockResolvedValue([]);
 
     render(<TemplatesDashboard />);
 
@@ -96,5 +142,138 @@ describe("TemplatesDashboard", () => {
     expect(screen.getAllByRole("button", { name: "Try again" })).toHaveLength(
       1,
     );
+  });
+
+  it("lists starters and creates an inactive template from one", async () => {
+    useCompany();
+    mockLoadedDashboard();
+    const created = { id: "template-9", name: "One-page proposal" };
+    createTemplateFromStarter.mockResolvedValue(created);
+
+    render(<TemplatesDashboard />);
+
+    expect(await screen.findByText("Start from a template starter")).toBeVisible();
+    fireEvent.click(await screen.findByRole("button", { name: "Use starter" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByLabelText("Company"),
+    ).toHaveValue(company.id);
+    fireEvent.change(within(dialog).getByLabelText("Active style"), {
+      target: { value: "version-1" },
+    });
+    expect(within(dialog).getByLabelText("Template name")).toHaveValue(
+      "One-page proposal",
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Create template" }),
+    );
+
+    await waitFor(() =>
+      expect(createTemplateFromStarter).toHaveBeenCalledWith({
+        companyId: company.id,
+        starterId: "one-page-proposal",
+        name: "One-page proposal",
+        styleVersionId: "version-1",
+      }),
+    );
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/workspace/templates/template-9"));
+    expect(sessionStorage.getItem("hypergendoc:template-created-inactive:template-9")).toBe("1");
+    sessionStorage.clear();
+  });
+
+  it("previews a starter with sample data and shows the returned PDF", async () => {
+    useCompany();
+    mockLoadedDashboard();
+    const dataUrl = "data:application/pdf;base64,AA==";
+    previewStarter.mockResolvedValue({ url: dataUrl });
+
+    render(<TemplatesDashboard />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Use starter" }));
+    const dialog = await screen.findByRole("dialog");
+    const previewButton = within(dialog).getByRole("button", {
+      name: "Preview sample",
+    });
+    expect(previewButton).toBeDisabled();
+    fireEvent.change(within(dialog).getByLabelText("Active style"), {
+      target: { value: "version-1" },
+    });
+    expect(previewButton).toBeEnabled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Preview sample" }));
+    await waitFor(() =>
+      expect(previewStarter).toHaveBeenCalledWith({
+        companyId: company.id,
+        starterId: "one-page-proposal",
+        styleVersionId: "version-1",
+      }),
+    );
+    const pdfButton = await within(dialog)
+      .findByRole("button", { name: "Preview PDF" })
+      .then((element) => {
+        expect(element).toBeVisible();
+        return element;
+      });
+    expect(pdfButton).toBeVisible();
+    expect(within(dialog).queryByText(/failed/i)).not.toBeInTheDocument();
+  });
+
+  it("shows an inline error when the starter preview fails", async () => {
+    useCompany();
+    mockLoadedDashboard();
+    previewStarter.mockRejectedValue(new Error("renderer offline"));
+
+    render(<TemplatesDashboard />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Use starter" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Active style"), {
+      target: { value: "version-1" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Preview sample" }),
+    );
+
+    // safeError masks non-API failures behind the shared inline Status copy.
+    expect(
+      await within(dialog).findByText(
+        "We could not load this page. Please try again.",
+      ),
+    ).toBeVisible();
+    expect(
+      within(dialog).queryByRole("button", { name: "Preview PDF" }),
+    ).not.toBeInTheDocument();
+    // The dialog stays usable for a retry or the actual creation.
+    expect(
+      within(dialog).getByRole("button", { name: "Create template" }),
+    ).toBeEnabled();
+  });
+
+  it("duplicates a template and confirms the inactive copy", async () => {
+    useCompany();
+    mockLoadedDashboard();
+    templates.mockResolvedValue([
+      {
+        id: "template-1",
+        companyId: company.id,
+        name: "Proposal",
+        activeVersionId: null,
+        createdAt: company.createdAt,
+        updatedAt: company.updatedAt,
+      },
+    ]);
+    duplicateTemplate.mockResolvedValue({
+      id: "template-2",
+      name: "Proposal (copy)",
+    });
+
+    render(<TemplatesDashboard />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Duplicate" }));
+
+    expect(await screen.findByText("Template duplicated as inactive copy")).toBeVisible();
+    expect(duplicateTemplate).toHaveBeenCalledWith("template-1");
+    await waitFor(() => expect(templates.mock.calls.length).toBeGreaterThan(1));
   });
 });

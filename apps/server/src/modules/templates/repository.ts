@@ -97,6 +97,19 @@ function operations(db: Db): TemplateOperations {
         );
       return row && template(row);
     },
+    async findActive(workspaceId, templateId) {
+      const [row] = await db
+        .select()
+        .from(templates)
+        .where(
+          and(
+            eq(templates.workspaceId, workspaceId),
+            eq(templates.id, templateId),
+            isNull(templates.archivedAt),
+          ),
+        );
+      return row && template(row);
+    },
     async listVersions(workspaceId, templateId) {
       return (
         await db

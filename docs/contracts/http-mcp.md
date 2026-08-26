@@ -17,9 +17,10 @@ All `/api` routes require a secure human session except registration, verificati
 - `GET /api/documents/:documentId/commits/:commitSha`
 - `GET /api/documents/:documentId/commits/:commitSha/source`
 - `POST /api/documents/:documentId/revert`
+- `POST /api/documents/:documentId/restyle` (template documents only)
 - `GET /api/documents/:documentId/pdf` (current source only)
 
-A commit SHA is lowercase 40- or 64-character hexadecimal. Invalid or path-like SHAs are not found. The historical source route is a private `text/plain; charset=utf-8` attachment named `.md` or `.html`; it has `Cache-Control: private, no-store`. Revert takes `{ commitSha }` and creates a new commit rather than changing history. PDF rendering is explicit and in memory; there is no historical PDF route, stored document artifact, or numeric version route.
+A commit SHA is lowercase 40- or 64-character hexadecimal. Invalid or path-like SHAs are not found. The historical source route is a private `text/plain; charset=utf-8` attachment named `.md` or `.html`; it has `Cache-Control: private, no-store`. Revert takes `{ commitSha }` and creates a new commit rather than changing history. Restyle takes `{ styleVersionId }`, requires `documents:write`, and is exclusive to template-format documents: because pinned template versions authoritatively pin their own `styleVersionId`, restyling creates a NEW inactive template version (identical definition except the target style pin) plus a new document commit referencing it with unchanged data; markdown/html documents reject with `validation_failed`, and missing or foreign-company styles reject with `not_found`. PDF rendering is explicit and in memory; there is no historical PDF route, stored document artifact, or numeric version route.
 
 Mutation routes use CSRF protection where cookie authentication is accepted. Uploads and bodies have explicit limits.
 

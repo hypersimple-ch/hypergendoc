@@ -29,7 +29,7 @@ export function AuditDashboard() {
             aria-hidden="true"
           />
           <div>
-            <p className="eyebrow">Governance / audit log</p>
+            <p className="eyebrow">Administration</p>
             <h1 className="mt-1">Owner access required.</h1>
             <Status kind="warning">
               Only workspace owners can review security and change events.
@@ -90,8 +90,8 @@ function OwnerAuditLog() {
   return (
     <>
       <PageHeader
-        eyebrow="Governance / audit log"
-        title="Security activity"
+        eyebrow="Administration"
+        title="Audit log"
         description="Review workspace changes and security-relevant actions. Request bodies, credentials, and document content are never displayed."
         aside={
           <div className="flex items-center gap-2 text-sm text-muted-foreground">

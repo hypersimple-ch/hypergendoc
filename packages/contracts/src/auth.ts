@@ -44,3 +44,14 @@ export const InviteMemberInputSchema = z
 
 export type WorkspaceRole = z.infer<typeof WorkspaceRoleSchema>;
 export type Workspace = z.infer<typeof WorkspaceSchema>;
+
+export const CreateWorkspaceInviteInputSchema = z
+  .object({ email: EmailSchema, role: WorkspaceRoleSchema })
+  .strict();
+
+export const AcceptInviteInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    password: PasswordSchema,
+  })
+  .strict();
