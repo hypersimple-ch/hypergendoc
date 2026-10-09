@@ -14,10 +14,26 @@ docker compose up --build
 
 The development entry point is `http://localhost:8080`. Compose runs Caddy, the Next.js web app, Node server, migration job, PostgreSQL, Garage private S3-compatible storage, and the Unix-socket renderer. Only Caddy publishes a normal host port. The checked-in `.env.example` values are development-only; do not use them outside local development.
 
-For app processes without Compose, `pnpm dev` starts only the web, server, and renderer workspaces; PostgreSQL and Garage S3-compatible storage must already be reachable using `.env` values. Apply migrations explicitly with:
+For app processes without Compose, `pnpm dev` starts only the web, server, and renderer workspaces. The web development server at `http://localhost:3000` forwards `/api/*` to `http://127.0.0.1:4000`; set `SERVER_INTERNAL_ORIGIN` in the web process environment to use another API address. Production routing remains the deployment proxy's responsibility.
+
+The server development command loads root `.env`, then optional root `.env.local` overrides; explicitly exported environment variables take precedence. Use Node.js 22.9+ for optional environment-file support. For host-run development against the project's Compose PostgreSQL database:
 
 ```sh
-pnpm --filter @hypergendoc/db migrate
+docker compose -f compose.yaml -f compose.host.yaml up -d postgres
+```
+
+This optional override requires Docker Compose 2.24.4+ and publishes PostgreSQL only on `127.0.0.1:15432`, preserving the existing database volume. It puts PostgreSQL on a separate host-development network; use it for the host-run API, not the full containerized stack. Configure the ignored root `.env.local` with:
+
+```dotenv
+APP_ORIGIN=http://localhost:3000
+DATABASE_URL=postgresql://hypergendoc:dev-only-change-me@127.0.0.1:15432/hypergendoc
+DOCUMENT_GIT_ROOT=/absolute/path/to/your/checkout/.local/git
+```
+
+Match the database credentials to `.env`. `APP_ORIGIN` must match the browser origin or mutations will be rejected. Garage S3-compatible storage and the renderer socket must also be reachable for uploads and PDF rendering; the Compose-only service addresses in `.env.example` are not host addresses. Apply migrations explicitly with the same host configuration:
+
+```sh
+pnpm --filter @hypergendoc/db exec node --env-file=../../.env --env-file-if-exists=../../.env.local --import tsx src/migrate.ts
 ```
 
 ## Architecture and environment

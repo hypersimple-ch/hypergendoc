@@ -1,0 +1,10 @@
+# Optional override for a host-run API; never use with compose.prod.yaml.
+services:
+  postgres:
+    networks: !override [host-dev]
+    ports:
+      - "127.0.0.1:15432:5432"
+
+networks:
+  host-dev:
+    internal: false
