@@ -35,7 +35,7 @@ import {
 } from "../platform/env.js";
 import { MutationOperationJournal } from "../platform/mutation-operations.js";
 
-const enabled = process.env.RUN_POSTGRES_INTEGRATION === "true";
+const enabled = process.env.RUN_PLATFORM_INTEGRATION === "true";
 const tinyPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
   "base64",
