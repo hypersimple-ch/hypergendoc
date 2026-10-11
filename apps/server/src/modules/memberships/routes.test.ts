@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import type { AuditWriter } from "../../platform/audit.js";
-import { registerSafeErrorHandler } from "../../platform/errors.js";
+import { registerApplicationErrorHandler } from "../../app/error-handler.js";
 import type { HumanActor } from "../auth/actors.js";
 import { createMembershipRoutes } from "./routes.js";
 import type { MembershipRecord, MembershipRepository } from "./service.js";
@@ -76,7 +76,7 @@ describe("membership mutation routes", () => {
     const write = vi.fn<AuditWriter["write"]>().mockResolvedValue(undefined);
     const audit: AuditWriter = { write };
     const app = Fastify();
-    registerSafeErrorHandler(app);
+    registerApplicationErrorHandler(app);
     await app.register(
       createMembershipRoutes({
         actorFor: vi.fn().mockReturnValue(actor),

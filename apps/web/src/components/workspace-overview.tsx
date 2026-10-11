@@ -9,13 +9,16 @@ import {
   KeyRound,
   Palette,
 } from "lucide-react";
+import type { Document } from "@hypergendoc/contracts";
 import { dashboardApi, type DocumentDetail } from "../lib/dashboard-api";
 import { useActiveCompany } from "./active-company";
 import { Empty, LoadState, useLoaded } from "./dashboard-state";
 import { PageHeader, Status, Table } from "./primitives";
 
 type OverviewData = {
-  documents: Awaited<ReturnType<typeof dashboardApi.documents>>;
+  documents: Document[];
+  companyId?: string | undefined;
+  recentDocuments: Document[];
   details: DocumentDetail[];
   credentialCount?: number | undefined;
 };
@@ -27,19 +30,28 @@ async function loadOverview(
   const [documents, credentials] = await Promise.all([
     companyId
       ? dashboardApi
-          .documents()
+          .documents(companyId)
           .then((items) =>
             items.filter((document) => document.companyId === companyId),
           )
       : Promise.resolve([]),
     role === "owner" ? dashboardApi.credentials() : Promise.resolve(),
   ]);
+  const recentDocuments = [...documents]
+    .sort(
+      (left, right) =>
+        new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime() ||
+        (left.id < right.id ? -1 : left.id > right.id ? 1 : 0),
+    )
+    .slice(0, 10);
   const details = await Promise.all(
-    documents.map((document) => dashboardApi.document(document.id)),
+    recentDocuments.map((document) => dashboardApi.document(document.id)),
   );
 
   return {
     documents,
+    companyId,
+    recentDocuments,
     details,
     credentialCount: credentials?.filter(
       (credential) =>
@@ -57,14 +69,15 @@ export function WorkspaceOverview() {
   );
   const loading = workspace.loading || overview.loading;
   const error = workspace.error ?? overview.error;
-  const data = overview.value;
+  const data =
+    overview.value?.companyId === workspace.activeCompany?.id
+      ? overview.value
+      : undefined;
+  const ready = !!data && !!workspace.activeCompany && !loading && !error;
   const detailByDocumentId = new Map(
     data?.details.map((detail) => [detail.document.id, detail]),
   );
-  const recentDocuments = [...(data?.documents ?? [])].sort(
-    (left, right) =>
-      new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
-  );
+  const recentDocuments = data?.recentDocuments ?? [];
   const retry = workspace.error ? workspace.reload : overview.reload;
   const companiesById = new Map(
     workspace.companies.map((company) => [company.id, company.name]),
@@ -88,7 +101,7 @@ export function WorkspaceOverview() {
       />
 
       <LoadState loading={loading} error={error} onRetry={retry} />
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
         <section
           aria-labelledby="scope-heading"
           className="rounded-lg border border-border bg-card p-4 shadow-sm"
@@ -192,7 +205,7 @@ export function WorkspaceOverview() {
           aria-labelledby="recent-activity-heading"
           className="rounded-lg border border-border bg-card p-4 shadow-sm xl:col-span-2"
         >
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                 Recent activity
@@ -201,11 +214,15 @@ export function WorkspaceOverview() {
                 id="recent-activity-heading"
                 className="mt-1 text-base font-semibold"
               >
-                Recently updated documents
+                {(data?.documents.length ?? 0) > 10
+                  ? "10 most recently updated documents"
+                  : "Recently updated documents"}
               </h2>
             </div>
             <div className="flex items-center gap-3">
-              <Status kind="success">Workspace data is up to date</Status>
+              {ready ? (
+                <Status kind="success">Workspace data is up to date</Status>
+              ) : null}
               <Link
                 className="text-sm font-medium text-primary underline-offset-4 hover:underline"
                 href="/workspace/documents"
@@ -214,7 +231,7 @@ export function WorkspaceOverview() {
               </Link>
             </div>
           </div>
-          {workspace.noActiveCompany ? (
+          {!loading && !error && workspace.noActiveCompany ? (
             <Empty>
               <strong>Select or add an active company</strong>
               <p>
@@ -266,7 +283,7 @@ export function WorkspaceOverview() {
                 })}
               </Table>
             </div>
-          ) : (
+          ) : ready ? (
             <Empty>
               <strong>
                 No documents for {workspace.activeCompany?.name} yet
@@ -282,7 +299,7 @@ export function WorkspaceOverview() {
                 Review authorized access
               </Link>
             </Empty>
-          )}
+          ) : null}
         </section>
       </div>
     </div>

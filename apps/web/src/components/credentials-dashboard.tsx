@@ -13,6 +13,7 @@ import {
   Input,
   PageHeader,
   Status,
+  SummaryCard,
   Table,
 } from "./primitives";
 
@@ -588,24 +589,3 @@ function CredentialRow({
   );
 }
 
-function SummaryCard({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string | number;
-}) {
-  return (
-    <div className="rounded-lg border border-border bg-card px-3 py-2.5 last:col-span-2 sm:px-4 sm:py-3 sm:last:col-span-1">
-      <div className="flex items-center gap-2 text-xs font-medium uppercase leading-4 tracking-wide text-muted-foreground">
-        {icon}
-        {label}
-      </div>
-      <p className="mt-1.5 text-lg font-semibold text-foreground sm:mt-2">
-        {value}
-      </p>
-    </div>
-  );
-}

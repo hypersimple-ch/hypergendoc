@@ -63,12 +63,17 @@ type WireResponse = Readonly<{
     | "render_failed"
     | "dependency_unavailable"
     | "render_timeout"
+    | "render_busy"
     | "render_output_limit";
 }>;
 
 function renderError(error: WireResponse["error"]): RenderResult["error"] {
   if (error === "render_rejected") return error;
-  if (error === "dependency_unavailable" || error === "render_timeout")
+  if (
+    error === "dependency_unavailable" ||
+    error === "render_timeout" ||
+    error === "render_busy"
+  )
     return "dependency_unavailable";
   return "render_failed";
 }

@@ -28,6 +28,28 @@ import {
   type RefObject,
 } from "react";
 
+export function SummaryCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-card px-3 py-2.5 last:col-span-2 sm:px-4 sm:py-3 sm:last:col-span-1">
+      <div className="flex items-center gap-2 text-xs font-medium uppercase leading-4 tracking-wide text-muted-foreground">
+        {icon}
+        {label}
+      </div>
+      <p className="mt-1.5 text-lg font-semibold text-foreground sm:mt-2">
+        {value}
+      </p>
+    </div>
+  );
+}
+
 export const Button = forwardRef<
   HTMLButtonElement,
   ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -193,7 +215,7 @@ export function PageHeader({
     <header className={cn("page-heading", className)}>
       <div className="page-heading__content">
         <p className="eyebrow">{eyebrow}</p>
-        <h1 className="font-semibold leading-[1.15] tracking-[-0.03em]">
+        <h1 className="wrap-anywhere font-semibold leading-[1.15] tracking-[-0.03em]">
           {title}
         </h1>
         <p className="page-heading__description">{description}</p>

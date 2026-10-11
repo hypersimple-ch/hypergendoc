@@ -4,7 +4,7 @@ A narrow TypeScript MVP for agencies that produce branded PDF artifacts for clie
 
 ## Local development
 
-Prerequisites: Node.js 22+, pnpm 11.11.0, and Docker Compose. From a clean checkout:
+Prerequisites: Node.js 22.9+, pnpm 11.11.0, and Docker Compose. From a clean checkout:
 
 ```sh
 pnpm install
@@ -16,25 +16,33 @@ The development entry point is `http://localhost:8080`. Compose runs Caddy, the 
 
 For app processes without Compose, `pnpm dev` starts only the web, server, and renderer workspaces. The web development server at `http://localhost:3000` forwards `/api/*` to `http://127.0.0.1:4000`; set `SERVER_INTERNAL_ORIGIN` in the web process environment to use another API address. Production routing remains the deployment proxy's responsibility.
 
-The server development command loads root `.env`, then optional root `.env.local` overrides; explicitly exported environment variables take precedence. Use Node.js 22.9+ for optional environment-file support. For host-run development against the project's Compose PostgreSQL database:
+The server and renderer development commands load optional root `.env`, then optional root `.env.local` overrides; explicitly exported environment variables take precedence. Compose injects configuration without copying either private file into its images. For host-run development against the project's Compose dependencies:
 
 ```sh
-docker compose -f compose.yaml -f compose.host.yaml up -d postgres
+docker compose -f compose.yaml -f compose.host.yaml up -d postgres object-store
 ```
 
-This optional override requires Docker Compose 2.24.4+ and publishes PostgreSQL only on `127.0.0.1:15432`, preserving the existing database volume. It puts PostgreSQL on a separate host-development network; use it for the host-run API, not the full containerized stack. Configure the ignored root `.env.local` with:
+This optional override requires Docker Compose 2.24.4+ and publishes PostgreSQL only on `127.0.0.1:15432` and Garage only on `127.0.0.1:13900`, preserving their existing volumes and storage bootstrap. It puts these dependencies on a separate host-development network; use it for host-run apps, not the full containerized stack. Configure the ignored root `.env.local` with:
 
 ```dotenv
 APP_ORIGIN=http://localhost:3000
 DATABASE_URL=postgresql://hypergendoc:dev-only-change-me@127.0.0.1:15432/hypergendoc
 DOCUMENT_GIT_ROOT=/absolute/path/to/your/checkout/.local/git
+S3_ENDPOINT=http://127.0.0.1:13900
+RENDERER_SOCKET=/absolute/path/to/your/checkout/.local/renderer.sock
 ```
 
-Match the database credentials to `.env`. `APP_ORIGIN` must match the browser origin or mutations will be rejected. Garage S3-compatible storage and the renderer socket must also be reachable for uploads and PDF rendering; the Compose-only service addresses in `.env.example` are not host addresses. Apply migrations explicitly with the same host configuration:
+Match the database credentials to `.env`. `APP_ORIGIN` must match the browser origin or mutations will be rejected. Create writable `.local/` before startup. If the renderer's pinned Chromium is absent, install it with `pnpm --filter @hypergendoc/renderer exec playwright-core install chromium`.
+
+Host PDF rendering requires Chromium's sandbox to be supported by the host's namespace/AppArmor policy. A `No usable sandbox` launch failure is an OS prerequisite, not a reason to pass `--no-sandbox` to the renderer: use the isolated Compose stack or have an administrator configure a scoped browser policy.
+
+Apply migrations explicitly with the same host configuration:
 
 ```sh
 pnpm --filter @hypergendoc/db exec node --env-file=../../.env --env-file-if-exists=../../.env.local --import tsx src/migrate.ts
 ```
+
+For disposable audit fixtures, inherit `SMTP_HOST=mail.invalid` when launching host apps so test mail never reaches a real relay. Keep private files out of build contexts; `.env.example` remains the public configuration template.
 
 ## Architecture and environment
 
@@ -57,11 +65,17 @@ pnpm test:regression
 pnpm check
 ```
 
-`pnpm check` runs formatting, linting, type checks, unit/component/service/route/repository tests, focused security regressions, and builds. `pnpm test` runs workspace test watchers. Full browser and real-stack E2E suites are inactive under [`archive/e2e`](archive/e2e). There is no seed-data command; shared test fixture helpers live in `packages/test-support`.
+`pnpm check` runs linting, type checks, unit/component/service/route/repository tests, focused security regressions, and builds. `pnpm test` runs workspace test watchers. Route harnesses and the production application share `registerApplicationErrorHandler`, including domain authorization/validation mapping and sanitized 5xx logging. Active browser and real-stack MCP suites live in `tests/e2e`; archived fixtures remain under [`archive/e2e`](archive/e2e). Use `E2E_ORIGIN=<local-origin> pnpm test:e2e:browser` and `pnpm test:e2e:mcp` against a fixture-safe local stack. PostgreSQL mutation tests require an explicitly isolated database (`pnpm --filter @hypergendoc/server test:postgres`); never point their trigger fixtures at a working database. There is no seed-data command; shared test fixture helpers live in `packages/test-support`.
+
+CI separates the five database-only atomic mutation cases (`test:postgres`, enabled by `RUN_POSTGRES_INTEGRATION=true`) from the application-lifetime regression. The latter runs with `RUN_PLATFORM_INTEGRATION=true` in the disposable Compose server alongside real PostgreSQL, Garage, and Git; explicitly enabling it requires full server configuration. `./scripts/smoke-server-image.sh` builds the production runtime and migration targets, migrates isolated PostgreSQL, checks the fresh mutation journal, and probes runtime liveness internally without publishing host ports. It removes only its uniquely named containers, network, and image tags on success or failure; S3 and renderer readiness belong to the authenticated full-stack gate.
+
+The quality gate also runs `pnpm audit --prod --audit-level high`. Keep production dependency floors and the targeted security overrides in `pnpm-workspace.yaml` at patched releases; regenerate and verify the frozen lockfile without suppressing advisories or weakening this gate.
 
 ## Contributing
 
 Keep changes scoped, add or update tests for behavior changes, and run the relevant checks above. Validate migrations with `pnpm db:migrations:check` and Compose policy with `pnpm compose:check` when touching those areas. Contract schemas in `packages/contracts` and the architecture/contract documents are authoritative. Do not broaden the accepted document-input formats or claim security/compliance/production guarantees without corresponding implementation and release evidence.
+
+Web dashboards reuse `components/primitives.tsx` for summaries, tables, and dialogs, with Radix Sheet for mobile navigation. Element typography defaults belong in the CSS base layer so utility classes remain authoritative. The inline style canvas is supplementary content, not a second main landmark. Shrinkable grid tracks and wrapping names/identifiers keep narrow dashboards usable; legacy sidebar placement/stacking must not override the portaled Sheet. Keep browser API adapters limited to live UI consumers; server endpoints remain governed independently by the shared contracts.
 
 ## Guides and runbooks
 

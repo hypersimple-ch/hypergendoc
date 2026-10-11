@@ -32,6 +32,7 @@ export function DocumentsDashboard() {
     error: companyError,
     loading: companyLoading,
     noActiveCompany,
+    reload: reloadCompanies,
   } = useActiveCompany();
   const data = useLoaded(
     () =>
@@ -141,7 +142,7 @@ export function DocumentsDashboard() {
           <FileText className="size-5 text-primary" aria-hidden="true" />
         </div>
         <div className="p-4">
-          <LoadState loading={companyLoading} error={companyError} />
+          <LoadState loading={companyLoading} error={companyError} onRetry={reloadCompanies} />
           {noActiveCompany ? (
             <NoActiveCompany />
           ) : activeCompany ? (
@@ -326,9 +327,9 @@ function DocumentDetail({
       aria-labelledby="document-detail-title"
     >
       <div className="flex items-start justify-between gap-3 border-b border-border pb-4">
-        <div>
+        <div className="min-w-0">
           <p className="eyebrow">Document detail</p>
-          <h2 id="document-detail-title" ref={heading} tabIndex={-1}>
+          <h2 className="wrap-anywhere" id="document-detail-title" ref={heading} tabIndex={-1}>
             {document.title}
           </h2>
         </div>

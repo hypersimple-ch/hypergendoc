@@ -44,34 +44,54 @@ export function StyleStudio({
     "split" | "editor" | "preview"
   >("split");
   const actionPending = useRef(false);
+  const initializedStyleId = useRef<string | undefined>(undefined);
+  const [draftStyleId, setDraftStyleId] = useState<string>();
+  const currentStyleId = useRef(style.id);
+  currentStyleId.current = style.id;
+  const draftReady =
+    draftStyleId === style.id &&
+    detail.value?.style.id === style.id;
   const isDirty = useMemo(
     () =>
+      draftReady &&
       savedDefinition !== undefined &&
       JSON.stringify(definition) !== JSON.stringify(savedDefinition),
-    [definition, savedDefinition],
+    [definition, savedDefinition, draftReady],
   );
   useUnsavedChanges(`style-studio:${style.id}`, isDirty);
 
   useEffect(() => {
-    if (!detail.value) return;
+    if (
+      !detail.value ||
+      detail.value.style.id !== style.id ||
+      initializedStyleId.current === style.id
+    )
+      return;
     const saved =
       detail.value.versions.at(-1)?.definition ?? initialStyleDefinition;
     setDefinition(saved);
     setSavedDefinition(saved);
-  }, [detail.value]);
+    setMessage(undefined);
+    setConfirmation(undefined);
+    initializedStyleId.current = style.id;
+    setDraftStyleId(style.id);
+  }, [detail.value, style.id]);
 
   async function save(activate: boolean) {
-    if (actionPending.current) return false;
+    if (actionPending.current || !draftReady) return false;
+    const submittedStyleId = style.id;
+    const submittedDefinition = definition;
     actionPending.current = true;
     setBusy(true);
     setMessage(undefined);
     try {
       await dashboardApi.createStyleVersion(
-        style.id,
-        { ...definition, assetVersion: 1 },
+        submittedStyleId,
+        { ...submittedDefinition, assetVersion: 1 },
         activate,
       );
-      setSavedDefinition(definition);
+      if (currentStyleId.current !== submittedStyleId) return false;
+      setSavedDefinition(submittedDefinition);
       detail.reload();
       setMessage({
         text: activate
@@ -81,7 +101,8 @@ export function StyleStudio({
       });
       return true;
     } catch (reason) {
-      setMessage({ text: safeError(reason), error: true });
+      if (currentStyleId.current === submittedStyleId)
+        setMessage({ text: safeError(reason), error: true });
       return false;
     } finally {
       actionPending.current = false;
@@ -133,20 +154,22 @@ export function StyleStudio({
   return (
     <section className="style-studio" aria-labelledby="style-studio-title">
       <header className="style-studio__header !items-start !border-border !pb-5">
-        <div>
+        <div className="min-w-0">
           <p className="eyebrow !font-mono !text-primary">Style studio</p>
           <div className="flex flex-wrap items-center gap-3">
             <h2
               id="style-studio-title"
-              className="!mt-1 !font-sans !text-2xl !font-semibold !tracking-tight text-foreground sm:!text-3xl"
+              className="wrap-anywhere !mt-1 !font-sans !text-2xl !font-semibold !tracking-tight text-foreground sm:!text-3xl"
             >
               {style.name}
             </h2>
-            <span
-              className={`rounded-md px-2 py-1 font-mono text-[11px] ${isDirty ? "bg-warning-soft text-warning" : "bg-accent text-accent-foreground"}`}
-            >
-              {isDirty ? "Unsaved changes" : "All changes saved"}
-            </span>
+            {draftReady && (
+              <span
+                className={`rounded-md px-2 py-1 font-mono text-[11px] ${isDirty ? "bg-warning-soft text-warning" : "bg-accent text-accent-foreground"}`}
+              >
+                {isDirty ? "Unsaved changes" : "All changes saved"}
+              </span>
+            )}
           </div>
           <p className="!mt-2 !text-sm !text-muted-foreground">
             Configure the document system, then save an immutable version.
@@ -162,7 +185,7 @@ export function StyleStudio({
         </Button>
       </header>
       <LoadState {...detail} />
-      {detail.value && (
+      {draftReady && detail.value && (
         <>
           <div className="style-studio__workspace-toolbar">
             <span className="font-mono text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
@@ -296,7 +319,7 @@ export function StyleStudio({
         </>
       )}
       <ConfirmDialog
-        open={confirmation === "activate"}
+        open={draftReady && confirmation === "activate"}
         title="Review and activate version"
         description="This saves a new immutable version and makes it the active style for future documents."
         confirmLabel="Save and activate"
@@ -310,7 +333,7 @@ export function StyleStudio({
         }}
       />
       <ConfirmDialog
-        open={confirmation === "discard"}
+        open={draftReady && confirmation === "discard"}
         title="Discard unsaved changes?"
         description="Your edits have not been saved as a version. Leave the studio without saving?"
         confirmLabel="Discard changes"

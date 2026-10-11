@@ -430,25 +430,21 @@ export async function startRenderer(
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  let queuedOrRunning = 0;
-  let queue = Promise.resolve();
-  const renderJob = (request: unknown): Promise<RendererResponse> => {
-    if (queuedOrRunning >= 2)
-      return Promise.resolve({
+  let active = false;
+  const renderJob = async (request: unknown): Promise<RendererResponse> => {
+    if (active)
+      return {
         protocol: RENDERER_PROTOCOL,
         requestId: requestIdFrom(request),
         ok: false,
-        error: "render_busy" as const,
-      });
-    queuedOrRunning += 1;
-    const result = queue.then(() => render(request, pdfRenderer, timeoutMs));
-    queue = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result.finally(() => {
-      queuedOrRunning -= 1;
-    });
+        error: "render_busy",
+      };
+    active = true;
+    try {
+      return await render(request, pdfRenderer, timeoutMs);
+    } finally {
+      active = false;
+    }
   };
   const server = createServer({ allowHalfOpen: true }, (socket) => {
     socket.on("error", () => undefined);

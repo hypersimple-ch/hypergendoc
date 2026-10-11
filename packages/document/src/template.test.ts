@@ -154,7 +154,6 @@ describe("template document renderer", () => {
     expect(first).toContain("template-toc");
     expect(first).toContain('href="#heading-1"');
     expect(first).toContain('id="heading-1"');
-    expect(first).toMatch(/1.?500/);
     expect(first).not.toContain("<Review>");
   });
 

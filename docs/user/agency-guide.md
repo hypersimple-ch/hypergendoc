@@ -6,11 +6,15 @@ The first user is the workspace owner. Owners and members manage companies, styl
 
 Create a client company, upload its validated logo, and configure a structured style. Logos are private objects, not public links.
 
+Workspace access and company selection share one state owner. Navigation revalidates membership/session access; ordinary company-refresh failures retain mounted editors and offer retry. The overview counts every active-company document but loads history for only its ten most recently updated documents; the directory exposes the full list. Loading or failed refreshes are never labeled up to date.
+
 ## Documents and history
 
 Creating or updating a document writes exact Markdown or the canonical sanitized HTML fragment to the company's private Git history. Each change has a commit SHA; history is immutable. Revert selects an older commit and creates a new commit, rather than overwriting it.
 
 The dashboard can read current or historical source. PDF is available only for the current document and is generated on demand; historical commits do not have PDF previews or downloads. Document source, generated HTML, and PDFs are not retained in object storage.
+
+The PDF dialog fetches one authenticated response with a 40-second deadline and checks HTTP success and PDF content type before opening a local Blob viewer. Error responses show fallback links, not a successful viewer. Open/download reuse the loaded bytes while the dialog is open; closing it releases those bytes. “PDF ready” confirms the response, not native-viewer readiness.
 
 HTML is a sanitized fragment, not a styling surface. `format` is required as `markdown` or `html`; user CSS is not accepted.
 
@@ -33,5 +37,7 @@ See the [permission matrix](../security/permission-matrix.md) and [HTTP/MCP cont
 ## Template studio
 
 Templates are intentionally allowed to model a specific agency workflow or business document; the HyperGenDoc runtime itself remains business-kind agnostic. Create a template under the active company, select an immutable active style version, then define its typed fields, page masters, components and document AST. Preview with representative data before saving an immutable inactive version or activating it. Existing documents stay pinned to their historical template and style versions.
+
+Style and template studios preserve unsaved drafts when version/history metadata refreshes. Saving establishes the submitted snapshot as the saved baseline without discarding newer edits. Template sample values also survive saves and historical activation; explicitly applying changed fields keeps compatible sample values. Opening another resource initializes that resource's own draft.
 
 Create a document from an active template in **Documents → Create document**. The generated form follows the template field schema, including nested objects, lists, dates, money, booleans, rich text, and private images. Editing the form later creates a new Git commit; it never mutates an earlier revision. Images are private company assets and are referenced by opaque UUID rather than public URLs.

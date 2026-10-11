@@ -87,10 +87,21 @@ export const DocumentCommitSchema = z
     templateVersionId: UuidSchema.nullable().optional(),
     format: DocumentStoredFormatSchema,
     createdByType: z.enum(["user", "credential"]),
-    createdById: UuidSchema,
+    createdById: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
     createdAt: TimestampSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((commit, context) => {
+    if (
+      commit.createdByType === "credential" &&
+      !UuidSchema.safeParse(commit.createdById).success
+    )
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["createdById"],
+        message: "Credential authors must have UUID identifiers",
+      });
+  });
 
 export const DocumentSnapshotSchema = z
   .object({

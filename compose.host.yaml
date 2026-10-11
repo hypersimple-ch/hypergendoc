@@ -4,6 +4,10 @@ services:
     networks: !override [host-dev]
     ports:
       - "127.0.0.1:15432:5432"
+  object-store:
+    networks: !override [host-dev]
+    ports:
+      - "127.0.0.1:13900:3900"
 
 networks:
   host-dev:

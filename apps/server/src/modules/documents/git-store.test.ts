@@ -5,6 +5,11 @@ import * as git from "isomorphic-git";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  DocumentCommitSchema,
+  DocumentDetailSchema,
+} from "@hypergendoc/contracts";
+import { toDocumentCommit, toDocumentSnapshot } from "./commit-mappers.js";
+import {
   CompanyDocumentGitStore,
   GitDocumentNotFoundError,
   GitDocumentStoreValidationError,
@@ -105,24 +110,75 @@ describe("CompanyDocumentGitStore", () => {
     });
   });
 
-  it("accepts safe Better Auth user IDs and rejects trailer injection", async () => {
+  it.each([
+    { type: "user" as const, id: "tmMw4N9FeELUeIppXC6papyrOKqJJJ8h" },
+    { type: "user" as const, id: "authUser_123-safe" },
+    { type: "user" as const, id: ids.actor },
+    { type: "user" as const, id: "a".repeat(128) },
+    { type: "credential" as const, id: ids.actor },
+  ])("exposes valid Git author metadata in document detail: $type/$id", async (actor) => {
     const gitStore = await store();
-    const actor = {
-      type: "user" as const,
-      id: "tmMw4N9FeELUeIppXC6papyrOKqJJJ8h",
-    };
+    const input = writeInput({ actor });
+    await gitStore.write(input);
+    const revision = await gitStore.readCurrent(input);
+    const history = await gitStore.history(input);
+    const commits = history.map((entry) => toDocumentCommit(ids.document, entry));
+    const commit = commits[0]!;
 
-    await gitStore.write(writeInput({ actor }));
-    await expect(gitStore.history(writeInput())).resolves.toMatchObject([
-      { actor },
-    ]);
+    expect(DocumentCommitSchema.parse(commit)).toMatchObject({
+      createdByType: actor.type,
+      createdById: actor.id,
+      commitSha: revision.commitId,
+    });
+    const detail = DocumentDetailSchema.parse({
+      document: {
+        id: ids.document,
+        companyId: ids.company,
+        title: "Author contract regression",
+        createdAt: commit.createdAt,
+        updatedAt: commit.createdAt,
+      },
+      current: {
+        commit,
+        snapshot: toDocumentSnapshot(ids.document, revision),
+      },
+      commits,
+    });
+    expect(detail.current.commit.createdById).toBe(actor.id);
+    expect(detail.commits[0]?.createdById).toBe(actor.id);
+    expect(detail.current.snapshot.body).toBe(input.body);
+  });
+
+  it.each([
+    { type: "user" as const, id: "" },
+    { type: "user" as const, id: "unsafe\nActor-Type: credential" },
+    { type: "user" as const, id: "authUser_123\n" },
+    { type: "user" as const, id: "../escape" },
+    { type: "user" as const, id: "user/name" },
+    { type: "user" as const, id: "unsafe user" },
+    { type: "user" as const, id: "a".repeat(129) },
+    { type: "credential" as const, id: "authUser_123" },
+  ])("rejects unsafe Git and response author IDs: $type/$id", async (actor) => {
+    const gitStore = await store();
+    await gitStore.write(writeInput());
+    const history = await gitStore.history(writeInput());
+    const commit = toDocumentCommit(ids.document, history[0]!);
+
+    const result = DocumentCommitSchema.safeParse({
+      ...commit,
+      createdByType: actor.type,
+      createdById: actor.id,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.map((issue) => issue.path)).toContainEqual([
+        "createdById",
+      ]);
+    }
     await expect(
-      gitStore.write(
-        writeInput({
-          actor: { type: "user", id: "unsafe\nActor-Type: credential" },
-        }),
-      ),
+      gitStore.write(writeInput({ actor })),
     ).rejects.toThrow(GitDocumentStoreValidationError);
+    expect(await gitStore.history(writeInput())).toEqual(history);
   });
 
   it("reads the HEAD document commit when commit timestamps are non-monotonic", async () => {

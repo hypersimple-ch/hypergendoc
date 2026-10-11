@@ -174,6 +174,7 @@ function OwnerAuditLog() {
         {firstPage.value &&
           (events.length ? (
             <>
+              {filteredEvents.length ? (
               <Table
                 caption="Workspace audit events"
                 columns={["Event", "Target", "Actor", "Outcome", "Time"]}
@@ -181,7 +182,7 @@ function OwnerAuditLog() {
                 {filteredEvents.map((event) => (
                   <tr key={event.id}>
                     <td>
-                      <strong className="break-normal font-mono text-sm">
+                      <strong className="wrap-anywhere font-mono text-sm">
                         {event.action}
                       </strong>
                     </td>
@@ -202,7 +203,7 @@ function OwnerAuditLog() {
                   </tr>
                 ))}
               </Table>
-              {filteredEvents.length === 0 && (
+              ) : (
                 <Empty>
                   <strong>No matching audit events</strong>
                   <p>Change or clear the filters to see loaded events.</p>

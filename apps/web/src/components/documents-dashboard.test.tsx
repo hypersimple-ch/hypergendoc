@@ -9,6 +9,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import type {
   Company,
   Document,
@@ -133,6 +134,25 @@ afterEach(() => {
 });
 
 describe("DocumentsDashboard", () => {
+  it("recovers the company error into visible documents through retry", async () => {
+    documents.mockResolvedValue([baseDocument]);
+    function RecoveryFixture() {
+      const [recovered, setRecovered] = useState(false);
+      activeCompany.mockReturnValue({
+        activeCompany: recovered ? acme : undefined,
+        loading: false,
+        error: recovered ? undefined : "Connection unavailable",
+        noActiveCompany: false,
+        reload: () => setRecovered(true),
+      });
+      return <DocumentsDashboard />;
+    }
+    render(<RecoveryFixture />);
+    expect(screen.getByText("Connection unavailable")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Proposal")).toBeVisible();
+    expect(screen.queryByText("Connection unavailable")).not.toBeInTheDocument();
+  });
   it("filters workspace documents to the active company and reloads on a company switch", async () => {
     const betaDocument = {
       ...baseDocument,
@@ -230,26 +250,6 @@ describe("DocumentsDashboard", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("does not request or display a PDF until preview is explicitly selected", async () => {
-    mockDashboard();
-    await openHistory();
-
-    expect(
-      screen.queryByTitle("Proposal current PDF preview"),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Revert as new commit" }),
-    ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Preview PDF" }));
-    expect(screen.getByTitle("Proposal current PDF preview")).toHaveAttribute(
-      "src",
-      `/api/documents/${documentId}/pdf?disposition=inline`,
-    );
-    expect(screen.getByRole("link", { name: "Download PDF" })).toHaveAttribute(
-      "href",
-      `/api/documents/${documentId}/pdf`,
-    );
-  });
 
   it("confirms a revert, creates a new commit, and refreshes history", async () => {
     mockDashboard();

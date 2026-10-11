@@ -16,11 +16,11 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "./ui/button";
 import { ApiError, workspaceApi } from "../lib/api-client";
 import { authClient } from "../lib/auth-client";
-import { ActiveCompanyProvider, useActiveCompany } from "./active-company";
+import { useActiveCompany } from "./active-company";
 import { Select } from "./primitives";
 import { Sheet, SheetContent, SheetTrigger } from "./ui/sheet";
 import {
@@ -63,38 +63,28 @@ const navigationGroups = [
 export function SessionBoundary({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [state, setState] = useState<
-    "checking" | "ready" | "error" | "ambiguous"
-  >("checking");
-  const [error, setError] = useState<string>();
-  const [attempt, setAttempt] = useState(0);
+  const { context, loading, error, errorCode, reload } = useActiveCompany();
+  const previousPathname = useRef(pathname);
+
   useEffect(() => {
-    let alive = true;
-    workspaceApi
-      .current()
-      .then(() => alive && setState("ready"))
-      .catch((caught: unknown) => {
-        if (!alive) return;
-        if (caught instanceof ApiError && caught.code === "unauthenticated") {
-          router.replace(`/login?next=${encodeURIComponent(pathname)}`);
-          return;
-        }
-        if (caught instanceof ApiError && caught.code === "forbidden") {
-          router.replace("/setup");
-          return;
-        }
-        if (caught instanceof ApiError && caught.code === "conflict") {
-          setState("ambiguous");
-          return;
-        }
-        setError("We could not verify workspace access.");
-        setState("error");
-      });
-    return () => {
-      alive = false;
-    };
-  }, [attempt, pathname, router]);
-  if (state === "checking")
+    if (previousPathname.current === pathname) return;
+    previousPathname.current = pathname;
+    reload();
+  }, [pathname, reload]);
+
+  useEffect(() => {
+    if (errorCode === "unauthenticated") {
+      router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+    } else if (errorCode === "forbidden") {
+      router.replace("/setup");
+    }
+  }, [errorCode, pathname, router]);
+
+  if (
+    errorCode === "unauthenticated" ||
+    errorCode === "forbidden" ||
+    (!context && loading)
+  )
     return (
       <main
         id="main-content"
@@ -106,7 +96,7 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
         <p>Checking your secure session…</p>
       </main>
     );
-  if (state === "ambiguous")
+  if (errorCode === "conflict")
     return (
       <main id="main-content" className="session-loading" role="alert">
         <p>Your account has memberships in multiple workspaces.</p>
@@ -114,30 +104,15 @@ export function SessionBoundary({ children }: { children: ReactNode }) {
           Ask your workspace administrator to resolve the duplicate memberships,
           then try again.
         </p>
-        <Button
-          onClick={() => {
-            setState("checking");
-            setAttempt((value) => value + 1);
-          }}
-        >
-          Try again
-        </Button>
+        <Button onClick={reload}>Try again</Button>
       </main>
     );
-  if (state === "error")
+  if (!context && error)
     return (
       <main id="main-content" className="session-loading" role="alert">
-        <p>{error ?? "We could not verify workspace access."}</p>
+        <p>We could not verify workspace access.</p>
         <p>Please check your connection and try again.</p>
-        <Button
-          onClick={() => {
-            setError(undefined);
-            setState("checking");
-            setAttempt((value) => value + 1);
-          }}
-        >
-          Try again
-        </Button>
+        <Button onClick={reload}>Try again</Button>
       </main>
     );
   return <>{children}</>;
@@ -199,11 +174,9 @@ export function WorkspaceSetupBoundary({ children }: { children: ReactNode }) {
 
 export function WorkspaceShell({ children }: { children: ReactNode }) {
   return (
-    <ActiveCompanyProvider>
-      <UnsavedChangesProvider>
-        <WorkspaceShellContent>{children}</WorkspaceShellContent>
-      </UnsavedChangesProvider>
-    </ActiveCompanyProvider>
+    <UnsavedChangesProvider>
+      <WorkspaceShellContent>{children}</WorkspaceShellContent>
+    </UnsavedChangesProvider>
   );
 }
 

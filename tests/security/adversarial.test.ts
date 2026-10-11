@@ -27,10 +27,8 @@ import {
   type DocumentRepository,
 } from "../../apps/server/src/modules/documents/service.js";
 import type { ActorContext } from "../../apps/server/src/platform/context.js";
-import {
-  AppError,
-  registerSafeErrorHandler,
-} from "../../apps/server/src/platform/errors.js";
+import { registerApplicationErrorHandler } from "../../apps/server/src/app/error-handler.js";
+import { AppError } from "../../apps/server/src/platform/errors.js";
 
 const owner: HumanActor = {
   userId: "owner",
@@ -208,7 +206,7 @@ function documentApp(actorFor: () => ActorContext) {
     sourceBuilder: { resolve: vi.fn() },
   });
   const app = Fastify({ logger: false });
-  registerSafeErrorHandler(app);
+  registerApplicationErrorHandler(app);
   registerDocumentRoutes(app, { service, actorFor });
   return { app, git, renderer };
 }

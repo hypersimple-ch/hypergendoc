@@ -179,7 +179,7 @@ export function StylesDashboard() {
                               {new Date(style.createdAt).toLocaleDateString()}
                             </time>
                           </div>
-                          <h3 className="!font-sans !text-base !font-semibold !tracking-tight text-foreground">
+                          <h3 className="wrap-anywhere !font-sans !text-base !font-semibold !tracking-tight text-foreground">
                             {style.name}
                           </h3>
                           <div
