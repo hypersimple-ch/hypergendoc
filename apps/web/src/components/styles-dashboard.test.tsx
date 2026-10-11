@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -47,6 +48,9 @@ vi.mock("../lib/dashboard-api", () => ({
 vi.mock("./active-company", () => ({ useActiveCompany }));
 
 import { StylesDashboard } from "./styles-dashboard";
+import { StyleStudio } from "./style-studio";
+import type { StyleDetail } from "../lib/dashboard-api";
+import type { StyleDefinition, StyleVersion } from "@hypergendoc/contracts";
 
 Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
   value: () => undefined,
@@ -117,6 +121,14 @@ const version = (overrides: Partial<typeof definition> = {}) => ({
   createdAt: "2026-01-01T00:00:00.000Z",
   definition: { ...definition, ...overrides },
 });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
 
 async function chooseOption(selectName: string, optionName: string) {
   fireEvent.click(screen.getByRole("combobox", { name: selectName }));
@@ -864,6 +876,155 @@ describe("StylesDashboard", () => {
     expect(
       screen.getByRole("article", { name: "A4 document preview" }),
     ).toBeVisible();
+  });
+
+  it("preserves newer edits during save and history reload, using the submitted draft as baseline", async () => {
+    await openEditor();
+    const saveResponse = deferred<StyleVersion>();
+    const historyResponse = deferred<StyleDetail>();
+    let submittedDefinition: StyleDefinition | undefined;
+    createStyleVersion.mockImplementationOnce(
+      (_id: string, snapshot: StyleDefinition) => {
+        submittedDefinition = snapshot;
+        return saveResponse.promise;
+      },
+    );
+    style.mockReturnValueOnce(historyResponse.promise);
+    const topMargin = () => screen.getByLabelText("Top margin value");
+    fireEvent.change(topMargin(), { target: { value: "25" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save inactive version" }));
+    expect(submittedDefinition).toMatchObject({
+      page: { marginTopMm: 25 },
+    });
+    expect(createStyleVersion).toHaveBeenCalledWith(
+      styleB.id,
+      submittedDefinition,
+      false,
+    );
+    fireEvent.change(topMargin(), { target: { value: "30" } });
+    expect(topMargin()).toHaveValue(30);
+
+    const submittedVersion = {
+      ...version(),
+      id: "version-saved",
+      version: 2,
+      definition: {
+        ...definition,
+        assetVersion: 1 as const,
+        page: { ...definition.page, marginTopMm: 25 },
+      },
+    };
+    await act(async () => {
+      saveResponse.resolve(submittedVersion);
+      await saveResponse.promise;
+    });
+    expect(topMargin()).toHaveValue(30);
+    expect(screen.getByText("Unsaved changes")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Save inactive version" }),
+    ).toBeEnabled();
+
+    fireEvent.change(topMargin(), { target: { value: "35" } });
+    await act(async () => {
+      historyResponse.resolve({
+        style: styleB,
+        versions: [version(), submittedVersion],
+      });
+      await historyResponse.promise;
+    });
+    expect(await screen.findByText("v2")).toBeVisible();
+    expect(topMargin()).toHaveValue(35);
+    expect(screen.getByText("Unsaved changes")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to style library" }));
+    expect(
+      screen.getByRole("dialog", { name: "Discard unsaved changes?" }),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.change(topMargin(), { target: { value: "25" } });
+    expect(screen.getByText("All changes saved")).toBeVisible();
+  });
+
+  it("hides retained drafts on resource change and ignores outstanding old history", async () => {
+    const oldHistory = deferred<StyleDetail>();
+    const newDetail = deferred<StyleDetail>();
+    const newStyle = { ...styleB, id: "style-next", name: "Next style" };
+    style
+      .mockResolvedValueOnce({ style: styleB, versions: [version()] })
+      .mockReturnValueOnce(oldHistory.promise)
+      .mockReturnValueOnce(newDetail.promise);
+    createStyleVersion.mockResolvedValueOnce(version());
+    const props = { refreshAssets: () => Promise.resolve(), onClose: vi.fn() };
+    const { rerender } = render(<StyleStudio style={styleB} {...props} />);
+    const topMargin = () => screen.getByLabelText("Top margin value");
+    expect(await screen.findByLabelText("Top margin value")).toHaveValue(20);
+    fireEvent.change(topMargin(), { target: { value: "30" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save inactive version" }));
+    await screen.findByText("New inactive version saved.");
+    rerender(<StyleStudio style={newStyle} {...props} />);
+    expect(screen.getByRole("heading", { name: "Next style" })).toBeVisible();
+    expect(screen.queryByLabelText("Top margin value")).not.toBeInTheDocument();
+    expect(screen.queryByText("All changes saved")).not.toBeInTheDocument();
+
+    await act(async () => {
+      oldHistory.resolve({
+        style: styleB,
+        versions: [version({ page: { ...definition.page, marginTopMm: 30 } })],
+      });
+      await oldHistory.promise;
+    });
+    expect(screen.queryByLabelText("Top margin value")).not.toBeInTheDocument();
+    await act(async () => {
+      newDetail.resolve({
+        style: newStyle,
+        versions: [{ ...version(), styleId: newStyle.id }],
+      });
+      await newDetail.promise;
+    });
+    expect(await screen.findByLabelText("Top margin value")).toHaveValue(20);
+    expect(screen.getByText("All changes saved")).toBeVisible();
+  });
+
+  it("initializes a resource with identical saved data after switching IDs", async () => {
+    const nextStyle = { ...styleB, id: "style-next", name: "Next style" };
+    style.mockResolvedValueOnce({ style: styleB, versions: [version()] });
+    const props = { refreshAssets: () => Promise.resolve(), onClose: vi.fn() };
+    const { rerender } = render(<StyleStudio style={styleB} {...props} />);
+    await screen.findByLabelText("Top margin value");
+    const sharedVersion = version();
+    style.mockResolvedValueOnce({ style: nextStyle, versions: [sharedVersion] });
+    // Both resources may legitimately use the same immutable definition object.
+    style.mockResolvedValueOnce({ style: styleB, versions: [sharedVersion] });
+    rerender(<StyleStudio style={nextStyle} {...props} />);
+    expect(await screen.findByLabelText("Top margin value")).toHaveValue(20);
+    rerender(<StyleStudio style={styleB} {...props} />);
+    expect(await screen.findByLabelText("Top margin value")).toHaveValue(20);
+    expect(screen.getByText("All changes saved")).toBeVisible();
+  });
+
+  it("allows failed initial detail loads to retry and initialize the draft", async () => {
+    style
+      .mockRejectedValueOnce(new Error("Detail temporarily unavailable"))
+      .mockResolvedValueOnce({
+        style: styleB,
+        versions: [version({ page: { ...definition.page, marginTopMm: 27 } })],
+      });
+    render(
+      <StyleStudio
+        style={styleB}
+        refreshAssets={() => Promise.resolve()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(await screen.findByRole("alert")).toBeVisible();
+    expect(screen.queryByLabelText("Top margin value")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByLabelText("Top margin value")).toHaveValue(27);
+    expect(screen.getByText("All changes saved")).toBeVisible();
+    fireEvent.change(screen.getByLabelText("Top margin value"), {
+      target: { value: "28" },
+    });
+    expect(screen.getByText("Unsaved changes")).toBeVisible();
   });
 
   it("saves versions and opens exact PDFs safely", async () => {

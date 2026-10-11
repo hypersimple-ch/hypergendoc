@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { dashboardApi, type WorkspaceContext } from "../lib/dashboard-api";
+import { ApiError } from "../lib/api-client";
 import { safeError } from "./dashboard-state";
 
 type ActiveCompanyState = {
@@ -18,6 +19,7 @@ type ActiveCompanyState = {
   companies: Company[];
   loading: boolean;
   error?: string | undefined;
+  errorCode?: ApiError["code"] | undefined;
   reload: () => void;
   activeCompany?: Company | undefined;
   setActiveCompany: (companyId: string | undefined) => void;
@@ -42,8 +44,10 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
   const [activeCompanyId, setActiveCompanyId] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
+  const [errorCode, setErrorCode] = useState<ApiError["code"]>();
   const mounted = useRef(false);
   const requestId = useRef(0);
+  const initialLoad = useRef<Promise<[WorkspaceContext, Company[]]> | undefined>(undefined);
 
   const persist = useCallback((workspaceId: string, companyId?: string) => {
     if (!mounted.current) return;
@@ -52,11 +56,12 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
     else localStorage.removeItem(key);
   }, []);
 
-  const reload = useCallback(() => {
+  const load = useCallback((pending: Promise<[WorkspaceContext, Company[]]>) => {
     const request = ++requestId.current;
     setLoading(true);
     setError(undefined);
-    Promise.all([dashboardApi.context(), dashboardApi.companies()])
+    setErrorCode(undefined);
+    pending
       .then(([context, companies]) => {
         if (!mounted.current || request !== requestId.current) return;
         const key = activeCompanyStorageKey(context.id);
@@ -72,20 +77,35 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
       .catch((caught: unknown) => {
         if (!mounted.current || request !== requestId.current) return;
         setError(safeError(caught));
+        setErrorCode(caught instanceof ApiError ? caught.code : undefined);
+        if (
+          caught instanceof ApiError &&
+          ["unauthenticated", "forbidden", "conflict"].includes(caught.code)
+        ) {
+          setData(undefined);
+          setActiveCompanyId(undefined);
+        }
       })
       .finally(() => {
+        if (initialLoad.current === pending) initialLoad.current = undefined;
         if (mounted.current && request === requestId.current) setLoading(false);
       });
   }, [persist]);
 
+  const reload = useCallback(() => {
+    load(Promise.all([dashboardApi.context(), dashboardApi.companies()]));
+  }, [load]);
+
   useEffect(() => {
     mounted.current = true;
-    reload();
+    // Strict Mode replays mount effects; reuse only this provider's initial request.
+    initialLoad.current ??= Promise.all([dashboardApi.context(), dashboardApi.companies()]);
+    load(initialLoad.current);
     return () => {
       mounted.current = false;
       requestId.current++;
     };
-  }, [reload]);
+  }, [load]);
 
   const setActiveCompany = useCallback(
     (companyId: string | undefined) => {
@@ -107,6 +127,7 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
     companies: data?.companies ?? [],
     loading,
     error,
+    errorCode,
     reload,
     activeCompany,
     setActiveCompany,

@@ -1,6 +1,15 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import type { Document } from "@hypergendoc/contracts";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { api, workspace } = vi.hoisted(() => ({
@@ -83,18 +92,6 @@ afterEach(() => {
 });
 
 describe("WorkspaceOverview", () => {
-  it("keeps the active-company context and recent activity action-oriented", () => {
-    render(<WorkspaceOverview />);
-
-    expect(screen.getByRole("heading", { name: "Acme" })).toBeVisible();
-    expect(screen.getByText("Recent activity")).toBeVisible();
-    expect(
-      screen.getByRole("heading", { name: "Recently updated documents" }),
-    ).toBeVisible();
-    expect(
-      screen.getByRole("link", { name: "Manage companies" }),
-    ).toHaveAttribute("href", "/workspace/companies");
-  });
 
   it("uses shared workspace loading and errors, including shared retry", async () => {
     workspace.loading = true;
@@ -108,42 +105,106 @@ describe("WorkspaceOverview", () => {
     expect(workspace.reload).toHaveBeenCalledOnce();
   });
 
-  it("filters mixed-company documents before fetching details and keeps detail fields", async () => {
-    const earlier = document("earlier", "acme", "2026-01-01T00:00:00.000Z");
-    const latest = document("latest", "acme", "2026-01-02T00:00:00.000Z");
-    const other = document("other", "globex", "2026-01-03T00:00:00.000Z");
-    api.documents.mockResolvedValue([earlier, other, latest]);
-    api.document.mockImplementation((id: string) =>
-      Promise.resolve(
-        detail(
-          id === earlier.id ? earlier : latest,
-          id === latest.id ? "html" : "markdown",
-        ),
+  it("counts every active-company document but only shows the ten newest with their history", async () => {
+    const newest = Array.from({ length: 9 }, (_, index) =>
+      document(
+        `new-${index + 1}`,
+        "acme",
+        `2026-01-${String(index + 3).padStart(2, "0")}T00:00:00.000Z`,
       ),
     );
+    const boundary = ["c-boundary", "b-boundary", "a-boundary"].map((id) =>
+      document(id, "acme", "2026-01-02T00:00:00.000Z"),
+    );
+    const foreign = document("foreign", "globex", "2026-02-01T00:00:00.000Z");
+    const expected = [...newest].reverse().concat(boundary[2]!);
+    api.documents.mockResolvedValue([
+      foreign,
+      ...boundary,
+      ...newest,
+    ]);
+    api.document.mockImplementation((id: string) => {
+      const item = expected.find((candidate) => candidate.id === id);
+      if (!item) return Promise.reject(new Error("Older and foreign history is unavailable"));
+      return Promise.resolve(detail(item, "html"));
+    });
 
     render(<WorkspaceOverview />);
 
-    expect(await screen.findByText("latest")).toBeVisible();
-    expect(api.document).toHaveBeenCalledTimes(2);
-    expect(api.document).toHaveBeenCalledWith("earlier");
-    expect(api.document).toHaveBeenCalledWith("latest");
-    expect(api.document).not.toHaveBeenCalledWith("other");
-    expect(screen.getByText("latest").closest("tr")).toHaveTextContent(
-      "latestAcmelatestxxhtml",
-    );
+    const table = await screen.findByRole("table", { name: "Recent documents" });
     expect(
-      screen.getByText("Tracked documents (active company)").parentElement,
-    ).toHaveTextContent("2");
-    expect(
-      screen
+      within(table)
         .getAllByRole("row")
         .slice(1)
-        .map((row) => row.textContent),
-    ).toEqual([
-      expect.stringContaining("latest"),
-      expect.stringContaining("earlier"),
-    ]);
+        .map((row) => within(row).getAllByRole("cell")[0]!.textContent),
+    ).toEqual(expected.map((item) => item.id));
+    for (const item of expected) {
+      expect(screen.getByText(item.id).closest("tr")).toHaveTextContent(
+        item.id.padEnd(8, "x").slice(0, 8),
+      );
+      expect(screen.getByText(item.id).closest("tr")).toHaveTextContent("html");
+    }
+    expect(
+      screen.getByText("Tracked documents (active company)").parentElement,
+    ).toHaveTextContent("12");
+    expect(screen.queryByText("foreign")).not.toBeInTheDocument();
+    expect(screen.queryByText("b-boundary")).not.toBeInTheDocument();
+    expect(screen.queryByText("c-boundary")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "10 most recently updated documents" }),
+    ).toBeVisible();
+    expect(screen.getByText("Workspace data is up to date")).toBeVisible();
+  });
+
+  it("does not claim fresh or empty results while loading or failed and recovers on retry", async () => {
+    let reject!: (reason: unknown) => void;
+    const pendingDocuments = new Promise<Document[]>((_resolve, fail) => {
+      reject = fail;
+    });
+    api.documents.mockReturnValueOnce(pendingDocuments);
+    render(<WorkspaceOverview />);
+
+    expect(screen.getByText("Loading secure workspace data…")).toBeVisible();
+    expect(screen.queryByText("Workspace data is up to date")).not.toBeInTheDocument();
+    expect(screen.queryByText("No documents for Acme yet")).not.toBeInTheDocument();
+    expect(screen.queryByText("Select or add an active company")).not.toBeInTheDocument();
+
+    await act(async () => {
+      reject(new Error("Network unavailable"));
+      await pendingDocuments.catch(() => undefined);
+    });
+    const retry = await screen.findByRole("button", { name: "Try again" });
+    expect(screen.queryByText("Workspace data is up to date")).not.toBeInTheDocument();
+    expect(screen.queryByText("No documents for Acme yet")).not.toBeInTheDocument();
+    expect(screen.queryByText("Select or add an active company")).not.toBeInTheDocument();
+    fireEvent.click(retry);
+    expect(await screen.findByText("No documents for Acme yet")).toBeVisible();
+    expect(screen.getByText("Workspace data is up to date")).toBeVisible();
+  });
+
+  it("keeps loaded activity visible during company reload failures without claiming freshness", async () => {
+    const item = document("retained", "acme", "2026-01-01T00:00:00.000Z");
+    api.documents.mockResolvedValue([item]);
+    api.document.mockResolvedValue(detail(item));
+    const view = render(<WorkspaceOverview />);
+    expect(await screen.findByRole("row", { name: /retained/ })).toBeVisible();
+    expect(screen.getByText("Workspace data is up to date")).toBeVisible();
+
+    workspace.loading = true;
+    view.rerender(<WorkspaceOverview />);
+    expect(screen.getByRole("row", { name: /retained/ })).toBeVisible();
+    expect(screen.queryByText("Workspace data is up to date")).not.toBeInTheDocument();
+    workspace.loading = false;
+    workspace.error = "Could not refresh companies";
+    view.rerender(<WorkspaceOverview />);
+    expect(screen.getByRole("row", { name: /retained/ })).toBeVisible();
+    expect(screen.queryByText("Workspace data is up to date")).not.toBeInTheDocument();
+    expect(screen.queryByText("No documents for Acme yet")).not.toBeInTheDocument();
+
+    workspace.error = undefined;
+    view.rerender(<WorkspaceOverview />);
+    expect(screen.getByRole("row", { name: /retained/ })).toBeVisible();
+    expect(screen.getByText("Workspace data is up to date")).toBeVisible();
   });
 
   it("reloads for a switched company without rendering stale document details", async () => {

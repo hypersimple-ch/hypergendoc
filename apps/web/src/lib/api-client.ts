@@ -55,6 +55,8 @@ type ApiOptions = Omit<RequestInit, "body"> & {
   timeoutMs?: number;
 };
 
+export const renderRequestTimeoutMs = 40_000;
+
 /** Cookie-session API client. Never accepts a workspace id: the server resolves it. */
 export async function api<T>(
   path: `/api/${string}`,
@@ -109,6 +111,4 @@ export async function api<T>(
 
 export const workspaceApi = {
   current: () => api<unknown>("/api/workspaces/current"),
-  create: (name: string) =>
-    api<unknown>("/api/workspaces", { method: "POST", body: { name } }),
 };

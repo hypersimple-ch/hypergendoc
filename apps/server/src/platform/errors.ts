@@ -1,5 +1,4 @@
 import type { ErrorEnvelope } from "@hypergendoc/contracts";
-import type { FastifyInstance } from "fastify";
 import { ZodError } from "zod";
 
 export type AppErrorCode = ErrorEnvelope["error"]["code"];
@@ -83,11 +82,4 @@ export function toSafeError(
       },
     },
   };
-}
-
-export function registerSafeErrorHandler(app: FastifyInstance): void {
-  app.setErrorHandler((error, request, reply) => {
-    const safe = toSafeError(error, request.id);
-    void reply.status(safe.statusCode).send(safe.body);
-  });
 }

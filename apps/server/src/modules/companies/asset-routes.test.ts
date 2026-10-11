@@ -1,10 +1,8 @@
 import multipart from "@fastify/multipart";
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  registerSafeErrorHandler,
-  uploadValidationError,
-} from "../../platform/errors.js";
+import { registerApplicationErrorHandler } from "../../app/error-handler.js";
+import { uploadValidationError } from "../../platform/errors.js";
 import type { HumanActor } from "../auth/actors.js";
 import { createCompanyAssetRoutes } from "./asset-routes.js";
 import { createCompanyLogoRoutes } from "./logo-routes.js";
@@ -29,7 +27,7 @@ function multipartBody(field: string, bytes: string): Buffer {
 async function appFor(fileSize = 1024) {
   const app = Fastify({ genReqId: () => "request-123" });
   await app.register(multipart, { limits: { fileSize, files: 1 } });
-  registerSafeErrorHandler(app);
+  registerApplicationErrorHandler(app);
   await app.register(
     createCompanyAssetRoutes({
       actorFor: () => actor,

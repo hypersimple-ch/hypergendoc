@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { expect, test } from "@playwright/test";
 
+test.use({ trace: "off", screenshot: "off" });
+
 function sql(statement: string): void {
   execFileSync(
     "docker",
@@ -57,6 +59,29 @@ test("disposable verified account reaches every protected workspace route", asyn
     await page.getByRole("button", { name: "Create workspace" }).click();
     await expect(page).toHaveURL(/\/workspace$/);
 
+    await page.setViewportSize({ width: 320, height: 300 });
+    const menu = page.getByRole("button", { name: "Open workspace navigation" });
+    const brandBounds = await page.getByRole("link", { name: "HyperGenDoc overview" }).boundingBox();
+    const menuBounds = await menu.boundingBox();
+    if (!brandBounds || !menuBounds) throw new Error("Mobile header controls must be visible");
+    expect(brandBounds.x + brandBounds.width).toBeLessThanOrEqual(menuBounds.x);
+    await page.locator("main").ariaSnapshot();
+    await menu.scrollIntoViewIfNeeded();
+    await menu.click();
+    const navigation = page.getByRole("dialog", { name: "Workspace navigation" });
+    const companies = navigation.getByRole("link", { name: "Companies", exact: true });
+    await navigation.ariaSnapshot();
+    await companies.scrollIntoViewIfNeeded();
+    await companies.click();
+    await expect(page).toHaveURL(/\/workspace\/companies$/);
+    await expect(navigation).toBeHidden();
+    await menu.click();
+    await expect(navigation).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(navigation).toBeHidden();
+    await expect(menu).toBeFocused();
+    await page.setViewportSize({ width: 1440, height: 900 });
+
     for (const route of [
       "/workspace",
       "/workspace/companies",
@@ -75,7 +100,7 @@ test("disposable verified account reaches every protected workspace route", asyn
     }
   } finally {
     sql(
-      `BEGIN; SET LOCAL hypergendoc.allow_purge = 'on'; DELETE FROM workspaces WHERE id IN (SELECT m.workspace_id FROM memberships m JOIN "user" u ON u.id = m.user_id WHERE u.email = '${email}'); DELETE FROM "user" WHERE email = '${email}'; COMMIT;`,
+      `BEGIN; SET LOCAL hypergendoc.allow_purge = 'on'; DELETE FROM workspaces WHERE id IN (SELECT m.workspace_id FROM memberships m JOIN "user" u ON u.id = m.user_id WHERE u.email = '${email}'); DELETE FROM mail_jobs WHERE recipient = '${email}'; DELETE FROM "user" WHERE email = '${email}'; COMMIT;`,
     );
   }
 });

@@ -180,9 +180,3 @@ export function registerDocumentRoutes(
       .send(Buffer.from(result.bytes));
   });
 }
-
-export function createDocumentRouteRegistrar(
-  deps: DocumentRouteDependencies,
-): (app: FastifyInstance) => void {
-  return (app) => registerDocumentRoutes(app, deps);
-}

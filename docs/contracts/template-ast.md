@@ -56,6 +56,8 @@ Inline content is either `{ "type": "text", "value": "..." }` or `{ "type": "bin
 
 At least one page master is required. A master may override style margins, background/text color, running-header/footer visibility, recto/verso start behavior, and an inside/outside edge bar. Named `@page` rules remain renderer-owned; identifier restrictions prevent CSS injection. Logical page nodes establish page boundaries, content flows onto additional physical pages, explicit `pageBreak` nodes are honored, and the renderer fills TOC page numbers from measured physical flow. PDF output uses tagged-PDF and outline generation.
 
+An omitted page-master background stays transparent; it does not inherit the foreground text color. Explicit literal or style-token fills remain authoritative. Page canvases contain their children's block margins so a short document does not gain an accidental blank physical page; explicit page nodes and `pageBreak` nodes still establish their requested boundaries.
+
 ## Minimal example
 
 ```json

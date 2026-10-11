@@ -409,43 +409,90 @@ describe("renderer worker", () => {
     expect(calls).toEqual(["server-kill"]);
   });
 
-  it("bounds frames and allows only one queued job", async () => {
+  it.each(["success", "failure"] as const)(
+    "rejects concurrent renders immediately and admits the next job after %s",
+    async (outcome) => {
+      const directory = await mkdtemp(join(tmpdir(), "hypergendoc-renderer-"));
+      const socketPath = join(directory, "renderer.sock");
+      const bytes = await pdf();
+      let release!: () => void;
+      let started!: () => void;
+      let invocations = 0;
+      const startedRendering = new Promise<void>(
+        (resolve) => (started = resolve),
+      );
+      const server = await startRenderer(socketPath, {
+        render: () => {
+          invocations += 1;
+          if (invocations > 1) return Promise.resolve(bytes);
+          return new Promise<Buffer>((resolve, reject) => {
+            release = () => {
+              if (outcome === "success") resolve(bytes);
+              else reject(new Error("render failed"));
+            };
+            started();
+          });
+        },
+      });
+      const first = requestSocket(socketPath, request);
+      try {
+        await startedRendering;
+        const secondRequestId = randomUUID();
+        await expect(
+          requestSocket(
+            socketPath,
+            { ...request, requestId: secondRequestId },
+          ),
+        ).resolves.toEqual({
+          protocol: RENDERER_PROTOCOL,
+          requestId: secondRequestId,
+          ok: false,
+          error: "render_busy",
+        });
+        expect(invocations).toBe(1);
+        release();
+        await expect(first).resolves.toMatchObject({
+          requestId: request.requestId,
+          ok: outcome === "success",
+          ...(outcome === "failure" ? { error: "render_failed" } : {}),
+        });
+        const thirdRequestId = randomUUID();
+        await expect(
+          requestSocket(socketPath, { ...request, requestId: thirdRequestId }),
+        ).resolves.toMatchObject({
+          protocol: RENDERER_PROTOCOL,
+          requestId: thirdRequestId,
+          ok: true,
+          pdfHash: createHash("sha256").update(bytes).digest("hex"),
+        });
+        expect(invocations).toBe(2);
+      } finally {
+        release?.();
+        await first.catch(() => undefined);
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("rejects oversized socket frames before rendering", async () => {
     const directory = await mkdtemp(join(tmpdir(), "hypergendoc-renderer-"));
     const socketPath = join(directory, "renderer.sock");
-    let release: (() => void) | undefined;
-    let started!: () => void;
-    const startedRendering = new Promise<void>(
-      (resolve) => (started = resolve),
-    );
+    let invocations = 0;
     const server = await startRenderer(socketPath, {
-      render: async () =>
-        new Promise<Buffer>((resolve) => {
-          release = () => void pdf().then(resolve);
-          started();
-        }),
+      render: async () => {
+        invocations += 1;
+        return pdf();
+      },
     });
     try {
-      const first = requestSocket(socketPath, request);
-      await startedRendering;
-      const second = requestSocket(socketPath, {
-        ...request,
-        requestId: randomUUID(),
-      });
-      const third = await requestSocket(socketPath, {
-        ...request,
-        requestId: randomUUID(),
-      });
-      expect(third).toMatchObject({ ok: false, error: "render_busy" });
-      release!();
-      await expect(first).resolves.toMatchObject({ ok: true });
-      release!();
-      await expect(second).resolves.toMatchObject({ ok: true });
       await expect(
         requestSocket(
           socketPath,
           `${"x".repeat(3 * 256 * 1024 + Math.ceil((30 * 1024 * 1024) / 3) * 4 + 768 * 1024 + 1)}`,
         ),
       ).rejects.toBeDefined();
+      expect(invocations).toBe(0);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
       await rm(directory, { recursive: true, force: true });

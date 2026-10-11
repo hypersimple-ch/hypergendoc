@@ -345,7 +345,7 @@ function TemplateCard({ template }: { template: Template }) {
         </time>
       </div>
       <div>
-        <h3 className="font-semibold tracking-tight">{template.name}</h3>
+        <h3 className="wrap-anywhere font-semibold tracking-tight">{template.name}</h3>
         <p className="mt-1 text-sm text-muted-foreground">
           {template.activeVersionId
             ? "Ready to create documents"

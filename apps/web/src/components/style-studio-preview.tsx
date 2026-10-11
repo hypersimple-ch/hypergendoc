@@ -112,7 +112,7 @@ export function StyleStudioPreview({
               {running(header)}
             </header>
           )}
-          <main>
+          <div className="style-preview-page__content">
             {selectedLogo && (
               <img
                 className="style-preview-page__logo"
@@ -157,7 +157,7 @@ export function StyleStudioPreview({
                 </tr>
               </tbody>
             </table>
-          </main>
+          </div>
           {footer.enabled && (
             <footer className="style-preview-page__running">
               {running(footer)}

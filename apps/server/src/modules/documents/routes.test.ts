@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActorContext } from "../../platform/context.js";
-import { registerSafeErrorHandler } from "../../platform/errors.js";
+import { registerApplicationErrorHandler } from "../../app/error-handler.js";
 import type { DocumentService } from "./service.js";
 import { registerDocumentRoutes } from "./routes.js";
 
@@ -24,7 +24,7 @@ const revert = vi.fn();
 
 function appFor() {
   const app = Fastify();
-  registerSafeErrorHandler(app);
+  registerApplicationErrorHandler(app);
   registerDocumentRoutes(app, {
     service: {
       pdf,

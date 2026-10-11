@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TemplateDefinition } from "@hypergendoc/contracts";
-import { registerSafeErrorHandler } from "../../platform/errors.js";
+import { registerApplicationErrorHandler } from "../../app/error-handler.js";
 import type { HumanActor } from "../auth/actors.js";
 import { createTemplateRoutes } from "./routes.js";
 
@@ -41,7 +41,7 @@ const preview = vi.fn();
 
 function appFor() {
   const app = Fastify();
-  registerSafeErrorHandler(app);
+  registerApplicationErrorHandler(app);
   void app.register(
     createTemplateRoutes({
       actorFor: () => actor,

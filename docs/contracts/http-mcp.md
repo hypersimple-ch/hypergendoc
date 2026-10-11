@@ -1,10 +1,12 @@
 # HTTP and MCP contract
 
-Shared Zod schemas in `packages/contracts` are authoritative. JSON uses `camelCase`, IDs are UUIDs, timestamps are RFC 3339 UTC, and writes reject unknown fields.
+Shared Zod schemas in `packages/contracts` are authoritative. JSON uses `camelCase`, resource and credential IDs are UUIDs, timestamps are RFC 3339 UTC, and writes reject unknown fields. Human commit author IDs are opaque strings of 1–128 ASCII letters, digits, underscores, or hyphens; existing UUID human IDs remain valid.
 
 ## Errors and authorization
 
 Errors use `{ "error": { "code", "message", "requestId", "details?" } }`. Stable codes include `unauthenticated`, `forbidden`, `not_found`, `conflict`, `validation_failed`, `rate_limited`, `render_rejected`, `render_failed`, `dependency_unavailable`, and `internal_error`.
+
+Request IDs are server-generated UUIDs, unique across application lifetimes. Durable mutation journals retain their existing operation/request keys and replay/conflict checks; callers cannot supply request IDs.
 
 All `/api` routes require a secure human session except registration, verification, reset, and health. Cross-workspace/company targets are masked as `not_found`; the same applies to inaccessible document history, revert, and PDF access.
 
@@ -44,6 +46,10 @@ Numeric-version tools do not exist.
 ## Input and limits
 
 `format` is exactly `"markdown"` or `"html"`; it is never inferred. HTML is a sanitized fragment. Inputs are capped at 256 KiB, PDFs at 25 MiB, rendering at 30 seconds and 100 pages, and pagination defaults to 50 with a maximum of 100.
+
+MCP encoded request envelopes are limited to 589824 bytes (576 KiB) at both development ingress and server admission. The decoded document body retains its 256 KiB limit, including when JSON escaping enlarges the envelope.
+
+The renderer admits one active job and does not queue another. Busy admission returns `dependency_unavailable` (HTTP 503), permitting explicit retry after the current job finishes. Dashboard style/template previews allow 40 seconds for the 30-second render ceiling plus bounded IPC cleanup; ordinary API requests retain their 12-second deadline. Neither previews nor mutations retry automatically.
 
 Additive response changes require optional fields; breaking changes require a versioned route or tool contract.
 

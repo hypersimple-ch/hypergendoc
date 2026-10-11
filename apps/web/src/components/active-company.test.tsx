@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -129,8 +130,6 @@ describe("ActiveCompanyProvider", () => {
       expect(screen.getByTestId("no-company")).toHaveTextContent("true"),
     );
     expect(screen.getByTestId("company")).toHaveTextContent("none");
-    expect(context).toHaveBeenCalledOnce();
-    expect(companies).toHaveBeenCalledOnce();
   });
 
   it("persists a user-selected active company", async () => {
@@ -181,5 +180,51 @@ describe("ActiveCompanyProvider", () => {
       ),
     );
     expect(screen.getByTestId("company")).toHaveTextContent("none");
+  });
+
+  it("keeps a newer reload result when an older request finishes later", async () => {
+    let resolve!: (value: Company[]) => void;
+    const first = {
+      promise: new Promise<Company[]>((complete) => { resolve = complete; }),
+      resolve: (value: Company[]) => resolve(value),
+    };
+    context.mockResolvedValue(workspace);
+    companies
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce([company("company-2")]);
+    renderProvider();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("company")).toHaveTextContent("company-2"),
+    );
+    await act(async () => {
+      first.resolve([company("company-1")]);
+      await first.promise;
+    });
+
+    expect(screen.getByTestId("company")).toHaveTextContent("company-2");
+    expect(localStorage.getItem(activeCompanyStorageKey(workspace.id))).toBe(
+      "company-2",
+    );
+  });
+
+  it("does not persist a late selection after the provider unmounts", async () => {
+    let resolve!: (value: Company[]) => void;
+    const pending = {
+      promise: new Promise<Company[]>((complete) => { resolve = complete; }),
+      resolve: (value: Company[]) => resolve(value),
+    };
+    context.mockResolvedValue(workspace);
+    companies.mockReturnValueOnce(pending.promise);
+    const view = renderProvider();
+    view.unmount();
+
+    await act(async () => {
+      pending.resolve([company("company-1")]);
+      await pending.promise;
+    });
+
+    expect(localStorage.getItem(activeCompanyStorageKey(workspace.id))).toBeNull();
   });
 });

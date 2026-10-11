@@ -3,10 +3,10 @@
 
   @mcp path /mcp
   request_body @mcp {
-    max_size 256KB
+    max_size 589824
   }
   reverse_proxy @mcp server:4000 {
-    request_buffers 256KB
+    request_buffers 589824
   }
 
   @server path /api/* /health/live /health/ready

@@ -2,7 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { createServer, type Socket } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import type { StyleDefinition } from "@hypergendoc/contracts";
-import { createUnixSocketRenderer } from "./renderer-client.js";
+import {
+  createUnixSocketRenderer,
+  rendererFailure,
+} from "./renderer-client.js";
 
 const definition = { logoObjectId: null } as StyleDefinition;
 const hash = (value: Uint8Array | string) =>
@@ -104,5 +107,26 @@ describe("Unix renderer protocol", () => {
         style: definition,
       }),
     ).resolves.toMatchObject({ ok: false, error: "dependency_unavailable" });
+  });
+
+  it("maps renderer backpressure to a retryable dependency failure", async () => {
+    const path = await server(({ requestId }, socket) => {
+      socket.end(
+        `${JSON.stringify({ protocol: "hypergendoc-render-v2", requestId, ok: false, error: "render_busy" })}\n`,
+      );
+    });
+    const result = await createUnixSocketRenderer(path, 100).render({
+      format: "markdown",
+      body: "body",
+      style: definition,
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      error: "dependency_unavailable",
+    });
+    expect(rendererFailure(result)).toMatchObject({
+      code: "dependency_unavailable",
+      statusCode: 503,
+    });
   });
 });

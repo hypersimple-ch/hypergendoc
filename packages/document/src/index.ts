@@ -1058,14 +1058,18 @@ export function renderTemplateDocumentHtml(
       ]
         .map((box) => `@${box}{content:none;}`)
         .join("");
+      const background =
+        master.background === undefined
+          ? "transparent"
+          : templateColor(master.background, input.style);
       const edge = master.edgeBar
         ? `.template-master-${name}::after{content:"";position:absolute;top:0;bottom:0;width:${master.edgeBar.widthMm}mm;background:${templateColor(master.edgeBar.color, input.style)};${master.edgeBar.side === "left" ? "left:0" : "right:0"};}${master.edgeBar.side === "outside" ? `.template-page:nth-of-type(even).template-master-${name}::after{left:0;right:auto;}` : ""}`
         : "";
-      return `@page ${name}{size:${input.style.page.size === "A4" ? "A4" : "letter"};margin:${margins.map((value) => `${value}mm`).join(" ")};${hiddenMarginBoxes}}${master.startOn === "recto" ? `.template-master-${name}{break-before:right;}` : master.startOn === "verso" ? `.template-master-${name}{break-before:left;}` : ""}.template-master-${name}{page:${name};width:${contentWidthMm}mm;min-height:${contentHeightMm}mm;background:${templateColor(master.background, input.style)};color:${templateColor(master.color, input.style)};}${edge}`;
+      return `@page ${name}{size:${input.style.page.size === "A4" ? "A4" : "letter"};margin:${margins.map((value) => `${value}mm`).join(" ")};${hiddenMarginBoxes}}${master.startOn === "recto" ? `.template-master-${name}{break-before:right;}` : master.startOn === "verso" ? `.template-master-${name}{break-before:left;}` : ""}.template-master-${name}{page:${name};width:${contentWidthMm}mm;min-height:${contentHeightMm}mm;background:${background};color:${templateColor(master.color, input.style)};}${edge}`;
     })
     .join("\n");
   const templateCss = `${masterCss}
-.template-page{position:relative;break-after:page;}
+.template-page{display:flow-root;position:relative;break-after:page;}
 .template-page:last-child{break-after:auto;}
 .template-stack{display:flex;flex-direction:column;gap:var(--template-gap);}
 .template-grid{display:grid;grid-template-columns:repeat(var(--template-columns),minmax(0,1fr));gap:var(--template-gap);}

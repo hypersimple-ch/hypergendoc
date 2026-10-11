@@ -9,3 +9,5 @@ deploy/prod/backups
 deploy/prod/secrets.env
 deploy/prod/state
 .env
+.env.*
+!.env.example

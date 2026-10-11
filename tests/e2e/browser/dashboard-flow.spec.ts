@@ -45,6 +45,7 @@ DELETE FROM company_fonts WHERE workspace_id IN ${ownerWorkspaces};
 DELETE FROM company_colors WHERE workspace_id IN ${ownerWorkspaces};
 DELETE FROM stored_objects WHERE workspace_id IN ${ownerWorkspaces};
 DELETE FROM workspaces WHERE id IN ${ownerWorkspaces};
+DELETE FROM mail_jobs WHERE recipient = ${quote(email)};
 DELETE FROM "user" WHERE email = ${quote(email)};
 COMMIT;`);
 }

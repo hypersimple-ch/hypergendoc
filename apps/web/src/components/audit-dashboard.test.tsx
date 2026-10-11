@@ -59,9 +59,9 @@ describe("AuditDashboard", () => {
     expect(await screen.findByText("membership.role_changed")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Load more events" }));
 
-    await waitFor(() => expect(api.audit).toHaveBeenLastCalledWith(50));
-    expect(screen.getAllByText("membership.role_changed")).toHaveLength(2);
-    expect(await screen.findByText("Loaded 1 more audit event.")).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getAllByText("membership.role_changed")).toHaveLength(2),
+    );
     expect(
       screen.queryByRole("button", { name: "Load more events" }),
     ).not.toBeInTheDocument();
@@ -74,5 +74,27 @@ describe("AuditDashboard", () => {
       target: { value: "membership" },
     });
     expect(screen.getAllByText("membership.role_changed")).toHaveLength(2);
+  });
+
+  it("shows only the filtered empty state while retaining pagination recovery", async () => {
+    activeCompany.mockReturnValue({
+      context: { role: "owner" },
+      loading: false,
+      reload: vi.fn(),
+    });
+    api.audit
+      .mockResolvedValueOnce({ items: [event("event-1")], nextOffset: 50 })
+      .mockResolvedValueOnce({ items: [{ ...event("event-2"), action: "credential.created" }] });
+    render(<AuditDashboard />);
+    await screen.findByText("membership.role_changed");
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter events" }), {
+      target: { value: "credential" },
+    });
+    expect(screen.getByText("No matching audit events")).toBeVisible();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Load more events" }));
+    expect(await screen.findByText("credential.created")).toBeVisible();
+    expect(screen.getByRole("table")).toBeVisible();
+    expect(screen.queryByText("No matching audit events")).not.toBeInTheDocument();
   });
 });

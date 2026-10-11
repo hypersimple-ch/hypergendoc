@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Braces, Eye, FileInput, History, Save } from "lucide-react";
 import type {
-  Template,
   TemplateData,
   TemplateDefinition,
   TemplateVersion,
@@ -20,22 +19,6 @@ import {
   requiredTemplateFieldError,
   TemplateDataForm,
 } from "./template-data-form";
-
-type TemplateDetail = { template: Template; versions: TemplateVersion[] };
-type TemplateApi = typeof dashboardApi & {
-  template: (id: string) => Promise<TemplateDetail>;
-  createTemplateVersion: (
-    id: string,
-    definition: TemplateDefinition,
-    activate: boolean,
-  ) => Promise<TemplateVersion>;
-  activateTemplate: (id: string, versionId: string) => Promise<Template>;
-  previewTemplate: (
-    id: string,
-    input: { definition: TemplateDefinition; data: TemplateData },
-  ) => Promise<{ url: string }>;
-};
-const templateApi = dashboardApi as TemplateApi;
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -57,7 +40,7 @@ function isTemplateDefinitionShape(
 export function TemplateStudio({ templateId }: { templateId: string }) {
   const router = useRouter();
   const detail = useLoaded(
-    () => templateApi.template(templateId),
+    () => dashboardApi.template(templateId),
     [templateId],
   );
   const [definition, setDefinition] = useState<TemplateDefinition>();
@@ -69,21 +52,35 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
   const [busy, setBusy] = useState(false);
   const [confirmation, setConfirmation] = useState<"activate" | "leave">();
   const actionPending = useRef(false);
+  const initializedTemplateId = useRef<string | undefined>(undefined);
+  const currentTemplateId = useRef(templateId);
+  currentTemplateId.current = templateId;
+  const currentDetail =
+    detail.value?.template.id === templateId ? detail.value : undefined;
+  const draftReady = initializedTemplateId.current === templateId;
 
   useEffect(() => {
-    if (!detail.value) return;
+    if (
+      initializedTemplateId.current === templateId ||
+      detail.value?.template.id !== templateId
+    ) {
+      return;
+    }
     const latest = detail.value.versions.at(-1)?.definition;
     if (!latest) return;
+    initializedTemplateId.current = templateId;
     setDefinition(latest);
     setSavedDefinition(latest);
     setSource(JSON.stringify(latest, null, 2));
     setSampleData(initialTemplateData(latest.fields));
-  }, [detail.value]);
+    setMessage(undefined);
+    setConfirmation(undefined);
+  }, [detail.value, templateId]);
 
   const isDirty = useMemo(() => {
-    if (!savedDefinition) return false;
+    if (!draftReady || !savedDefinition) return false;
     return source.trim() !== JSON.stringify(savedDefinition, null, 2).trim();
-  }, [savedDefinition, source]);
+  }, [draftReady, savedDefinition, source]);
   const requestNavigation = useUnsavedChanges(
     `template-studio:${templateId}`,
     isDirty,
@@ -115,14 +112,18 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
 
   async function save(activate: boolean) {
     if (actionPending.current) return false;
+    const submittedSource = source;
     const next = parseDefinition();
     if (!next) return false;
     actionPending.current = true;
     setBusy(true);
     try {
-      await templateApi.createTemplateVersion(templateId, next, activate);
+      await dashboardApi.createTemplateVersion(templateId, next, activate);
+      if (currentTemplateId.current !== templateId) return false;
       setSavedDefinition(next);
-      setSource(JSON.stringify(next, null, 2));
+      setSource((current) =>
+        current === submittedSource ? JSON.stringify(next, null, 2) : current,
+      );
       setMessage({
         text: activate
           ? "New version saved and activated."
@@ -132,7 +133,8 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
       detail.reload();
       return true;
     } catch (reason) {
-      setMessage({ text: safeError(reason), error: true });
+      if (currentTemplateId.current === templateId)
+        setMessage({ text: safeError(reason), error: true });
       return false;
     } finally {
       actionPending.current = false;
@@ -146,11 +148,13 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
     setBusy(true);
     setMessage(undefined);
     try {
-      await templateApi.activateTemplate(templateId, versionId);
+      await dashboardApi.activateTemplate(templateId, versionId);
+      if (currentTemplateId.current !== templateId) return;
       setMessage({ text: "Template version activated.", error: false });
       detail.reload();
     } catch (reason) {
-      setMessage({ text: safeError(reason), error: true });
+      if (currentTemplateId.current === templateId)
+        setMessage({ text: safeError(reason), error: true });
     } finally {
       actionPending.current = false;
       setBusy(false);
@@ -179,7 +183,7 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
     setBusy(true);
     setMessage({ text: "Preparing PDF preview…", error: false });
     try {
-      const result = await templateApi.previewTemplate(templateId, {
+      const result = await dashboardApi.previewTemplate(templateId, {
         definition: next,
         data: sampleData,
       });
@@ -210,7 +214,7 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
     <div className="space-y-5 text-foreground">
       <PageHeader
         eyebrow="Template studio"
-        title={detail.value?.template.name ?? "Template"}
+        title={currentDetail?.template.name ?? "Template"}
         description="Edit the typed definition, test it with representative data, and save immutable versions."
         aside={
           <Link
@@ -227,7 +231,7 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
         }
       />
       <LoadState {...detail} />
-      {detail.value && definition && (
+      {currentDetail && draftReady && definition && (
         <>
           <section
             className="rounded-lg border border-border bg-card shadow-sm"
@@ -329,7 +333,6 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
                     aria-describedby="template-definition-hint"
                     className="min-h-[34rem] w-full resize-y rounded-md border border-border bg-background p-4 font-mono text-xs leading-5 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                     value={source}
-                    disabled={busy}
                     spellCheck={false}
                     onChange={(event) => setSource(event.target.value)}
                   />
@@ -356,7 +359,7 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
                   <TemplateDataForm
                     fields={definition.fields}
                     data={sampleData}
-                    companyId={detail.value.template.companyId}
+                    companyId={currentDetail.template.companyId}
                     disabled={busy}
                     onChange={setSampleData}
                   />
@@ -372,8 +375,8 @@ export function TemplateStudio({ templateId }: { templateId: string }) {
             </div>
           </section>
           <VersionHistory
-            versions={detail.value.versions}
-            activeVersionId={detail.value.template.activeVersionId}
+            versions={currentDetail.versions}
+            activeVersionId={currentDetail.template.activeVersionId}
             busy={busy}
             onActivate={(versionId) => void activate(versionId)}
           />

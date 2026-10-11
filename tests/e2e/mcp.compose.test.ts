@@ -514,6 +514,7 @@ describe.skipIf(!enabled)("Compose MCP endpoint", () => {
     await cleanupFixture();
   }, 120_000);
 
+
   test("discovers exactly the thirteen public tools", async () => {
     const current = fixture!;
     await mcp(current.fullToken, 1, "initialize", {
@@ -888,4 +889,36 @@ describe.skipIf(!enabled)("Compose MCP endpoint", () => {
       "forbidden",
     );
   }, 120_000);
+  test("admits escaped document envelopes and rejects oversized edge requests", async () => {
+    const current = fixture!;
+    const body = '"'.repeat(200 * 1024);
+    const input = {
+      companyId: current.companyId,
+      styleId: current.alpineBoardStyleId,
+      title: "Escaped ingress boundary",
+      format: "markdown",
+      body,
+    };
+    const created = await tool(current.idToolsToken, 100, "create_document", input);
+    const documentId = string(record(created.document, "created document").id, "document id");
+    const read = await tool(current.idToolsToken, 101, "get_document", { documentId });
+    const snapshot = record(record(read.current, "read current").snapshot, "read snapshot");
+    expectBody(snapshot.body, body, "escaped source");
+
+    const response = await fetch(new URL("/mcp", origin), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${current.idToolsToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 102,
+        method: "tools/call",
+        params: { name: "create_document", arguments: { ...input, body: '"'.repeat(300 * 1024) } },
+      }),
+    });
+    expect(response.status).toBe(413);
+  }, 60_000);
 });

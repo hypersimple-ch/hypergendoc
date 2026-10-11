@@ -19,7 +19,7 @@ import type {
   CompanyImageAsset,
   WorkspaceRole,
 } from "@hypergendoc/contracts";
-import { api } from "./api-client";
+import { api, renderRequestTimeoutMs } from "./api-client";
 
 export type Member = {
   id: string;
@@ -165,15 +165,11 @@ export const dashboardApi = {
       method: "POST",
       body: { definition, activate },
     }),
-  activateStyle: (id: string, versionId: string) =>
-    api<Style>(`/api/styles/${id}/activate`, {
-      method: "POST",
-      body: { versionId },
-    }),
   previewStyle: (id: string, definition: StyleDefinition) =>
     api<{ url: string }>(`/api/styles/${id}/preview`, {
       method: "POST",
       body: { definition },
+      timeoutMs: renderRequestTimeoutMs,
     }),
   templates: async (companyId: string) =>
     items<Template>(
@@ -218,6 +214,7 @@ export const dashboardApi = {
     api<{ url: string }>(`/api/templates/${id}/preview`, {
       method: "POST",
       body: input,
+      timeoutMs: renderRequestTimeoutMs,
     }),
   createTemplateDocument: async (input: {
     companyId: string;
@@ -283,33 +280,8 @@ export const dashboardApi = {
           : "/api/documents",
       ),
     ),
-  createDocument: (input: {
-    companyId: string;
-    styleId: string;
-    title: string;
-    format: "markdown" | "html";
-    body: string;
-  }) =>
-    api<{ document: Document; current: DocumentCurrentSource }>(
-      "/api/documents",
-      { method: "POST", body: input },
-    ),
-  updateDocument: (
-    id: string,
-    input: {
-      styleVersionId?: string;
-      format: "markdown" | "html";
-      body: string;
-    },
-  ) =>
-    api<DocumentCurrentSource>(`/api/documents/${id}/source`, {
-      method: "POST",
-      body: input,
-    }),
   document: (id: string): Promise<DocumentDetail> =>
     api<DocumentDetail>(`/api/documents/${id}`),
-  documentCommits: (id: string) =>
-    api<DocumentCommit[]>(`/api/documents/${id}/commits`),
   documentCommit: (
     id: string,
     commitSha: string,

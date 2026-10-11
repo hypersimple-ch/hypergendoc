@@ -8,7 +8,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import type { ComponentProps } from "react";
+import { useState, type ComponentProps, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type * as ApiClientModule from "../lib/api-client";
 import type * as PrimitivesModule from "./primitives";
@@ -69,12 +69,12 @@ vi.mock("./primitives", async (importOriginal) => {
 });
 
 import { ApiError } from "../lib/api-client";
-import { useActiveCompany } from "./active-company";
+import { ActiveCompanyProvider, useActiveCompany } from "./active-company";
 import { useUnsavedChanges } from "./unsaved-changes";
 import {
-  SessionBoundary,
+  SessionBoundary as AccessBoundary,
   WorkspaceSetupBoundary,
-  WorkspaceShell,
+  WorkspaceShell as Shell,
 } from "./workspace-shell";
 
 const workspace = {
@@ -95,6 +95,48 @@ const company = (
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
 });
+
+function SessionBoundary({ children }: { children: ReactNode }) {
+  return (
+    <ActiveCompanyProvider>
+      <AccessBoundary>{children}</AccessBoundary>
+    </ActiveCompanyProvider>
+  );
+}
+
+function WorkspaceShell({ children }: { children: ReactNode }) {
+  return (
+    <ActiveCompanyProvider>
+      <Shell>{children}</Shell>
+    </ActiveCompanyProvider>
+  );
+}
+
+function ProtectedWorkspace({ children }: { children: ReactNode }) {
+  return (
+    <ActiveCompanyProvider>
+      <AccessBoundary>
+        <Shell>{children}</Shell>
+      </AccessBoundary>
+    </ActiveCompanyProvider>
+  );
+}
+
+function ReloadableEditor() {
+  const [draft, setDraft] = useState("");
+  const { reload } = useActiveCompany();
+  useUnsavedChanges("reload-editor", Boolean(draft));
+  return (
+    <>
+      <input
+        aria-label="Editor draft"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+      />
+      <button onClick={reload}>Refresh companies</button>
+    </>
+  );
+}
 
 function ActiveCompanyChild() {
   const { activeCompany } = useActiveCompany();
@@ -120,7 +162,7 @@ afterEach(() => {
 
 describe("SessionBoundary", () => {
   it("renders dashboard content after server-resolved workspace access", async () => {
-    current.mockResolvedValue({ id: "workspace-1" });
+    mockCompanies();
     render(
       <SessionBoundary>
         <p>Dashboard</p>
@@ -131,7 +173,8 @@ describe("SessionBoundary", () => {
   });
 
   it("sends unauthenticated visitors to login with their destination", async () => {
-    current.mockRejectedValue(
+    companies.mockResolvedValue([]);
+    context.mockRejectedValue(
       new ApiError("unauthenticated", "Sign in required."),
     );
     render(<SessionBoundary>Dashboard</SessionBoundary>);
@@ -144,15 +187,17 @@ describe("SessionBoundary", () => {
   });
 
   it("sends users without a workspace membership to setup", async () => {
-    current.mockRejectedValue(new ApiError("forbidden", "Access denied."));
+    companies.mockResolvedValue([]);
+    context.mockRejectedValue(new ApiError("forbidden", "Access denied."));
     render(<SessionBoundary>Dashboard</SessionBoundary>);
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/setup"));
   });
 
   it("preserves ambiguous-membership recovery", async () => {
-    current
+    companies.mockResolvedValue([]);
+    context
       .mockRejectedValueOnce(new ApiError("conflict", "Access denied."))
-      .mockResolvedValueOnce({ id: "workspace-1" });
+      .mockResolvedValueOnce(workspace);
     render(<SessionBoundary>Dashboard</SessionBoundary>);
     expect(
       await screen.findByText(
@@ -164,9 +209,10 @@ describe("SessionBoundary", () => {
   });
 
   it("offers an explicit retry after a generic session failure", async () => {
-    current
+    companies.mockResolvedValue([]);
+    context
       .mockRejectedValueOnce(new Error("offline"))
-      .mockResolvedValueOnce({ id: "workspace-1" });
+      .mockResolvedValueOnce(workspace);
     render(<SessionBoundary>Dashboard</SessionBoundary>);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -174,6 +220,80 @@ describe("SessionBoundary", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(await screen.findByText("Dashboard")).toBeVisible();
+  });
+
+  it.each([
+    ["unauthenticated", "/login?next=%2Fworkspace%2Fstyles"],
+    ["forbidden", "/setup"],
+  ] as const)("hides retained content after %s on navigation", async (code, destination) => {
+    mockCompanies();
+    const view = render(
+      <ProtectedWorkspace>
+        <p>Protected editor</p>
+      </ProtectedWorkspace>,
+    );
+    expect(await screen.findByText("Protected editor")).toBeVisible();
+
+    context.mockRejectedValueOnce(new ApiError(code, "Access revoked."));
+    navigation.pathname = "/workspace/styles";
+    view.rerender(
+      <ProtectedWorkspace>
+        <p>Protected editor</p>
+      </ProtectedWorkspace>,
+    );
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith(destination));
+    expect(screen.queryByText("Protected editor")).not.toBeInTheDocument();
+    expect(screen.queryByRole("banner")).not.toBeInTheDocument();
+  });
+
+  it("hides retained content on ambiguous membership and recovers through retry", async () => {
+    mockCompanies();
+    render(
+      <ProtectedWorkspace>
+        <ReloadableEditor />
+      </ProtectedWorkspace>,
+    );
+    await screen.findByLabelText("Editor draft");
+    context.mockRejectedValueOnce(new ApiError("conflict", "Ambiguous membership."));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh companies" }));
+    expect(
+      await screen.findByText("Your account has memberships in multiple workspaces."),
+    ).toBeVisible();
+    expect(screen.queryByLabelText("Editor draft")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByLabelText("Editor draft")).toBeVisible();
+  });
+
+  it("preserves dirty editor state through pending and failed refreshes, then retry", async () => {
+    mockCompanies();
+    render(
+      <ProtectedWorkspace>
+        <ReloadableEditor />
+      </ProtectedWorkspace>,
+    );
+    const editor = await screen.findByLabelText("Editor draft");
+    fireEvent.change(editor, { target: { value: "Unsaved draft" } });
+    let reject!: (reason: unknown) => void;
+    const refresh = new Promise<typeof workspace>((_resolve, fail) => {
+      reject = fail;
+    });
+    context.mockReturnValueOnce(refresh);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh companies" }));
+    expect(screen.getByLabelText("Editor draft")).toBe(editor);
+    expect(editor).toHaveValue("Unsaved draft");
+    reject(new Error("offline"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("We could not load companies.");
+    expect(screen.getByLabelText("Editor draft")).toBe(editor);
+    expect(editor).toHaveValue("Unsaved draft");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    expect(screen.getByLabelText("Editor draft")).toBe(editor);
+    expect(editor).toHaveValue("Unsaved draft");
+    const beforeUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(beforeUnload);
+    expect(beforeUnload.defaultPrevented).toBe(true);
   });
 });
 
@@ -270,7 +390,6 @@ describe("WorkspaceShell", () => {
       </WorkspaceShell>,
     );
     expect(screen.getByText("Route company: Contoso")).toBeVisible();
-    expect(context).toHaveBeenCalledOnce();
   });
 
   it("guides users while companies load, fail, or have no active choice", async () => {

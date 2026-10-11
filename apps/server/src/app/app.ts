@@ -12,7 +12,8 @@ import { fromNodeHeaders } from "better-auth/node";
 import { and, eq } from "drizzle-orm";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import nodemailer from "nodemailer";
-import { z, ZodError } from "zod";
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import { createAuth } from "../modules/auth/better-auth.js";
 import { createMailDispatcher } from "../modules/auth/mail-dispatcher.js";
 import { createMailJobRepository } from "../modules/auth/mail-queue.js";
@@ -67,7 +68,7 @@ import {
   createTemplateRoutes,
   createTemplateService,
 } from "../modules/templates/index.js";
-import { DocumentInputError, templateImageIds } from "@hypergendoc/document";
+import { templateImageIds } from "@hypergendoc/document";
 
 import {
   createWorkspaceReadRepository,
@@ -89,11 +90,7 @@ import {
   loadServerEnvironment,
   type ServerEnvironment,
 } from "../platform/env.js";
-import {
-  AppError,
-  normalizeTransportError,
-  toSafeError,
-} from "../platform/errors.js";
+import { AppError } from "../platform/errors.js";
 import {
   createHealthChecker,
   registerHealthRoutes,
@@ -104,6 +101,7 @@ import {
 } from "../platform/object-store.js";
 import { createInMemoryRateLimiter } from "../platform/rate-limit.js";
 import { checkUnixSocket } from "./dependency-health.js";
+import { registerApplicationErrorHandler } from "./error-handler.js";
 import { shouldRejectMutationOrigin } from "./origin-policy.js";
 import { page } from "./page.js";
 
@@ -123,6 +121,7 @@ export async function createApplication(
     connectionString: environment.databaseUrl,
   });
   const app = Fastify({
+    genReqId: () => randomUUID(),
     logger: {
       level: environment.logLevel,
       redact: [
@@ -458,28 +457,7 @@ export async function createApplication(
       throw new AppError("forbidden", 403);
     return Promise.resolve();
   });
-  app.setErrorHandler((error, request, reply) => {
-    const mapped =
-      error instanceof AuthorizationError
-        ? new AppError(
-            error.code,
-            error.code === "forbidden"
-              ? 403
-              : error.code === "conflict"
-                ? 409
-                : 404,
-          )
-        : error instanceof ZodError || error instanceof DocumentInputError
-          ? new AppError("validation_failed", 400)
-          : normalizeTransportError(error);
-    const safe = toSafeError(mapped, request.id);
-    if (safe.statusCode >= 500)
-      request.log.error(
-        { requestId: request.id, code: safe.body.error.code },
-        "Request failed",
-      );
-    void reply.status(safe.statusCode).send(safe.body);
-  });
+  registerApplicationErrorHandler(app);
 
   const resolveHumanActor = async (request: {
     id: string;
