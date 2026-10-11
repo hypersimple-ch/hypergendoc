@@ -69,6 +69,8 @@ pnpm check
 
 CI separates the five database-only atomic mutation cases (`test:postgres`, enabled by `RUN_POSTGRES_INTEGRATION=true`) from the application-lifetime regression. The latter runs with `RUN_PLATFORM_INTEGRATION=true` in the disposable Compose server alongside real PostgreSQL, Garage, and Git; explicitly enabling it requires full server configuration. `./scripts/smoke-server-image.sh` builds the production runtime and migration targets, migrates isolated PostgreSQL, checks the fresh mutation journal, and probes runtime liveness internally without publishing host ports. It removes only its uniquely named containers, network, and image tags on success or failure; S3 and renderer readiness belong to the authenticated full-stack gate.
 
+The quality gate also runs `pnpm audit --prod --audit-level high`. Keep production dependency floors and the targeted security overrides in `pnpm-workspace.yaml` at patched releases; regenerate and verify the frozen lockfile without suppressing advisories or weakening this gate.
+
 ## Contributing
 
 Keep changes scoped, add or update tests for behavior changes, and run the relevant checks above. Validate migrations with `pnpm db:migrations:check` and Compose policy with `pnpm compose:check` when touching those areas. Contract schemas in `packages/contracts` and the architecture/contract documents are authoritative. Do not broaden the accepted document-input formats or claim security/compliance/production guarantees without corresponding implementation and release evidence.
